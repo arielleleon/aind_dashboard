@@ -1,0 +1,7 @@
+dash
+dash_daq
+plotly
+pandas
+seaborn
+dash-bootstrap-components
+aind-analysis-arch-result-access
