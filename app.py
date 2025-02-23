@@ -6,8 +6,10 @@ from app_utils import *
 
 app = dash.Dash(
     __name__,
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    external_stylesheets=[dbc.themes.BOOTSTRAP],    
 )
+
+app.layout = AppMain().build()
 
 if __name__ == "__main__":
     app.run_server(debug=False)
