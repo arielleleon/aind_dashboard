@@ -2,7 +2,7 @@ import dash
 import dash_bootstrap_components as dbc
 from app_elements import *
 from callbacks import *
-from app_utils import *
+from app_utils import AppUtils
 
 app = dash.Dash(
     __name__,
