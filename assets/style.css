@@ -1,73 +1,86 @@
-/* Top bar styling */
+/* App layout styles*/
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: auto;  /* Change from hidden to auto */
+}
+
+.app-main {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
 .top-bar {
-    width: 100%;
-    height: 48px;
-    background-color: white;
-    border-bottom: 1px solid #e0e0e0;
-    padding: 0.75rem 1rem;
-    font-size: 1.1rem;
+    background-color: #003366;
+    color: white;
+    padding: 10px 20px;
+    font-weight: bold;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;  /* Prevent the header from shrinking */
+    position: relative;
+    z-index: 1000;
+}
+
+.main-content-row {
+    flex: 1;
+    margin-top: 0 !important;
+    padding-top: 15px;
+    overflow: auto; /* Allow scrolling */
+    height: calc(100vh - 50px); /* Subtract top bar height */
 }
 
 /* Sidebar styling */
-.sidebar {
-    height: calc(100vh - 48px); /* Subtract top bar height */
-    background-color: white;
-    padding: 0.5rem;
-    border-right: 1px solid #e0e0e0;
-    position: fixed;
-    width: 100px;
-    top: 48px; /* Start below top bar */
-}
-
-/* Content styling */
-.content-col {
-    margin-left: 100px;  /* Same as sidebar width */
-    padding: 1rem;
-    margin-top: 48px; /* Start below top bar */
-}
-
-/* Responsive design */
-@media (max-width: 839px) {
-    .sidebar {
-        width: 72px;
-    }
-    
-    .content-col {
-        margin-left: 72px;
-    }
-}
-
-/* General app styling */
-.app-main {
-    background-color: white;
-}
-
-/* Remove any Bootstrap default backgrounds */
 .sidebar-col, .content-col {
-    background-color: white;
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
+}
+
+.content-col {
+    padding: 0 15px;
+}
+
+/* Content wrapper positioning */
+.content-wrapper {
+    height: 100%;
+    width: 100%;
+    padding: 0 15px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: visible; /* Allow content to be visible */
+}
+
+/* Data table container - actual scroll container */
+.data-table-container {
+    max-height: calc(100vh - 230px);
+    overflow-y: auto;
+    width: 100%;
+    flex: 1;  /* Allow it to grow */
 }
 
 /* Filter component styles */
 .filter-container {
     background-color: #f8f9fa;
     border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 20px;
+    padding: 10px;
+    margin-bottom: 10px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    width: 100%;
+    flex-shrink: 0;  /* Prevent filter from shrinking */
 }
 
 .filter-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 8px;
 }
 
 .filter-title {
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 600;
-    display: flex;
-    align-items: center;
 }
 
 .filter-count {
@@ -92,8 +105,9 @@
 
 .filter-label {
     font-weight: 600;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
     display: block;
+    font-size: 12px;
 }
 
 .filter-button-group {
@@ -123,25 +137,71 @@
 }
 
 .filter-dropdown .Select-control {
-    border-radius: 4px;
-    border: 1px solid #e0e0e0;
+    min-height: 32px;
+    height: 32px;
 }
 
-.active-filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+.filter-dropdown .Select-value {
+    line-height: 32px !important;
+}
+
+.filter-dropdown .Select-placeholder {
+    line-height: 32px !important;
+}
+
+.filter-dropdown .Select-input {
+    height: 32px;
 }
 
 .filter-badge {
-    font-size: 14px;
+    font-size: 12px;
     font-weight: normal;
-    padding: 6px 12px;
-    border-radius: 16px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    margin-right: 4px;
+    margin-bottom: 4px;
+    display: inline-block;
 }
 
 .filter-badge span {
     cursor: pointer;
     font-weight: bold;
     margin-left: 6px;
+}
+
+/* Make the active filters container take less vertical space */
+.active-filters {
+    min-height: 26px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+/* Content container styling */
+.content-container {
+    padding: 15px;
+}
+
+.main-row {
+    height: calc(100vh - 50px);  /* Subtract height of top bar */
+}
+
+/* Increase plot height to match table */
+.plot-content-wrapper {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    padding-top: 10px;
+}
+
+/* Remove any default margins that might be causing issues */
+.dash-spreadsheet-container,
+.dash-spreadsheet,
+.dash-table-container {
+    margin: 0 !important;
+}
+
+/* Fix row height in bootstrap */
+.row {
+    margin: 0 !important;
 }

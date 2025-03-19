@@ -11,7 +11,6 @@ class AppDataFrame:
         self.data_loader = app_utils.data_loader
         
         # Create reference processor with minimal default settings
-        # This will only be used for the sliding window functionality
         self.reference_processor = ReferenceProcessor(
             features_config={},  # Empty dict since we're not using features
             window_days=30,     # Default window of 30 days
@@ -22,14 +21,6 @@ class AppDataFrame:
     def format_dataframe(self, df: pd.DataFrame, window_days: int = 30, reference_date: datetime = None) -> pd.DataFrame:
         """
         Format the dataframe for display in the table
-        
-        Args:
-            df: DataFrame to format
-            window_days: Number of days to include in sliding window
-            reference_date: Reference date for the window (default: today)
-            
-        Returns:
-            Formatted DataFrame
         """
         df = df.copy()
         
@@ -99,24 +90,26 @@ class AppDataFrame:
         formatted_data = self.format_dataframe(raw_data)
         columns = [{"name": col, "id": col} for col in formatted_data.columns]
 
-        # Build the table
+        # Build the table with updated styling
         return html.Div([
             dash_table.DataTable(
                 id='session-table',
                 data = formatted_data.to_dict('records'),
                 columns = columns,
-                page_size = 15,
+                page_size = 25,
+                fixed_rows={'headers': True},
                 style_table = {
-                    'height': '800px',
                     'overflowY': 'auto',
-                    'backgroundColor': 'white'
+                    'backgroundColor': 'white',
+                    'height': 'calc(100vh - 250px)',  # Slightly less height to ensure it fits
+                    'minHeight': '400px'  # Add minimum height
                 },
                 style_cell = {
                     'textAlign': 'left',
-                    'padding': '16px',
+                    'padding': '12px',  # Reduced padding for more compact rows
                     'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
                     'fontSize': '14px',
-                    'height': '56px',
+                    'height': 'auto',  # Auto-adjust height based on content
                     'minWidth': '100px',
                     'backgroundColor': 'white',
                     'border': 'none'
@@ -126,6 +119,9 @@ class AppDataFrame:
                     'fontWeight': '600',
                     'border': 'none',
                     'borderBottom': '1px solid #e0e0e0',
+                    'position': 'sticky',  # Make header sticky
+                    'top': 0,
+                    'zIndex': 999
                 },
                 style_data_conditional = [
                     {
@@ -134,4 +130,4 @@ class AppDataFrame:
                     }
                 ]
             )
-        ])
+        ], className="data-table-container")

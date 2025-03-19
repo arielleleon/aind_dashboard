@@ -61,7 +61,7 @@ class AppFilter:
                         clearable=False,
                         className="filter-dropdown"
                     )
-                ], width=6, className="mb-3"),
+                ], width=6, className="mb-2"),
 
                 # Stage filter (dropdown)
                 dbc.Col([
@@ -73,7 +73,7 @@ class AppFilter:
                         clearable=True,
                         className="filter-dropdown"
                     )
-                ], width=6, className="mb-3"),
+                ], width=6, className="mb-2"),
                 
                 # Curriculum filter (dropdown)
                 dbc.Col([
@@ -85,7 +85,7 @@ class AppFilter:
                         clearable=True,
                         className="filter-dropdown"
                     )
-                ], width=6, className="mb-3"),
+                ], width=6, className="mb-2"),
                 
                 # Rig filter (dropdown)
                 dbc.Col([
@@ -97,7 +97,7 @@ class AppFilter:
                         clearable=True,
                         className="filter-dropdown"
                     )
-                ], width=6, className="mb-3"),
+                ], width=6, className="mb-2"),
                 
                 # Trainer filter (dropdown)
                 dbc.Col([
@@ -109,7 +109,7 @@ class AppFilter:
                         clearable=True,
                         className="filter-dropdown"
                     )
-                ], width=6, className="mb-3"),
+                ], width=6, className="mb-2"),
                 
                 # PI filter (dropdown)
                 dbc.Col([
@@ -121,6 +121,6 @@ class AppFilter:
                         clearable=True,
                         className="filter-dropdown"
                     )
-                ], width=6, className="mb-3")
+                ], width=6, className="mb-2")
             ])
-        ], className="filter-container")
+        ], className="filter-container mb-3")
