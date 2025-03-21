@@ -1,5 +1,6 @@
 from .app_data_load import AppLoadData
-from .app_analysis import ReferenceProcessor, QuantileAnalyzer
+from .app_analysis import ReferenceProcessor, QuantileAnalyzer, ThresholdAnalyzer
+from typing import Dict
 
 class AppUtils:
     """
@@ -114,7 +115,7 @@ class AppUtils:
         
         return self.quantile_analyzer.get_subject_history(subject_id)
     
-    def calculate_overall_percentiles(self, subject_ids = None, feature_weights = None):
+    def calculate_overall_percentile(self, subject_ids = None, feature_weights = None):
         """
         Calculate overall percentile scores for subjects
 
@@ -128,7 +129,8 @@ class AppUtils:
         if self.quantile_analyzer is None:
             raise ValueError("Quantile analyzer not initialized. Process data first.")
         
-        return self.quantile_analyzer.calculate_overall_percentiles(
+        return self.quantile_analyzer.calculate_overall_percentile(
             subject_ids = subject_ids,
             feature_weights = feature_weights
         )
+
