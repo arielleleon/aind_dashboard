@@ -16,5 +16,11 @@ __pycache__/
 # Virtual environment
 venv/
 
-# Testing notebooks
+# Testing
 test.ipynb
+
+# Data
+data/
+
+# Results
+results/
