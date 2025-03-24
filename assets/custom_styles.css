@@ -1,0 +1,15 @@
+/* DataTable height fixes */
+.dash-spreadsheet {
+    max-height: none !important;
+    height: 100% !important;
+}
+.dash-spreadsheet-container {
+    max-height: none !important;
+    height: 100% !important;
+}
+.dash-spreadsheet-inner table {
+    height: auto !important;
+}
+.dash-spreadsheet-inner tr:empty {
+    display: none !important;
+}

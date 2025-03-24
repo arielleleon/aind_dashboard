@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from app_utils import AppUtils
 from app_utils.app_analysis.reference_processor import ReferenceProcessor
+from dash import callback_context, Input, Output, clientside_callback
 
 class AppDataFrame:
     def __init__(self):
@@ -42,13 +43,6 @@ class AppDataFrame:
             'rig',
             'trainer',
             'PI',
-            'current_stage_actual',
-            'task',
-            'session_run_time',
-            'total_trials',
-            'finished_trials',
-            'finished_rate',
-            'ignore_rate',
             'water_in_session_foraging',
             'water_in_session_manual',
             'water_in_session_total',
@@ -66,7 +60,14 @@ class AppDataFrame:
             'autowater_collected',
             'autowater_ignored',
             'water_day_total_last_session',
-            'water_after_session_last_session'
+            'water_after_session_last_session',
+            'current_stage_actual',
+            'task',
+            'session_run_time',
+            'total_trials',
+            'finished_trials',
+            'finished_rate',
+            'ignore_rate',
         ]
 
         # Filter columns to include only those in the defined order
@@ -88,7 +89,49 @@ class AppDataFrame:
         # Get the data and apply formatting
         raw_data = self.data_loader.get_data()
         formatted_data = self.format_dataframe(raw_data)
-        columns = [{"name": col, "id": col} for col in formatted_data.columns]
+        
+        # Improve column header display
+        formatted_column_names = {
+            'subject_id': 'Subject ID',
+            'session_date': 'Date',
+            'session': 'Session',
+            'rig': 'Rig',
+            'trainer': 'Trainer',
+            'PI': 'PI',
+            'current_stage_actual': 'Stage',
+            'task': 'Task',
+            'session_run_time': 'Run Time',
+            'total_trials': 'Total Trials',
+            'finished_trials': 'Finished Trials',
+            'finished_rate': 'Finish Rate',
+            'ignore_rate': 'Ignore Rate',
+            'water_in_session_foraging': 'Water In-Session\n(Foraging)',
+            'water_in_session_manual': 'Water In-Session\n(Manual)',
+            'water_in_session_total': 'Water In-Session\n(Total)',
+            'water_after_session': 'Water After\nSession',
+            'water_day_total': 'Water Day\nTotal',
+            'base_weight': 'Base Weight',
+            'target_weight': 'Target Weight',
+            'target_weight_ratio': 'Target Weight\nRatio',
+            'weight_after': 'Weight After',
+            'weight_after_ratio': 'Weight After\nRatio',
+            'total_trials_with_autowater': 'Total Trials\n(Autowater)',
+            'finished_trials_with_autowater': 'Finished Trials\n(Autowater)',
+            'finished_rate_with_autowater': 'Finish Rate\n(Autowater)',
+            'ignore_rate_with_autowater': 'Ignore Rate\n(Autowater)',
+            'autowater_collected': 'Autowater\nCollected',
+            'autowater_ignored': 'Autowater\nIgnored',
+            'water_day_total_last_session': 'Water Day Total\n(Last Session)',
+            'water_after_session_last_session': 'Water After\n(Last Session)'
+        }
+
+
+        # Create columns with formatted names and widths
+        columns = [
+            {"name": formatted_column_names.get(col, col.replace('_', ' ').title()), 
+             "id": col} 
+            for col in formatted_data.columns
+        ]
 
         # Build the table with updated styling
         return html.Div([
@@ -101,15 +144,15 @@ class AppDataFrame:
                 style_table = {
                     'overflowY': 'auto',
                     'backgroundColor': 'white',
-                    'height': 'calc(100vh - 250px)',  # Slightly less height to ensure it fits
-                    'minHeight': '400px'  # Add minimum height
+                    'height': 'calc(100vh - 300px)',
+                    'minHeight': '500px'
                 },
                 style_cell = {
                     'textAlign': 'left',
-                    'padding': '12px',  # Reduced padding for more compact rows
+                    'padding': '12px',
                     'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
                     'fontSize': '14px',
-                    'height': 'auto',  # Auto-adjust height based on content
+                    'height': 'auto',
                     'minWidth': '100px',
                     'backgroundColor': 'white',
                     'border': 'none'
@@ -119,9 +162,14 @@ class AppDataFrame:
                     'fontWeight': '600',
                     'border': 'none',
                     'borderBottom': '1px solid #e0e0e0',
-                    'position': 'sticky',  # Make header sticky
+                    'position': 'sticky',
                     'top': 0,
-                    'zIndex': 999
+                    'zIndex': 999,
+                    'height': 'auto',
+                    'whiteSpace': 'normal',
+                    'textAlign': 'center',  
+                    'padding': '10px 5px',  
+                    'lineHeight': '15px'     
                 },
                 style_data_conditional = [
                     {

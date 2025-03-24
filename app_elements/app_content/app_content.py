@@ -10,20 +10,17 @@ class AppContent:
         Build app content with data table and plot side by side
         """
         return html.Div([
-            # Layout with filter in left column only
             dbc.Row([
-                # Left column for filter and data table
                 dbc.Col([
-                    # Add filter component at top of left column
-                    AppFilter().build(),
-                    
-                    # Data table below the filter
-                    AppDataFrame().build()
+                    html.Div([
+                        AppFilter().build(),
+                        html.Div([
+                            AppDataFrame().build()
+                        ], style={"flex": "1", "overflow": "auto"})
+                    ], style={"display": "flex", "flexDirection": "column", "height": "100vh"})
                 ], width=6, className="content-column"),
-                
-                # Right column for plot content
                 dbc.Col([
                     AppPlotContent().build()
                 ], width=6, className="content-column")
-            ], className="h-100")
+            ], className="g-0")
         ], className="content-wrapper")
