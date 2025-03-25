@@ -90,6 +90,9 @@ class AppDataFrame:
         raw_data = self.data_loader.get_data()
         formatted_data = self.format_dataframe(raw_data)
         
+        # Identify float columns for formatting
+        float_columns = [col for col in formatted_data.columns if formatted_data[col].dtype == 'float64']
+        
         # Improve column header display
         formatted_column_names = {
             'subject_id': 'Subject ID',
@@ -125,13 +128,23 @@ class AppDataFrame:
             'water_after_session_last_session': 'Water After\n(Last Session)'
         }
 
-
-        # Create columns with formatted names and widths
-        columns = [
-            {"name": formatted_column_names.get(col, col.replace('_', ' ').title()), 
-             "id": col} 
-            for col in formatted_data.columns
-        ]
+        # Create columns with formatted names and custom numeric formatting
+        columns = []
+        for col in formatted_data.columns:
+            column_def = {
+                "name": formatted_column_names.get(col, col.replace('_', ' ').title()),
+                "id": col
+            }
+            
+            # Add specific formatting for float columns
+            if col in float_columns:
+                column_def['type'] = 'numeric'
+                column_def['format'] = {
+                    # This formats with up to 5 decimal places without forcing trailing zeros
+                    "specifier": ".5~g"  # The ~ indicates precision, g removes trailing zeros
+                }
+            
+            columns.append(column_def)
 
         # Build the table with updated styling
         return html.Div([
@@ -139,10 +152,11 @@ class AppDataFrame:
                 id='session-table',
                 data = formatted_data.to_dict('records'),
                 columns = columns,
-                page_size = 25,
+                page_size = 18,
                 fixed_rows={'headers': True},
                 style_table = {
                     'overflowY': 'auto',
+                    'overflowX': 'auto',
                     'backgroundColor': 'white',
                     'height': 'calc(100vh - 300px)',
                     'minHeight': '500px'
@@ -175,6 +189,10 @@ class AppDataFrame:
                     {
                         'if': {'row_index': 'odd'},
                         'backgroundColor': '#f9f9f9'
+                    },
+                    {
+                        'if': {'column_id': 'subject_id'},
+                        'fontWeight': 'bold'
                     }
                 ]
             )
