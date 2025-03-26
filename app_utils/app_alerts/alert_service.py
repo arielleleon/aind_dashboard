@@ -127,11 +127,11 @@ class AlertService:
     
     def calculate_threshold_alerts(self, subject_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         """
-        Calculate threshold alerts for given subjects
-
+        Calculate threshold alerts for given subjects based on threshold violations
+        
         Parameters:
             subject_ids (Optional[List[str]]): List of subject IDs to calculate alerts for
-
+        
         Returns:
             Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their alerts
         """
@@ -139,105 +139,173 @@ class AlertService:
         if not self._validate_analyzers():
             raise ValueError("ThresholdAnalyzer not available. Initialize with AppUtils instance.")
         
-        # Get threshold crossing data from analyzer
-        threshold_data = self.app_utils.get_threshold_crossing()
-
-        # If empty, return empty dictionary
-        if threshold_data.empty:
-            return {}
+        # Check if the app_utils has the new violation methods
+        has_new_methods = (hasattr(self.app_utils, 'get_threshold_violations') and 
+                           hasattr(self.app_utils, 'get_subjects_with_violations') and
+                           hasattr(self.app_utils, 'get_violation_summary'))
         
-        # Get subject summary for aggregate statistics
-        subject_summary = self.app_utils.get_subject_threshold_summary()
-
-        # Filter to specified subjects if provided
-        if subject_ids is not None:
-            threshold_data = threshold_data[threshold_data['subject_id'].isin(subject_ids)]
-            subject_summary = subject_summary[subject_summary['subject_id'].isin(subject_ids)]
-
-        # Get most recent session for each subject
-        latest_sessions = threshold_data.sort_values('session_date').groupby('subject_id').last()
-
-        # Get feature threshold columns (bools)
-        feature_cols = [col for col in threshold_data.columns
-                        if col not in ['subject_id', 'session_date'] and
-                        pd.api.types.is_bool_dtype(threshold_data[col])]
-        
-        # Initialize alerts
-        alerts = {}
-
-        # Process each subject
-        for subject_id, subject_row in latest_sessions.iterrows():
-            subject_alerts = {}
-
-            # Get subject's summary row
-            if subject_id in subject_summary['subject_id'].values:
-                subject_sum_row = subject_summary[subject_summary['subject_id'] == subject_id].iloc[0]
+        # Use new violation logic if available
+        if has_new_methods:
+            # Get subjects with violations
+            if subject_ids is None:
+                subjects_with_violations = self.app_utils.get_subjects_with_violations()
             else:
-                subject_sum_row = None
-
-            # Process each feature's threshold status
-            for col in feature_cols:
-                # Extract feature name from column name "{feature_name}_{condition}"
-                parts = col.split('_')
-                if len(parts) >= 3:
-                    feature = '_'.join(parts[:-2]) # Everything except last two parts
-                    condition = '_'.join(parts[-2:]) # Last two parts (ie. above_lower)
+                # Filter to only requested subjects that have violations
+                all_violations = self.app_utils.get_subjects_with_violations()
+                subjects_with_violations = [sid for sid in subject_ids if sid in all_violations]
+            
+            # Initialize alerts dictionary
+            alerts = {}
+            
+            # Process each subject with violations
+            for subject_id in subjects_with_violations:
+                # Get detailed violation summary
+                violation_summary = self.app_utils.get_violation_summary(subject_id)
+                
+                # Extract violations into the format expected by AlertService
+                subject_alerts = {}
+                
+                for feature, details in violation_summary.get('violations', {}).items():
+                    feature_alerts = {}
+                    
+                    for violation_type, stats in details.items():
+                        # Create alert entry
+                        feature_alerts[violation_type] = {
+                            'status': True,
+                            'session_date': stats.get('first_date', None),
+                            'value': None,  # We don't have the actual value here
+                            'crossing_count': stats.get('count', 0),
+                            'crossing_percent': stats.get('percent', 0),
+                            'first_crossing_date': stats.get('first_date', None)
+                        }
+                    
+                    # Only add if there are alerts for this feature
+                    if feature_alerts:
+                        subject_alerts[feature] = feature_alerts
+                
+                # Add subject to alerts if they have any alerts
+                if subject_alerts:
+                    alerts[subject_id] = subject_alerts
+            
+            # Update cache
+            self._threshold_alerts = alerts
+            self._last_update_time = pd.Timestamp.now()
+            
+            return alerts
+        
+        # Fall back to original logic if new methods aren't available
+        else:
+            # Get threshold crossing data from analyzer (original method)
+            threshold_data = self.app_utils.get_threshold_crossings()
+            
+            # If empty, return empty dictionary
+            if threshold_data.empty:
+                return {}
+            
+            # Get subject summary for aggregate statistics
+            subject_summary = self.app_utils.get_subject_threshold_summary()
+            
+            # Filter to specified subjects if provided
+            if subject_ids is not None:
+                threshold_data = threshold_data[threshold_data['subject_id'].isin(subject_ids)]
+                subject_summary = subject_summary[subject_summary['subject_id'].isin(subject_ids)]
+            
+            # Get most recent session for each subject
+            latest_sessions = threshold_data.sort_values('session_date').groupby('subject_id').last()
+            
+            # Get violation columns (focus on actual threshold violations)
+            feature_cols = [col for col in threshold_data.columns
+                            if col not in ['subject_id', 'session_date'] and
+                            pd.api.types.is_bool_dtype(threshold_data[col]) and
+                            any(x in col for x in ['below_lower', 'above_upper', 'outside_range'])]
+            
+            # If no violation columns, try the original compliance columns
+            if not feature_cols:
+                feature_cols = [col for col in threshold_data.columns
+                               if col not in ['subject_id', 'session_date'] and
+                               pd.api.types.is_bool_dtype(threshold_data[col])]
+            
+            # Initialize alerts
+            alerts = {}
+            
+            # Process each subject
+            for subject_id, subject_row in latest_sessions.iterrows():
+                subject_alerts = {}
+                
+                # Get subject's summary row
+                if subject_id in subject_summary['subject_id'].values:
+                    subject_sum_row = subject_summary[subject_summary['subject_id'] == subject_id].iloc[0]
                 else:
-                    # Use simpler column names
-                    feature = parts[0]
-                    condition = '_'.join(parts[1:])
-
-                # Only create an alert if the threshold is crossed
-                if subject_row[col]:
-                    # Get raw feature value
-                    actual_value = None
-                    if feature in threshold_data.columns:
-                        actual_value = threshold_data[threshold_data['subject_id'] == subject_id][feature].iloc[-1]
-
-                    # Get crossing stats
-                    crossing_count = None
-                    crossing_percent = None
-                    first_crossing_date = None
-
-                    if subject_sum_row is not None:
-                        count_col = f"{col}_count"
-                        percent_col = f"{col}_percent"
-                        date_col = f"{col}_first_date"
-
-                        if count_col in subject_sum_row:
-                            crossing_count = subject_sum_row[count_col]
-                        if percent_col in subject_sum_row:
-                            crossing_percent = subject_sum_row[percent_col]
-                        if date_col in subject_sum_row:
-                            first_crossing_date = subject_sum_row[date_col]
-
-                    # Create alert
-                    if feature not in subject_alerts:
-                        subject_alerts[feature] = {}
-
-                    # Add this condition to the feature alerts
-                    subject_alerts[feature][condition] = {
-                        'status': True,
-                        'session_date': subject_row['session_date'],
-                        'value': actual_value,
-                        'crossing_count': crossing_count,
-                        'crossing_percent': crossing_percent,
-                        'first_crossing_date': first_crossing_date
-                    }
-
-            # Only add subjects that have alerts
-            if subject_alerts:
-                alerts[subject_id] = subject_alerts
-
-        # Update cache
-        self._threshold_alerts = alerts
-        self._last_update_time = pd.Timestamp.now()
-
-        return alerts
+                    subject_sum_row = None
+                
+                # Process each feature's threshold status
+                for col in feature_cols:
+                    # Extract feature name from column name
+                    parts = col.split('_')
+                    if len(parts) >= 3:
+                        feature = '_'.join(parts[:-2])  # Everything except last two parts
+                        condition = '_'.join(parts[-2:])  # Last two parts
+                    else:
+                        # Use simpler column names
+                        feature = parts[0]
+                        condition = '_'.join(parts[1:])
+                    
+                    # Only create an alert if the threshold is violated (column is True for violation columns)
+                    is_violation_col = any(x in col for x in ['below_lower', 'above_upper', 'outside_range'])
+                    
+                    # For violation columns, True means violated; for compliance columns, False means violated
+                    threshold_violated = subject_row[col] if is_violation_col else not subject_row[col]
+                    
+                    if threshold_violated:
+                        # Get raw feature value
+                        actual_value = None
+                        if feature in threshold_data.columns:
+                            actual_value = threshold_data[threshold_data['subject_id'] == subject_id][feature].iloc[-1]
+                        
+                        # Get crossing stats
+                        crossing_count = None
+                        crossing_percent = None
+                        first_crossing_date = None
+                        
+                        if subject_sum_row is not None:
+                            count_col = f"{col}_count"
+                            percent_col = f"{col}_percent"
+                            date_col = f"{col}_first_date"
+                            
+                            if count_col in subject_sum_row:
+                                crossing_count = subject_sum_row[count_col]
+                            if percent_col in subject_sum_row:
+                                crossing_percent = subject_sum_row[percent_col]
+                            if date_col in subject_sum_row:
+                                first_crossing_date = subject_sum_row[date_col]
+                        
+                        # Create alert
+                        if feature not in subject_alerts:
+                            subject_alerts[feature] = {}
+                        
+                        # Add this condition to the feature alerts
+                        subject_alerts[feature][condition] = {
+                            'status': True,
+                            'session_date': subject_row['session_date'],
+                            'value': actual_value,
+                            'crossing_count': crossing_count,
+                            'crossing_percent': crossing_percent,
+                            'first_crossing_date': first_crossing_date
+                        }
+                
+                # Only add subjects that have alerts
+                if subject_alerts:
+                    alerts[subject_id] = subject_alerts
+            
+            # Update cache
+            self._threshold_alerts = alerts
+            self._last_update_time = pd.Timestamp.now()
+            
+            return alerts
 
     def get_threshold_alerts(self, subject_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         """
-        Get threshold alerts for given subjects
+        Get threshold alerts for given subjects with improved cache validation
 
         Parameters:
             subject_ids (Optional[List[str]]): List of subject IDs to get alerts for
@@ -245,8 +313,16 @@ class AlertService:
         Returns:
             Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their alerts
         """
-        # Calculate alerts if not already calculated
-        if not self._threshold_alerts or subject_ids is None:
+        # Always recalculate if:
+        # 1. We don't have cached alerts, or
+        # 2. No specific subject_ids were provided (full calculation), or
+        # 3. The threshold analyzer has been updated since our last calculation
+        threshold_analyzer_updated = (hasattr(self.app_utils, 'threshold_analyzer') and 
+                                    hasattr(self.app_utils.threshold_analyzer, '_last_update_time') and
+                                    self._last_update_time is not None and
+                                    self.app_utils.threshold_analyzer._last_update_time > self._last_update_time)
+        
+        if not self._threshold_alerts or subject_ids is None or threshold_analyzer_updated:
             self.calculate_threshold_alerts(subject_ids)
 
         # If subject_ids specified, filter to those subjects
@@ -683,26 +759,37 @@ class AlertService:
     
     def has_critical_alerts(self, subject_id: str) -> bool:
         """
-        Check if a subject has critical alerts (threshold or quantile)
-
+        Check if a subject has critical alerts (threshold violations or poor quantile performance)
+        
         Parameters:
             subject_id (str): The subject ID to check for critical alerts
-
+        
         Returns:
             bool: True if the subject has critical alerts, False otherwise
         """
-        # Get threshold alert (any threshold alert is critical)
-        threshold_alerts = self.get_threshold_alerts([subject_id])
-        has_threshold = subject_id in threshold_alerts and bool(threshold_alerts[subject_id])
-
+        # Check if we have the new violation methods
+        has_new_methods = (hasattr(self.app_utils, 'get_subjects_with_violations') and
+                           hasattr(self.app_utils, 'get_violation_summary'))
+        
+        # Check for threshold violations (this is more precise than the old method)
+        has_threshold_violation = False
+        if has_new_methods:
+            # Check if subject is in the list of subjects with violations
+            all_violations = self.app_utils.get_subjects_with_violations()
+            has_threshold_violation = subject_id in all_violations
+        else:
+            # Fall back to the old method
+            threshold_alerts = self.get_threshold_alerts([subject_id])
+            has_threshold_violation = subject_id in threshold_alerts and bool(threshold_alerts[subject_id])
+        
         # Check for extreme quantile alerts (SB or B)
         quantile_alerts = self.get_quantile_alerts([subject_id])
-
+        
         has_critical_quantile = False
         if subject_id in quantile_alerts:
             subject_quantiles = quantile_alerts[subject_id]
             current_strata = subject_quantiles.get('current', {})
-
+            
             # Check each strata and feature for bad categories
             for strata, features in current_strata.items():
                 for feature, details in features.items():
@@ -713,8 +800,8 @@ class AlertService:
                 # Break if critical quantile found
                 if has_critical_quantile:
                     break
-
-        return has_threshold or has_critical_quantile
+        
+        return has_threshold_violation or has_critical_quantile
     
     def get_alert_counts(self) -> Dict[str, Any]:
         """
@@ -766,5 +853,36 @@ class AlertService:
         
         return results
         
+    def force_reset(self) -> None:
+        """
+        Force reset all cached alert data
+        
+        This is useful when the underlying data has changed and all alerts need to be recalculated.
+        """
+        self._threshold_alerts = {}
+        self._quantile_alerts = {}
+        self._last_update_time = None
+        
+    def validate_threshold_alerts(self) -> bool:
+        """
+        Validate that threshold alerts match actual threshold violations
+        
+        Returns:
+            bool: True if alerts match violations, False otherwise
+        """
+        # Check if the new violation methods are available
+        if not hasattr(self.app_utils, 'get_subjects_with_violations'):
+            print("Cannot validate: get_subjects_with_violations method not available.")
+            return False
+        
+        # Get subjects with violations
+        subjects_with_violations = set(self.app_utils.get_subjects_with_violations())
+        
+        # Get subjects with threshold alerts
+        threshold_alerts = self.get_threshold_alerts()
+        subjects_with_alerts = set(threshold_alerts.keys())
+        
+        # Compare
+        return subjects_with_alerts == subjects_with_violations
         
     

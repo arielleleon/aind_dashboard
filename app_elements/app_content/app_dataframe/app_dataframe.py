@@ -9,6 +9,25 @@ class AppDataFrame:
     def __init__(self):
         # Initialize data loader through AppUtils
         app_utils = AppUtils()
+
+        # Feature configuration for alerts
+        features_config = {
+            'finished_trials': False,  # Higher is better
+            'ignore_rate': True,     # Lower is better
+            'total_trials': False,   # Higher is better
+            'foraging_performance': False,   # Higher is better
+            'abs(bias_naive)': True  # Lower is better 
+        }
+        app_utils.initialize_reference_processor(features_config=features_config)
+
+        threshold_config = {
+            'water_day_total': {
+                'upper': 3.5
+            }
+        }
+        app_utils.initialize_threshold_analyzer(feature_thresholds=threshold_config)
+
+
         self.data_loader = app_utils.data_loader
         
         # Create reference processor with minimal default settings
@@ -35,7 +54,37 @@ class AppDataFrame:
         window_df = window_df.sort_values('session_date', ascending=False)
         window_df = window_df.drop_duplicates(subset=['subject_id'], keep='first')
 
-        # Define column order
+        # Add alert columns with default values
+        window_df['has_threshold_alert'] = False
+        window_df['percentile_category'] = 'N'
+
+        # Get alert information
+        try:
+            app_utils = AppUtils()
+            if hasattr(app_utils, 'alert_service') and app_utils.alert_service is not None:
+                if not hasattr(app_utils.alert_service, 'app_utils') or app_utils.alert_service.app_utils is None:
+                    app_utils.alert_service.set_app_utils(app_utils)
+
+                # Get subject IDs from the window dataframe
+                subject_ids = window_df['subject_id'].tolist()
+
+                # Get alerts for the subjects
+                alerts = app_utils.get_alerts(subject_ids)
+
+                # Add alert columns to dataframe
+                for i, row in window_df.iterrows():
+                    sid = row['subject_id']
+                    if sid in alerts:
+                        # Check for threshold alerts
+                        window_df.at[i, 'has_threshold_alert'] = bool(alerts.get(sid, {}).get('threshold', {}))
+
+                        # Get percentile category
+                        worst_category = self._get_worst_percentile_category(alerts.get(sid, {}).get('percentile', {}))
+                        window_df.at[i, 'percentile_category'] = worst_category
+        except Exception as e:
+            print(f"Error adding alerts to dataframe: {str(e)}")
+
+        # Define column order 
         column_order = [
             'subject_id',
             'session_date',
@@ -81,7 +130,32 @@ class AppDataFrame:
         window_df = window_df[ordered_columns]
 
         return window_df
+    
+    def _get_worst_percentile_category(self, quantile_alerts):
+        """ Helper function to get the worst percentile category from quantile alerts"""
+        if not quantile_alerts or 'current' not in quantile_alerts:
+            return 'N' # Default to normal
 
+        # Define priority order
+        priority_order = ['SB', 'B', 'N', 'G', 'SG']
+
+        # Check all current strata features for worst category
+        for strata_data in quantile_alerts.get('current', {}).values():
+            for feature_data in strata_data.values():
+                category = feature_data.get('category', 'N')
+                # Return if this is the worst category
+                if category == 'SB':
+                    return 'SB'
+                
+        # If no SB found, go up in priority order
+        for priority in priority_order:
+            for strata_data in quantile_alerts.get('current', {}).values():
+                for feature_data in strata_data.values():
+                    if feature_data.get('category', 'N') == priority:
+                        return priority
+                    
+        return 'N' # Default to normal if no category found
+        
     def build(self):
         """
         Build data table component
@@ -140,11 +214,51 @@ class AppDataFrame:
             if col in float_columns:
                 column_def['type'] = 'numeric'
                 column_def['format'] = {
-                    # This formats with up to 5 decimal places without forcing trailing zeros
-                    "specifier": ".5~g"  # The ~ indicates precision, g removes trailing zeros
+                    "specifier": ".5~g"
                 }
+
+            # Hide alert columns
+            #if col in ['has_threshold_alert', 'percentile_category']:
+            #    column_def['hidden'] = True
             
             columns.append(column_def)
+
+        # Define conditional styles for alerts
+        conditional_styles = [
+            # Default row styling
+            {
+                'if': {'row_index': 'odd'},
+                'backgroundColor': '#f9f9f9'
+            },
+            {
+                'if': {'column_id': 'subject_id'},
+                'fontWeight': 'bold'
+            },
+            # Percentile category styling
+            {
+                'if': {'filter_query': '{percentile_category} eq "SB"'},
+                'backgroundColor': 'rgba(251, 133, 0, 0.3)' # Orange 30% opacity
+            },
+            {
+                'if': {'filter_query': '{percentile_category} eq "B"'},
+                'backgroundColor': 'rgba(255, 165, 0, 0.15)' # Orange 15% opacity
+            },
+            {
+                'if': {'filter_query': '{percentile_category} eq "G"'},
+                'backgroundColor': 'rgba(0, 48, 87, 0.15)' # Blue 15% opacity
+            },
+            {
+                'if': {'filter_query': '{percentile_category} eq "SG"'},
+                'backgroundColor': 'rgba(0, 48, 87, 0.3)' # Blue 30% opacity
+            },
+
+            # Threshold alert styling
+            {
+                'if': {'filter_query': '{has_threshold_alert} eq True'},
+                'border-left': '4px solid #fb8500' # Orange dot left side
+            }
+                
+        ]
 
         # Build the table with updated styling
         return html.Div([
@@ -152,7 +266,7 @@ class AppDataFrame:
                 id='session-table',
                 data = formatted_data.to_dict('records'),
                 columns = columns,
-                page_size = 18,
+                page_size = 16,
                 fixed_rows={'headers': True},
                 style_table = {
                     'overflowY': 'auto',
@@ -185,15 +299,6 @@ class AppDataFrame:
                     'padding': '10px 5px',  
                     'lineHeight': '15px'     
                 },
-                style_data_conditional = [
-                    {
-                        'if': {'row_index': 'odd'},
-                        'backgroundColor': '#f9f9f9'
-                    },
-                    {
-                        'if': {'column_id': 'subject_id'},
-                        'fontWeight': 'bold'
-                    }
-                ]
+                style_data_conditional = conditional_styles
             )
         ], className="data-table-container")

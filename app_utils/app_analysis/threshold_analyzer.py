@@ -65,25 +65,45 @@ class ThresholdAnalyzer:
         # Create a results dataframe with subject_id and session_date
         results = self.session_data[['subject_id', 'session_date']].copy()
         
+        # Add the actual feature values to the results for reference
+        for feature in self.feature_thresholds.keys():
+            if feature in self.session_data.columns:
+                results[feature] = self.session_data[feature]
+        
         # Apply threshold logic for each feature
         for feature, thresholds in self.feature_thresholds.items():
             # Get feature values
             feature_values = self.session_data[feature]
             
-            # Lower bound check (default to 0 if not specified)
-            lower_bound = thresholds.get('lower', 0)
+            # Get bounds
+            lower_bound = thresholds.get('lower', None)
+            upper_bound = thresholds.get('upper', None)
+            
+            # Create violation flags (True means threshold was violated)
+            if lower_bound is not None:
+                results[f"{feature}_below_lower"] = feature_values < lower_bound
+            
+            if upper_bound is not None:
+                results[f"{feature}_above_upper"] = feature_values > upper_bound
+            
+            # Combined violation flag (either bound was violated)
+            if lower_bound is not None and upper_bound is not None:
+                results[f"{feature}_outside_range"] = (
+                    (feature_values < lower_bound) | (feature_values > upper_bound)
+                )
+            
+            # Also keep the compliance flags for compatibility (False means violation)
             if lower_bound is not None:
                 results[f"{feature}_above_lower"] = feature_values >= lower_bound
             
-            # Upper bound check (if specified)
-            upper_bound = thresholds.get('upper', None)
             if upper_bound is not None:
                 results[f"{feature}_below_upper"] = feature_values <= upper_bound
-                
-            # Combined check (if both bounds specified)
+            
             if lower_bound is not None and upper_bound is not None:
-                results[f"{feature}_within_range"] = (feature_values >= lower_bound) & (feature_values <= upper_bound)
-                
+                results[f"{feature}_within_range"] = (
+                    (feature_values >= lower_bound) & (feature_values <= upper_bound)
+                )
+            
         return results
     
     def get_threshold_crossings(self, 
@@ -138,10 +158,17 @@ class ThresholdAnalyzer:
         # Get threshold data filtered by subjects if specified
         threshold_data = self.get_threshold_crossings(subject_ids=subject_ids)
         
-        # Get feature crossing columns (all boolean columns)
-        crossing_cols = [col for col in threshold_data.columns 
+        # Get violation columns (all boolean columns that indicate violations)
+        violation_cols = [col for col in threshold_data.columns 
                         if col not in ['subject_id', 'session_date'] and 
-                        pd.api.types.is_bool_dtype(threshold_data[col])]
+                        pd.api.types.is_bool_dtype(threshold_data[col]) and
+                        any(x in col for x in ['below_lower', 'above_upper', 'outside_range'])]
+        
+        # Get compliance columns for backward compatibility
+        compliance_cols = [col for col in threshold_data.columns 
+                         if col not in ['subject_id', 'session_date'] and 
+                         pd.api.types.is_bool_dtype(threshold_data[col]) and
+                         any(x in col for x in ['above_lower', 'below_upper', 'within_range'])]
         
         # Initialize results storage
         summary_data = []
@@ -153,37 +180,57 @@ class ThresholdAnalyzer:
             # Count total sessions
             subject_summary['total_sessions'] = len(subject_df)
             
-            # Calculate statistics for each threshold check
-            for col in crossing_cols:
-                # Count and percentage of sessions where threshold criteria was met
+            # Calculate statistics for violation columns
+            for col in violation_cols:
+                feature = col.split('_')[0]  # Extract feature name
+                
+                # Count and percentage of sessions where threshold was violated
+                violation_count = subject_df[col].sum()
+                violation_percent = (violation_count / len(subject_df)) * 100 if len(subject_df) > 0 else 0
+                
+                subject_summary[f"{col}_count"] = violation_count
+                subject_summary[f"{col}_percent"] = violation_percent
+                
+                # Flag if any violations occurred
+                subject_summary[f"{feature}_has_violations"] = violation_count > 0
+                
+                # First date violation occurred (if any)
+                if violation_count > 0:
+                    first_violation = subject_df[subject_df[col]]['session_date'].min()
+                    subject_summary[f"{col}_first_date"] = first_violation
+                else:
+                    subject_summary[f"{col}_first_date"] = None
+            
+            # Calculate statistics for compliance columns (for backward compatibility)
+            for col in compliance_cols:
+                # Count and percentage of sessions that met the compliance criteria
                 passed_count = subject_df[col].sum()
                 passed_percent = (passed_count / len(subject_df)) * 100 if len(subject_df) > 0 else 0
                 
                 subject_summary[f"{col}_count"] = passed_count
                 subject_summary[f"{col}_percent"] = passed_percent
-                
-                # First date criteria met (if any)
-                if passed_count > 0:
-                    first_passed = subject_df[subject_df[col]]['session_date'].min()
-                    subject_summary[f"{col}_first_date"] = first_passed
-                else:
-                    subject_summary[f"{col}_first_date"] = None
             
             summary_data.append(subject_summary)
         
         # Convert to DataFrame
         summary_df = pd.DataFrame(summary_data)
         
+        # Add a total violations column
+        if violation_cols:
+            violation_count_cols = [col + "_count" for col in violation_cols]
+            if all(col in summary_df.columns for col in violation_count_cols):
+                summary_df['total_violations'] = summary_df[violation_count_cols].sum(axis=1)
+        
         return summary_df
     
-    def add_feature_to_session_data(self, feature_name: str, column_suffix: str = "crossed") -> pd.DataFrame:
+    def add_feature_to_session_data(self, feature_name: str, violation_suffix: str = "violation") -> pd.DataFrame:
         """
-        Add threshold crossing data back to the original session data for a specific feature
+        Add threshold violation data back to the original session data for a specific feature
         
         Parameters:
             feature_name: str
                 Name of the feature to add threshold data for
-            column_suffix: str
+            violation_suffix: str
                 Suffix to add to the feature name for the new column
         
         Returns:
@@ -193,14 +240,64 @@ class ThresholdAnalyzer:
         enhanced_data = self.session_data.copy()
         
         # Get all threshold columns for this feature
-        feature_cols = [col for col in self.threshold_results.columns 
-                      if col.startswith(feature_name) and 
-                      col not in ['subject_id', 'session_date']]
+        violation_cols = [col for col in self.threshold_results.columns 
+                       if col.startswith(feature_name) and 
+                       col not in ['subject_id', 'session_date'] and
+                       any(x in col for x in ['below_lower', 'above_upper', 'outside_range'])]
         
-        # Add each column to the enhanced data
-        for col in feature_cols:
-            enhanced_data[f"{col}_{column_suffix}"] = self.threshold_results[col].values
-            
+        # Add violation columns to the enhanced data
+        for col in violation_cols:
+            enhanced_data[f"{col}_{violation_suffix}"] = self.threshold_results[col].values
+        
+        # Also add a combined violation flag
+        if violation_cols:
+            enhanced_data[f"{feature_name}_any_{violation_suffix}"] = self.threshold_results[violation_cols].any(axis=1)
+        
         return enhanced_data
+    
+    def get_threshold_violations(self, 
+                               subject_ids: Optional[List[str]] = None,
+                               start_date: Optional[Union[str, datetime]] = None,
+                               end_date: Optional[Union[str, datetime]] = None) -> pd.DataFrame:
+        """
+        Get threshold violation data, focusing only on sessions that violate thresholds
+        
+        Parameters:
+            subject_ids: Optional[List[str]]
+                List of subject IDs to include (if None, all subjects included)
+            start_date: Optional[Union[str, datetime]]
+                Start date for filtering (inclusive)
+            end_date: Optional[Union[str, datetime]]
+                End date for filtering (inclusive)
+        
+        Returns:
+            pd.DataFrame: DataFrame with threshold violation results
+        """
+        # Get all threshold data
+        all_data = self.get_threshold_crossings(
+            subject_ids=subject_ids,
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        # Get violation columns
+        violation_cols = [col for col in all_data.columns 
+                        if col not in ['subject_id', 'session_date'] and 
+                        pd.api.types.is_bool_dtype(all_data[col]) and
+                        any(x in col for x in ['below_lower', 'above_upper', 'outside_range'])]
+        
+        if not violation_cols:
+            return pd.DataFrame()  # No violation columns found
+        
+        # Create a mask for sessions with any violations
+        has_violation = all_data[violation_cols].any(axis=1)
+        
+        # Return only sessions with violations
+        violations_df = all_data[has_violation].copy()
+        
+        # Add a column that indicates the total number of thresholds violated in each session
+        violations_df['violation_count'] = violations_df[violation_cols].sum(axis=1)
+        
+        return violations_df
         
         
