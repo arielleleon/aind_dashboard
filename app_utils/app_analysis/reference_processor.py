@@ -19,9 +19,9 @@ class ReferenceProcessor:
     def __init__(
             self,
             features_config: Dict[str, bool],
-            window_days: int = 49,
-            min_sessions: int = 5,
-            min_days: int = 7
+            window_days: int = 90,
+            min_sessions: int = 1,
+            min_days: int = 1
     ):
         self.features_config = features_config
         self.window_days = window_days
@@ -70,11 +70,6 @@ class ReferenceProcessor:
         
         # Get unique subjects after filtering
         subjects_after = set(window_df['subject_id'].unique())
-        
-        # Find subjects that were filtered out
-        filtered_out = subjects_before - subjects_after
-        if filtered_out:
-            print(f"Subjects filtered out during sliding window: {filtered_out}")
 
         return window_df
     

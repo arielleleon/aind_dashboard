@@ -1,36 +1,28 @@
 from dash import html, dash_table
 import pandas as pd
 from datetime import datetime, timedelta
+import traceback
 from app_utils import AppUtils
 from app_utils.app_analysis.reference_processor import ReferenceProcessor
 from dash import callback_context, Input, Output, clientside_callback
 
 class AppDataFrame:
     def __init__(self):
-        # Initialize data loader through AppUtils
-        app_utils = AppUtils()
+        # Initialize app utilities
+        self.app_utils = AppUtils()
 
-        # Feature configuration for alerts
-        features_config = {
+        # Feature configuration for quantile analysis
+        self.features_config = {
             'finished_trials': False,  # Higher is better
             'ignore_rate': True,     # Lower is better
             'total_trials': False,   # Higher is better
             'foraging_performance': False,   # Higher is better
             'abs(bias_naive)': True  # Lower is better 
         }
-        app_utils.initialize_reference_processor(features_config=features_config)
 
-        threshold_config = {
-            'water_day_total': {
-                'upper': 3.5
-            }
-        }
-        app_utils.initialize_threshold_analyzer(feature_thresholds=threshold_config)
-
-
-        self.data_loader = app_utils.data_loader
+        self.data_loader = self.app_utils.data_loader
         
-        # Create reference processor with minimal default settings
+        # Create reference processor with minimal default settings for filtering purposes
         self.reference_processor = ReferenceProcessor(
             features_config={},  # Empty dict since we're not using features
             window_days=30,     # Default window of 30 days
@@ -41,52 +33,91 @@ class AppDataFrame:
     def format_dataframe(self, df: pd.DataFrame, window_days: int = 30, reference_date: datetime = None) -> pd.DataFrame:
         """
         Format the dataframe for display in the table
+
+        1. Filter data to sliding window
+        2. Get most recent sessions for each subject
+        3. Run quantile analysis pipeline on same window
+        4. Match subjects and add alert categories
         """
         df = df.copy()
+        print(f" Starting data formatting with {len(df)} sessions, {window_days} day window")
         
-        # Update window days in the reference processor
+        # Step 1: Update window days in reference processor and apply sliding window filter
         self.reference_processor.window_days = window_days
-        
-        # Apply sliding window filter
         window_df = self.reference_processor.apply_sliding_window(df, reference_date)
-        
-        # Get the most current session for each subject
+        print(f"Applied sliding window: {len(window_df)} sessions")
+
+        # Step 2: Get most current session for each subject in the window
         window_df = window_df.sort_values('session_date', ascending=False)
-        window_df = window_df.drop_duplicates(subset=['subject_id'], keep='first')
+        current_sessions_df = window_df.drop_duplicates(subset=['subject_id'], keep='first')
+        print(f"Got current sessions for {len(current_sessions_df)} subjects")
 
-        # Add alert columns with default values
-        window_df['has_threshold_alert'] = False
-        window_df['percentile_category'] = 'N'
+        # Add percentile category column with default value
+        current_sessions_df['percentile_category'] = 'N'  # Default to Normal
 
-        # Get alert information
-        try:
+        # Step 3: Run quantile analysis pipeline on same window data
+        try: 
+            print(f" Starting quantile analysis pipeline for {len(window_df)} sessions") # DEBUGGING
+
+            # Reset app_utils
             app_utils = AppUtils()
-            if hasattr(app_utils, 'alert_service') and app_utils.alert_service is not None:
-                if not hasattr(app_utils.alert_service, 'app_utils') or app_utils.alert_service.app_utils is None:
-                    app_utils.alert_service.set_app_utils(app_utils)
 
-                # Get subject IDs from the window dataframe
-                subject_ids = window_df['subject_id'].tolist()
+            # Step 3.1: Initialize reference processor with feature congfiguration
+            reference_processor = app_utils.initialize_reference_processor(
+                features_config=self.features_config,
+                window_days = window_days,
+                min_sessions = 3,  # Minimum sessions requirement for eligibility
+                min_days = 4       # Minimum days requirement for eligibility
+            )
+            print(f" Initialized reference processor")
 
-                # Get alerts for the subjects
-                alerts = app_utils.get_alerts(subject_ids)
+            # Step 3.2: Process data through reference pipeline to create strata
+            stratified_data = app_utils.process_reference_data(
+                df = window_df, 
+                reference_date = reference_date,
+                remove_outliers = False
+            )
+            print(f" Created {len(stratified_data)} strata")
 
-                # Add alert columns to dataframe
-                for i, row in window_df.iterrows():
-                    sid = row['subject_id']
-                    if sid in alerts:
-                        # Check for threshold alerts
-                        window_df.at[i, 'has_threshold_alert'] = bool(alerts.get(sid, {}).get('threshold', {}))
+            # Step 3.3: Initialize quantile analyzer with strata
+            quantile_analyzer = app_utils.initialize_quantile_analyzer(stratified_data)
+            print(f" Initialized quantile analyzer")
 
-                        # Get percentile category
-                        worst_category = self._get_worst_percentile_category(alerts.get(sid, {}).get('percentile', {}))
-                        window_df.at[i, 'percentile_category'] = worst_category
+            # Step 3.4: Initialize alert service
+            alert_service = app_utils.initialize_alert_service()
+            print(f" Initialized alert service")
+
+            # Step 3.5: Get subject IDs from current sessions dataframe
+            subject_ids = current_sessions_df['subject_id'].tolist()
+
+            # Step 3.6: Get alerts for the subjects
+            quantile_alerts = app_utils.get_quantile_alerts(subject_ids)
+            print(f"Retrieved quantile alerts for {len(quantile_alerts)} subjects") # DEBUGGING
+
+            # Step 4: Match subjects and update percentile categories in table
+            alert_count = 0
+            for i, row in current_sessions_df.iterrows():
+                subject_id = row['subject_id']
+                if subject_id in quantile_alerts:
+                    # Get worst percentile category for this subject using alert service
+                    worst_category = alert_service.get_worst_percentile_category(quantile_alerts[subject_id])
+                    current_sessions_df.at[i, 'percentile_category'] = worst_category
+                    if worst_category != 'N': # Only count non-normal alerts
+                        alert_count += 1
+
+            print(f"Total alerts found: {alert_count} out of {len(current_sessions_df)} subjects") # DEBUGGING 
+
+            # Inside format_dataframe method, ensure all rows have a value
+            current_sessions_df['percentile_category'] = current_sessions_df['percentile_category'].fillna('N')
+
         except Exception as e:
-            print(f"Error adding alerts to dataframe: {str(e)}")
+            print(f"Error in quantile analysis pipeline: {str(e)}")
+            print(traceback.format_exc())
 
         # Define column order 
         column_order = [
             'subject_id',
+            'percentile_category',
             'session_date',
             'session',
             'rig',
@@ -120,42 +151,18 @@ class AppDataFrame:
         ]
 
         # Filter columns to include only those in the defined order
-        available_columns = [col for col in column_order if col in window_df.columns]
+        available_columns = [col for col in column_order if col in current_sessions_df.columns]
 
         # Add any remaining columns at the end
-        remaining_columns = [col for col in window_df.columns if col not in column_order]
+        remaining_columns = [col for col in current_sessions_df.columns if col not in column_order]
         ordered_columns = available_columns + remaining_columns
 
         # Reorder the columns
-        window_df = window_df[ordered_columns]
+        formatted_df = current_sessions_df[ordered_columns]
 
-        return window_df
+        print(f" Formatted dataframe with {len(formatted_df)} rows and {len(formatted_df.columns)} columns")
+        return formatted_df
     
-    def _get_worst_percentile_category(self, quantile_alerts):
-        """ Helper function to get the worst percentile category from quantile alerts"""
-        if not quantile_alerts or 'current' not in quantile_alerts:
-            return 'N' # Default to normal
-
-        # Define priority order
-        priority_order = ['SB', 'B', 'N', 'G', 'SG']
-
-        # Check all current strata features for worst category
-        for strata_data in quantile_alerts.get('current', {}).values():
-            for feature_data in strata_data.values():
-                category = feature_data.get('category', 'N')
-                # Return if this is the worst category
-                if category == 'SB':
-                    return 'SB'
-                
-        # If no SB found, go up in priority order
-        for priority in priority_order:
-            for strata_data in quantile_alerts.get('current', {}).values():
-                for feature_data in strata_data.values():
-                    if feature_data.get('category', 'N') == priority:
-                        return priority
-                    
-        return 'N' # Default to normal if no category found
-        
     def build(self):
         """
         Build data table component
@@ -170,6 +177,7 @@ class AppDataFrame:
         # Improve column header display
         formatted_column_names = {
             'subject_id': 'Subject ID',
+            'percentile_category': 'Alert',  # Add label for the alert column
             'session_date': 'Date',
             'session': 'Session',
             'rig': 'Rig',
@@ -213,13 +221,7 @@ class AppDataFrame:
             # Add specific formatting for float columns
             if col in float_columns:
                 column_def['type'] = 'numeric'
-                column_def['format'] = {
-                    "specifier": ".5~g"
-                }
-
-            # Hide alert columns
-            #if col in ['has_threshold_alert', 'percentile_category']:
-            #    column_def['hidden'] = True
+                column_def['format'] = {"specifier": ".5~g"}
             
             columns.append(column_def)
 
@@ -234,48 +236,41 @@ class AppDataFrame:
                 'if': {'column_id': 'subject_id'},
                 'fontWeight': 'bold'
             },
-            # Percentile category styling
+            # Row-level highlighting but lighter than before
             {
                 'if': {'filter_query': '{percentile_category} eq "SB"'},
-                'backgroundColor': 'rgba(251, 133, 0, 0.3)' # Orange 30% opacity
+                'backgroundColor': 'rgba(251, 133, 0, 0.1)'  # Orange 10% opacity
             },
             {
                 'if': {'filter_query': '{percentile_category} eq "B"'},
-                'backgroundColor': 'rgba(255, 165, 0, 0.15)' # Orange 15% opacity
+                'backgroundColor': 'rgba(255, 165, 0, 0.05)'  # Orange 5% opacity
             },
             {
                 'if': {'filter_query': '{percentile_category} eq "G"'},
-                'backgroundColor': 'rgba(0, 48, 87, 0.15)' # Blue 15% opacity
+                'backgroundColor': 'rgba(0, 48, 87, 0.05)'  # Blue 5% opacity
             },
             {
                 'if': {'filter_query': '{percentile_category} eq "SG"'},
-                'backgroundColor': 'rgba(0, 48, 87, 0.3)' # Blue 30% opacity
-            },
-
-            # Threshold alert styling
-            {
-                'if': {'filter_query': '{has_threshold_alert} eq True'},
-                'border-left': '4px solid #fb8500' # Orange dot left side
+                'backgroundColor': 'rgba(0, 48, 87, 0.1)'  # Blue 10% opacity
             }
-                
         ]
 
         # Build the table with updated styling
         return html.Div([
             dash_table.DataTable(
                 id='session-table',
-                data = formatted_data.to_dict('records'),
-                columns = columns,
-                page_size = 16,
+                data=formatted_data.to_dict('records'),
+                columns=columns,
+                page_size=16,
                 fixed_rows={'headers': True},
-                style_table = {
+                style_table={
                     'overflowY': 'auto',
                     'overflowX': 'auto',
                     'backgroundColor': 'white',
                     'height': 'calc(100vh - 300px)',
                     'minHeight': '500px'
                 },
-                style_cell = {
+                style_cell={
                     'textAlign': 'left',
                     'padding': '12px',
                     'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
@@ -285,7 +280,7 @@ class AppDataFrame:
                     'backgroundColor': 'white',
                     'border': 'none'
                 },
-                style_header = {
+                style_header={
                     'backgroundColor': 'white',
                     'fontWeight': '600',
                     'border': 'none',
@@ -299,6 +294,6 @@ class AppDataFrame:
                     'padding': '10px 5px',  
                     'lineHeight': '15px'     
                 },
-                style_data_conditional = conditional_styles
+                style_data_conditional=conditional_styles
             )
         ], className="data-table-container")

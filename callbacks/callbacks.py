@@ -160,31 +160,36 @@ def remove_filter(remove_clicks, clear_clicks, remove_ids,
 )
 def update_table_data(time_window_value, stage_value, curriculum_value, 
                      rig_value, trainer_value, pi_value, clear_clicks):
+    print(f"Updating table with time window: {time_window_value} days")
+    
     # Get the full dataset
     df = app_utils.get_session_data()
     
-    # Apply time window filter first using the reference processor's sliding window
-    app_dataframe.reference_processor.window_days = time_window_value
-    df = app_dataframe.reference_processor.apply_sliding_window(df)
+    # Create a fresh dataframe formatter to avoid state issues
+    app_dataframe = AppDataFrame()
+    
+    # Apply complete formatting with alert population
+    formatted_df = app_dataframe.format_dataframe(df, window_days=time_window_value)
     
     # Apply each filter if it has a value
     if stage_value:
-        df = df[df["current_stage_actual"] == stage_value]
+        formatted_df = formatted_df[formatted_df["current_stage_actual"] == stage_value]
     
     if curriculum_value:
-        df = df[df["curriculum_name"] == curriculum_value]
+        formatted_df = formatted_df[formatted_df["curriculum_name"] == curriculum_value]
     
     if rig_value:
-        df = df[df["rig"] == rig_value]
+        formatted_df = formatted_df[formatted_df["rig"] == rig_value]
     
     if trainer_value:
-        df = df[df["trainer"] == trainer_value]
+        formatted_df = formatted_df[formatted_df["trainer"] == trainer_value]
     
     if pi_value:
-        df = df[df["PI"] == pi_value]
+        formatted_df = formatted_df[formatted_df["PI"] == pi_value]
     
-    # Apply the rest of the dataframe formatting
-    formatted_df = app_dataframe.format_dataframe(df, window_days=time_window_value)
+    # Count and print alert statistics
+    percentile_categories = formatted_df['percentile_category'].value_counts().to_dict()
+    print(f"Percentile categories: {percentile_categories}")
     
     return formatted_df.to_dict('records')
 

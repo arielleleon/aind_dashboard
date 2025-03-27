@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 
 class AlertService:
     """
-    Service for getting / setting alerts based on threshold crossing and percentile rankings
+    Service for getting / setting alerts based on percentile rankings
     """
 
     # Default percentile category boundaries
@@ -37,7 +37,6 @@ class AlertService:
             self._update_config(config)
 
         # Initialize alert caches
-        self._threshold_alerts = {}
         self._quantile_alerts = {}
         self._last_update_time = None
 
@@ -109,7 +108,7 @@ class AlertService:
         }
         return descriptions.get(category, "Unknown")
     
-    def _validate_analyzers(self) -> bool:
+    def _validate_analyzer(self) -> bool:
         """
         Validate that required analyzers are available
 
@@ -119,276 +118,10 @@ class AlertService:
         if self.app_utils is None:
             return False
         
-        # Check threshold and quantile analyzers
-        has_threshold = hasattr(self.app_utils, 'threshold_analyzer') and self.app_utils.threshold_analyzer is not None
+        # Check quantile analyzer
         has_quantile = hasattr(self.app_utils, 'quantile_analyzer') and self.app_utils.quantile_analyzer is not None
 
-        return has_threshold and has_quantile
-    
-    def calculate_threshold_alerts(self, subject_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
-        """
-        Calculate threshold alerts for given subjects based on threshold violations
-        
-        Parameters:
-            subject_ids (Optional[List[str]]): List of subject IDs to calculate alerts for
-        
-        Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their alerts
-        """
-        # Validate analyzer
-        if not self._validate_analyzers():
-            raise ValueError("ThresholdAnalyzer not available. Initialize with AppUtils instance.")
-        
-        # Check if the app_utils has the new violation methods
-        has_new_methods = (hasattr(self.app_utils, 'get_threshold_violations') and 
-                           hasattr(self.app_utils, 'get_subjects_with_violations') and
-                           hasattr(self.app_utils, 'get_violation_summary'))
-        
-        # Use new violation logic if available
-        if has_new_methods:
-            # Get subjects with violations
-            if subject_ids is None:
-                subjects_with_violations = self.app_utils.get_subjects_with_violations()
-            else:
-                # Filter to only requested subjects that have violations
-                all_violations = self.app_utils.get_subjects_with_violations()
-                subjects_with_violations = [sid for sid in subject_ids if sid in all_violations]
-            
-            # Initialize alerts dictionary
-            alerts = {}
-            
-            # Process each subject with violations
-            for subject_id in subjects_with_violations:
-                # Get detailed violation summary
-                violation_summary = self.app_utils.get_violation_summary(subject_id)
-                
-                # Extract violations into the format expected by AlertService
-                subject_alerts = {}
-                
-                for feature, details in violation_summary.get('violations', {}).items():
-                    feature_alerts = {}
-                    
-                    for violation_type, stats in details.items():
-                        # Create alert entry
-                        feature_alerts[violation_type] = {
-                            'status': True,
-                            'session_date': stats.get('first_date', None),
-                            'value': None,  # We don't have the actual value here
-                            'crossing_count': stats.get('count', 0),
-                            'crossing_percent': stats.get('percent', 0),
-                            'first_crossing_date': stats.get('first_date', None)
-                        }
-                    
-                    # Only add if there are alerts for this feature
-                    if feature_alerts:
-                        subject_alerts[feature] = feature_alerts
-                
-                # Add subject to alerts if they have any alerts
-                if subject_alerts:
-                    alerts[subject_id] = subject_alerts
-            
-            # Update cache
-            self._threshold_alerts = alerts
-            self._last_update_time = pd.Timestamp.now()
-            
-            return alerts
-        
-        # Fall back to original logic if new methods aren't available
-        else:
-            # Get threshold crossing data from analyzer (original method)
-            threshold_data = self.app_utils.get_threshold_crossings()
-            
-            # If empty, return empty dictionary
-            if threshold_data.empty:
-                return {}
-            
-            # Get subject summary for aggregate statistics
-            subject_summary = self.app_utils.get_subject_threshold_summary()
-            
-            # Filter to specified subjects if provided
-            if subject_ids is not None:
-                threshold_data = threshold_data[threshold_data['subject_id'].isin(subject_ids)]
-                subject_summary = subject_summary[subject_summary['subject_id'].isin(subject_ids)]
-            
-            # Get most recent session for each subject
-            latest_sessions = threshold_data.sort_values('session_date').groupby('subject_id').last()
-            
-            # Get violation columns (focus on actual threshold violations)
-            feature_cols = [col for col in threshold_data.columns
-                            if col not in ['subject_id', 'session_date'] and
-                            pd.api.types.is_bool_dtype(threshold_data[col]) and
-                            any(x in col for x in ['below_lower', 'above_upper', 'outside_range'])]
-            
-            # If no violation columns, try the original compliance columns
-            if not feature_cols:
-                feature_cols = [col for col in threshold_data.columns
-                               if col not in ['subject_id', 'session_date'] and
-                               pd.api.types.is_bool_dtype(threshold_data[col])]
-            
-            # Initialize alerts
-            alerts = {}
-            
-            # Process each subject
-            for subject_id, subject_row in latest_sessions.iterrows():
-                subject_alerts = {}
-                
-                # Get subject's summary row
-                if subject_id in subject_summary['subject_id'].values:
-                    subject_sum_row = subject_summary[subject_summary['subject_id'] == subject_id].iloc[0]
-                else:
-                    subject_sum_row = None
-                
-                # Process each feature's threshold status
-                for col in feature_cols:
-                    # Extract feature name from column name
-                    parts = col.split('_')
-                    if len(parts) >= 3:
-                        feature = '_'.join(parts[:-2])  # Everything except last two parts
-                        condition = '_'.join(parts[-2:])  # Last two parts
-                    else:
-                        # Use simpler column names
-                        feature = parts[0]
-                        condition = '_'.join(parts[1:])
-                    
-                    # Only create an alert if the threshold is violated (column is True for violation columns)
-                    is_violation_col = any(x in col for x in ['below_lower', 'above_upper', 'outside_range'])
-                    
-                    # For violation columns, True means violated; for compliance columns, False means violated
-                    threshold_violated = subject_row[col] if is_violation_col else not subject_row[col]
-                    
-                    if threshold_violated:
-                        # Get raw feature value
-                        actual_value = None
-                        if feature in threshold_data.columns:
-                            actual_value = threshold_data[threshold_data['subject_id'] == subject_id][feature].iloc[-1]
-                        
-                        # Get crossing stats
-                        crossing_count = None
-                        crossing_percent = None
-                        first_crossing_date = None
-                        
-                        if subject_sum_row is not None:
-                            count_col = f"{col}_count"
-                            percent_col = f"{col}_percent"
-                            date_col = f"{col}_first_date"
-                            
-                            if count_col in subject_sum_row:
-                                crossing_count = subject_sum_row[count_col]
-                            if percent_col in subject_sum_row:
-                                crossing_percent = subject_sum_row[percent_col]
-                            if date_col in subject_sum_row:
-                                first_crossing_date = subject_sum_row[date_col]
-                        
-                        # Create alert
-                        if feature not in subject_alerts:
-                            subject_alerts[feature] = {}
-                        
-                        # Add this condition to the feature alerts
-                        subject_alerts[feature][condition] = {
-                            'status': True,
-                            'session_date': subject_row['session_date'],
-                            'value': actual_value,
-                            'crossing_count': crossing_count,
-                            'crossing_percent': crossing_percent,
-                            'first_crossing_date': first_crossing_date
-                        }
-                
-                # Only add subjects that have alerts
-                if subject_alerts:
-                    alerts[subject_id] = subject_alerts
-            
-            # Update cache
-            self._threshold_alerts = alerts
-            self._last_update_time = pd.Timestamp.now()
-            
-            return alerts
-
-    def get_threshold_alerts(self, subject_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
-        """
-        Get threshold alerts for given subjects with improved cache validation
-
-        Parameters:
-            subject_ids (Optional[List[str]]): List of subject IDs to get alerts for
-
-        Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their alerts
-        """
-        # Always recalculate if:
-        # 1. We don't have cached alerts, or
-        # 2. No specific subject_ids were provided (full calculation), or
-        # 3. The threshold analyzer has been updated since our last calculation
-        threshold_analyzer_updated = (hasattr(self.app_utils, 'threshold_analyzer') and 
-                                    hasattr(self.app_utils.threshold_analyzer, '_last_update_time') and
-                                    self._last_update_time is not None and
-                                    self.app_utils.threshold_analyzer._last_update_time > self._last_update_time)
-        
-        if not self._threshold_alerts or subject_ids is None or threshold_analyzer_updated:
-            self.calculate_threshold_alerts(subject_ids)
-
-        # If subject_ids specified, filter to those subjects
-        if subject_ids is not None:
-            return {sid: alerts for sid, alerts in self._threshold_alerts.items() if sid in subject_ids}
-        
-        return self._threshold_alerts
-    
-    def get_subjects_with_threshold_alerts(self, features: Optional[List[str]] = None) -> List[str]:
-        """
-        Get a list of subjects with threshold alerts
-
-        Parameters:
-            features (Optional[List[str]]): List of features to filter alerts by
-
-        Returns:
-            List[str]: List of subject IDs with alerts
-        """
-        # Ensure alerts are calculated
-        if not self._threshold_alerts:
-            self.calculate_threshold_alerts()
-
-        if features is None:
-            # Return all subjects with any alerts
-            return list(self._threshold_alerts.keys())
-        
-        # Filter subjects with alerts on specified features
-        subjects_with_alerts = []
-        for subject_id, feature_alerts in self._threshold_alerts.items():
-            for feature in features:
-                if feature in feature_alerts:
-                    subjects_with_alerts.append(subject_id)
-                    break
-
-        return subjects_with_alerts
-    
-    def get_threshold_alert_summary(self, subject_id: str) -> str:
-        """
-        Get a summary of threshold alerts for a given subject
-
-        Parameters:
-            subject_id (str): The subject ID to get alerts for
-
-        Returns:
-            str: Summary of threshold alerts
-        """
-        # Ensure alerts are calculated
-        if not self._threshold_alerts:
-            self.calculate_threshold_alerts()
-
-        # Check if subject has alerts
-        if subject_id not in self._threshold_alerts:
-            return "No threshold_alerts"
-        
-        # Count alerts by feature
-        feature_alerts = self._threshold_alerts[subject_id]
-        alert_count = sum(len(conditions) for conditions in feature_alerts.values())
-        feature_count = len(feature_alerts)
-
-        # Create summary
-        if feature_count == 1:
-            feature_name = list(feature_alerts.keys())[0]
-            return f"1 feature alert: {feature_name} ({alert_count} condition{'s' if alert_count > 1 else ''})"
-        else:
-            feature_names = ",".join(feature_alerts.keys())
-            return f"{feature_count} features with alerts: {feature_names} ({alert_count} total conditions)"
+        return has_quantile
 
     def calculate_quantile_alerts(self, subject_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         """
@@ -401,7 +134,7 @@ class AlertService:
             Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their alerts
         """
         # Validate analyzer
-        if not self._validate_analyzers():
+        if not self._validate_analyzer():
             raise ValueError("QuantileAnalyzer not available. Initialize with AppUtils instance.")
         
         # Get comprehensive dataframe with all subject percentile rankings
@@ -669,157 +402,18 @@ class AlertService:
         else:
             return "No notable quantile alerts"
         
-    def get_alerts(self, subject_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
-        """
-        Get all alerts (threshold and quantile) for given subjects
-
-        Parameters:
-            subject_ids (Optional[List[str]]): List of subject IDs to get alerts for
-
-        Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their combined threshold and quantile alerts
-        """
-        # Get both types of alerts
-        threshold_alerts = self.get_threshold_alerts(subject_ids)
-        quantile_alerts = self.get_quantile_alerts(subject_ids)
-
-        # Combine alerts
-        combined_alerts = {}
-        all_subjects = set(list(threshold_alerts.keys()) + list(quantile_alerts.keys()))
-
-        # Process each subject
-        for subject_id in all_subjects:
-            subject_combined = {
-                'threshold': threshold_alerts.get(subject_id, {}),
-                'quantile': quantile_alerts.get(subject_id, {})
-            }
-            combined_alerts[subject_id] = subject_combined
-
-        return combined_alerts
-    
-    def get_subjects_with_alerts(self, 
-                               threshold_features: Optional[List[str]] = None,
-                               quantile_features: Optional[List[str]] = None,
-                               quantile_categories: Optional[List[str]] = None) -> List[str]:
-        """
-        Get a list of subjects that have alerts matching specified criteria for either alert type
-        
-        Parameters:
-            threshold_features: Optional list of threshold features to check
-            quantile_features: Optional list of quantile features to check
-            quantile_categories: Optional list of categories to filter by (SB, B, N, G, SG)
-        
-        Returns:
-            List of subject IDs with matching alerts
-        """
-        # If no parameters provided, return all subjects with any kind of alert
-        if threshold_features is None and quantile_features is None and quantile_categories is None:
-            # Get all alerts
-            threshold_alerts = self.get_threshold_alerts()
-            quantile_alerts = self.get_quantile_alerts()
-            
-            # Combine subjects from both alert types
-            all_subjects = set(list(threshold_alerts.keys()) + list(quantile_alerts.keys()))
-            return list(all_subjects)
-        
-        # Get subjects with threshold alerts if requested
-        threshold_subjects = []
-        if threshold_features is not None:
-            threshold_subjects = self.get_subjects_with_threshold_alerts(threshold_features)
-        
-        # Get subjects with quantile alerts if requested
-        quantile_subjects = []
-        if quantile_features is not None or quantile_categories is not None:
-            quantile_subjects = self.get_subjects_with_quantile_alerts(
-                features=quantile_features,
-                categories=quantile_categories
-            )
-        
-        # Combine and deduplicate
-        return list(set(threshold_subjects + quantile_subjects))
-    
-    def get_alert_summary(self, subject_id: str) -> Dict[str, str]:
-        """
-        Get a summary of alerts for a given subject
-
-        Parameters:
-            subject_id (str): The subject ID to get alerts for
-
-        Returns:
-            Dict[str, str]: Dictionary with 'threshold' and 'quantile' keys
-        """
-        threshold_summary = self.get_threshold_alert_summary(subject_id)
-        quantile_summary = self.get_quantile_alert_summary(subject_id)
-
-        return {
-            'threshold': threshold_summary,
-            'quantile': quantile_summary,
-            'combined': f"Threshold: {threshold_summary} | Quantile: {quantile_summary}"
-        }
-    
-    def has_critical_alerts(self, subject_id: str) -> bool:
-        """
-        Check if a subject has critical alerts (threshold violations or poor quantile performance)
-        
-        Parameters:
-            subject_id (str): The subject ID to check for critical alerts
-        
-        Returns:
-            bool: True if the subject has critical alerts, False otherwise
-        """
-        # Check if we have the new violation methods
-        has_new_methods = (hasattr(self.app_utils, 'get_subjects_with_violations') and
-                           hasattr(self.app_utils, 'get_violation_summary'))
-        
-        # Check for threshold violations (this is more precise than the old method)
-        has_threshold_violation = False
-        if has_new_methods:
-            # Check if subject is in the list of subjects with violations
-            all_violations = self.app_utils.get_subjects_with_violations()
-            has_threshold_violation = subject_id in all_violations
-        else:
-            # Fall back to the old method
-            threshold_alerts = self.get_threshold_alerts([subject_id])
-            has_threshold_violation = subject_id in threshold_alerts and bool(threshold_alerts[subject_id])
-        
-        # Check for extreme quantile alerts (SB or B)
-        quantile_alerts = self.get_quantile_alerts([subject_id])
-        
-        has_critical_quantile = False
-        if subject_id in quantile_alerts:
-            subject_quantiles = quantile_alerts[subject_id]
-            current_strata = subject_quantiles.get('current', {})
-            
-            # Check each strata and feature for bad categories
-            for strata, features in current_strata.items():
-                for feature, details in features.items():
-                    if details.get('category') in ['SB', 'B']:
-                        has_critical_quantile = True
-                        break
-                
-                # Break if critical quantile found
-                if has_critical_quantile:
-                    break
-        
-        return has_threshold_violation or has_critical_quantile
-    
     def get_alert_counts(self) -> Dict[str, Any]:
         """
-        Get counts of both alerts across all subjects
+        Get counts of alerts across all subjects
 
         Returns:
             Dict[str, Any]: Dictionary with alert counts and statistics
         """
         # Get all alerts
-        threshold_alerts = self.get_threshold_alerts()
         quantile_alerts = self.get_quantile_alerts()
 
         # Calculate counts
         results = {
-            'threshold': {
-                'subjects_with_alerts': len(threshold_alerts),
-                'total_feature_alerts': sum(len(features) for subj in threshold_alerts.values() for features in subj.values())
-            },
             'quantile': {
                 'subjects_with_alerts': len(quantile_alerts),
                 'category_counts': {
@@ -842,47 +436,40 @@ class AlertService:
                     if category in results['quantile']['category_counts']:
                         results['quantile']['category_counts'][category] += 1
         
-        # Calculate subjects with any type of alert
-        results['total_subjects_with_alerts'] = len(set(list(threshold_alerts.keys()) + list(quantile_alerts.keys())))
-
-        # Count subjects with critical alerts
-        results['subjects_with_critical_alerts'] = sum(
-            1 for subject_id in set(list(threshold_alerts.keys()) + list(quantile_alerts.keys()))
-            if self.has_critical_alerts(subject_id)
-        )        
-        
         return results
         
-    def force_reset(self) -> None:
+    def get_worst_percentile_category(self, quantile_alerts):
         """
-        Force reset all cached alert data
+        Get the worst percentile category from quantile alerts with custom priority order.
+        Priority: SB, B, SG, G, N (from highest to lowest priority)
         
-        This is useful when the underlying data has changed and all alerts need to be recalculated.
-        """
-        self._threshold_alerts = {}
-        self._quantile_alerts = {}
-        self._last_update_time = None
-        
-    def validate_threshold_alerts(self) -> bool:
-        """
-        Validate that threshold alerts match actual threshold violations
-        
+        Parameters:
+            quantile_alerts (Dict): Quantile alerts dictionary for a subject
+            
         Returns:
-            bool: True if alerts match violations, False otherwise
+            str: Worst category (SB, B, SG, G, N)
         """
-        # Check if the new violation methods are available
-        if not hasattr(self.app_utils, 'get_subjects_with_violations'):
-            print("Cannot validate: get_subjects_with_violations method not available.")
-            return False
+        if not quantile_alerts or 'current' not in quantile_alerts:
+            return 'N'  # Default to normal
+
+        # Define priority order (from highest to lowest priority)
+        # SB (significantly below) > B (below) > SG (significantly good) > G (good) > N (normal)
+        priority_order = ['SB', 'B', 'SG', 'G', 'N']
+        priority_map = {cat: i for i, cat in enumerate(priority_order)}
         
-        # Get subjects with violations
-        subjects_with_violations = set(self.app_utils.get_subjects_with_violations())
+        worst_category = 'N'  # Default to normal
+        worst_priority = priority_map['N']
         
-        # Get subjects with threshold alerts
-        threshold_alerts = self.get_threshold_alerts()
-        subjects_with_alerts = set(threshold_alerts.keys())
-        
-        # Compare
-        return subjects_with_alerts == subjects_with_violations
-        
-    
+        # Check all current strata features for worst category
+        for strata_data in quantile_alerts.get('current', {}).values():
+            for feature_data in strata_data.values():
+                category = feature_data.get('category', 'N')
+                # If this category has higher priority (lower index in priority_order)
+                if category in priority_map and priority_map[category] < worst_priority:
+                    worst_category = category
+                    worst_priority = priority_map[category]
+                    # If we found SB, no need to check further as it's the highest priority
+                    if category == 'SB':
+                        return 'SB'
+                    
+        return worst_category
