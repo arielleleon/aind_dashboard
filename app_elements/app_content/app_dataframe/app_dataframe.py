@@ -53,7 +53,7 @@ class AppDataFrame:
         print(f"Got current sessions for {len(current_sessions_df)} subjects")
 
         # Add percentile category column with default value
-        current_sessions_df['percentile_category'] = 'N'  # Default to Normal
+        current_sessions_df['percentile_category'] = 'NS'  # Default to Not Scored
 
         # Step 3: Run quantile analysis pipeline on same window data
         try: 
@@ -90,25 +90,33 @@ class AppDataFrame:
             # Step 3.5: Get subject IDs from current sessions dataframe
             subject_ids = current_sessions_df['subject_id'].tolist()
 
-            # Step 3.6: Get alerts for the subjects
-            quantile_alerts = app_utils.get_quantile_alerts(subject_ids)
-            print(f"Retrieved quantile alerts for {len(quantile_alerts)} subjects") # DEBUGGING
+            # Step 3.6: Calculate overall percentiles for subjects
+            overall_percentiles = quantile_analyzer.calculate_overall_percentile(subject_ids)
+            print(f"Calculated overall percentiles for {len(overall_percentiles)} subjects") # DEBUGGING
 
-            # Step 4: Match subjects and update percentile categories in table
+            # Step 4: Map overall percentiles to alert categories and update the dataframe
             alert_count = 0
             for i, row in current_sessions_df.iterrows():
                 subject_id = row['subject_id']
-                if subject_id in quantile_alerts:
-                    # Get worst percentile category for this subject using alert service
-                    worst_category = alert_service.get_worst_percentile_category(quantile_alerts[subject_id])
-                    current_sessions_df.at[i, 'percentile_category'] = worst_category
-                    if worst_category != 'N': # Only count non-normal alerts
+                
+                # Find this subject in overall percentiles
+                subject_percentile = overall_percentiles[overall_percentiles['subject_id'] == subject_id]
+                
+                if not subject_percentile.empty:
+                    # Get the overall percentile value
+                    overall_percentile = subject_percentile['overall_percentile'].iloc[0]
+                    
+                    # Map to a category
+                    category = alert_service.map_overall_percentile_to_category(overall_percentile)
+                    
+                    # Update dataframe
+                    current_sessions_df.at[i, 'percentile_category'] = category
+                    
+                    # Count non-normal alerts
+                    if category not in ['N', 'NS']:
                         alert_count += 1
 
             print(f"Total alerts found: {alert_count} out of {len(current_sessions_df)} subjects") # DEBUGGING 
-
-            # Inside format_dataframe method, ensure all rows have a value
-            current_sessions_df['percentile_category'] = current_sessions_df['percentile_category'].fillna('N')
 
         except Exception as e:
             print(f"Error in quantile analysis pipeline: {str(e)}")
@@ -236,22 +244,26 @@ class AppDataFrame:
                 'if': {'column_id': 'subject_id'},
                 'fontWeight': 'bold'
             },
-            # Row-level highlighting but lighter than before
+            # Row-level highlighting with lighter colors
             {
                 'if': {'filter_query': '{percentile_category} eq "SB"'},
-                'backgroundColor': 'rgba(251, 133, 0, 0.1)'  # Orange 10% opacity
+                'backgroundColor': '#FFDEB0',  # Light orange
+                'className': 'alert-sb-row'
             },
             {
                 'if': {'filter_query': '{percentile_category} eq "B"'},
-                'backgroundColor': 'rgba(255, 165, 0, 0.05)'  # Orange 5% opacity
+                'backgroundColor': '#FFF0D9',  # Very light orange
+                'className': 'alert-b-row'
             },
             {
                 'if': {'filter_query': '{percentile_category} eq "G"'},
-                'backgroundColor': 'rgba(0, 48, 87, 0.05)'  # Blue 5% opacity
+                'backgroundColor': '#E5EEF5',  # Light blue
+                'className': 'alert-g-row'
             },
             {
                 'if': {'filter_query': '{percentile_category} eq "SG"'},
-                'backgroundColor': 'rgba(0, 48, 87, 0.1)'  # Blue 10% opacity
+                'backgroundColor': '#C6D8E8',  # Slightly darker blue
+                'className': 'alert-sg-row'
             }
         ]
 
@@ -261,7 +273,7 @@ class AppDataFrame:
                 id='session-table',
                 data=formatted_data.to_dict('records'),
                 columns=columns,
-                page_size=16,
+                page_size=20,
                 fixed_rows={'headers': True},
                 style_table={
                     'overflowY': 'auto',

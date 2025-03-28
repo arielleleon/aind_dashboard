@@ -26,5 +26,5 @@ class AppMain:
                 dbc.Col([
                     AppContent().build()
                 ], width=11.5, className="content-col"),
-            ], className="g-0 main-content-row"),  # Added main-content-row class
+            ], className="g-0 main-content-row"),
         ], className="app-main")

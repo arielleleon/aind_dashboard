@@ -9,12 +9,12 @@ class AlertService:
 
     # Default percentile category boundaries
     DEFAULT_PERCENTILE_CATEGORIES = {
-        "SB": 2.15, # Significantly Bad: < 2.15% ( < -2 std dev)
-        "B": 13.5, # Bad: < 13.5% ( < -1 std dev)
-        "N": 86.5, # Normal: 13.5% - 86.5% ( -1 std dev to +1 std dev)
-        "G": 97.85, # Good: 86.5% - 97.85% ( > +1 std dev)
-        "SG": 100 # Significantly Good: > 97.85% ( > +2 std dev)
-    }
+            "SB": 6.5,  # Significantly Bad: < 6.5% ( < -2.75 std dev)
+            "B": 28,    # Bad: < 28% ( < -0.25 std dev)
+            "N": 72,    # Normal: 28% - 72% ( -0.25 std dev to +0.25 std dev)
+            "G": 93.5,  # Good: 72% - 93.5% ( > +0.25 std dev)
+            "SG": 100   # Significantly Good: > 93.5% ( > +2.75 std dev)
+        }
 
     def __init__(self, app_utils=None, config: Optional[Dict[str, Any]] = None):
         """
@@ -437,39 +437,29 @@ class AlertService:
                         results['quantile']['category_counts'][category] += 1
         
         return results
-        
-    def get_worst_percentile_category(self, quantile_alerts):
+    
+    def map_overall_percentile_to_category(self, overall_percentile):
         """
-        Get the worst percentile category from quantile alerts with custom priority order.
-        Priority: SB, B, SG, G, N (from highest to lowest priority)
-        
-        Parameters:
-            quantile_alerts (Dict): Quantile alerts dictionary for a subject
-            
-        Returns:
-            str: Worst category (SB, B, SG, G, N)
-        """
-        if not quantile_alerts or 'current' not in quantile_alerts:
-            return 'N'  # Default to normal
+        Map an overall percentile to its corresponding category
 
-        # Define priority order (from highest to lowest priority)
-        # SB (significantly below) > B (below) > SG (significantly good) > G (good) > N (normal)
-        priority_order = ['SB', 'B', 'SG', 'G', 'N']
-        priority_map = {cat: i for i, cat in enumerate(priority_order)}
+        Parameters:
+            overall_percentile (float): The overall percentile value to map
+
+        Returns:
+            str: Category abbreviation (SB, B, N, G, SG)
+        """
+        if overall_percentile is None or np.isnan(overall_percentile):
+            return "NS" # Not scored
         
-        worst_category = 'N'  # Default to normal
-        worst_priority = priority_map['N']
-        
-        # Check all current strata features for worst category
-        for strata_data in quantile_alerts.get('current', {}).values():
-            for feature_data in strata_data.values():
-                category = feature_data.get('category', 'N')
-                # If this category has higher priority (lower index in priority_order)
-                if category in priority_map and priority_map[category] < worst_priority:
-                    worst_category = category
-                    worst_priority = priority_map[category]
-                    # If we found SB, no need to check further as it's the highest priority
-                    if category == 'SB':
-                        return 'SB'
-                    
-        return worst_category
+        categories = self.config["percentile_categories"]
+
+        if overall_percentile < categories["SB"]:
+            return "SB"
+        elif overall_percentile < categories["B"]:
+            return "B"
+        elif overall_percentile < categories["N"]:
+            return "N"
+        elif overall_percentile < categories["G"]:
+            return "G"
+        else:
+            return "SG"
