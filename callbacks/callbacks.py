@@ -7,6 +7,8 @@ from datetime import datetime
 from app_utils import AppUtils
 from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
 from app_elements.app_filter.app_filter import AppFilter
+from app_elements.app_content.app_plot_content.app_subject_heatmap import SubjectHeatmap
+import plotly.graph_objects as go
 
 # Initialize app utilities
 app_utils = AppUtils()
@@ -16,6 +18,9 @@ app_dataframe = AppDataFrame()
 
 # Initialize AppFilter to access time_window_options
 app_filter = AppFilter()
+
+# Initialize subject heatmap
+subject_heatmap = SubjectHeatmap()
 
 # Callback to update active filters display and count
 @callback(
@@ -202,34 +207,13 @@ def update_plot(table_data):
     # Convert filtered data back to dataframe
     filtered_df = pd.DataFrame(table_data)
     
-    # Create a simple plot (you'll want to customize this)
+    # Return empty figure if no data
     if filtered_df.empty:
-        # Return empty figure if no data
-        return {
-            "data": [],
-            "layout": {
-                "title": "No data available with current filters",
-                "xaxis": {"title": ""},
-                "yaxis": {"title": ""}
-            }
-        }
+        return go.Figure().update_layout(
+            title="No data available with current filters",
+            xaxis={"title": ""},
+            yaxis={"title": ""}
+        )
     
-    # Example plot - replace with your actual plotting logic
-    figure = {
-        "data": [
-            {
-                "x": filtered_df["session_date"] if "session_date" in filtered_df.columns else [],
-                "y": filtered_df["subject_id"] if "subject_id" in filtered_df.columns else [],
-                "type": "scatter",
-                "mode": "markers",
-                "marker": {"color": "blue"}
-            }
-        ],
-        "layout": {
-            "title": f"Sessions ({len(filtered_df)} subjects)",
-            "xaxis": {"title": "Session Date"},
-            "yaxis": {"title": "Subject ID"}
-        }
-    }
-    
-    return figure
+    # Create the heatmap figure
+    return subject_heatmap.create_figure(filtered_df)

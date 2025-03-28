@@ -54,6 +54,8 @@ class AppDataFrame:
 
         # Add percentile category column with default value
         current_sessions_df['percentile_category'] = 'NS'  # Default to Not Scored
+        # Add overall percentile column
+        current_sessions_df['overall_percentile'] = float('nan')
 
         # Step 3: Run quantile analysis pipeline on same window data
         try: 
@@ -105,6 +107,9 @@ class AppDataFrame:
                 if not subject_percentile.empty:
                     # Get the overall percentile value
                     overall_percentile = subject_percentile['overall_percentile'].iloc[0]
+
+                    # Store percentile value in dataframe
+                    current_sessions_df.loc[i, 'overall_percentile'] = overall_percentile
                     
                     # Map to a category
                     category = alert_service.map_overall_percentile_to_category(overall_percentile)
@@ -126,6 +131,7 @@ class AppDataFrame:
         column_order = [
             'subject_id',
             'percentile_category',
+            'overall_percentile',
             'session_date',
             'session',
             'rig',
@@ -186,6 +192,7 @@ class AppDataFrame:
         formatted_column_names = {
             'subject_id': 'Subject ID',
             'percentile_category': 'Alert',  # Add label for the alert column
+            'overall_percentile': 'Percentile',
             'session_date': 'Date',
             'session': 'Session',
             'rig': 'Rig',

@@ -1,7 +1,11 @@
 from dash import html
 from dash import dcc
+from .app_subject_heatmap import SubjectHeatmap
 
 class AppPlotContent:
+    def __init__(self):
+        """Initialize plot content with subject heatmap"""
+        self.subject_heatmap = SubjectHeatmap()
 
     def build(self):
         """
