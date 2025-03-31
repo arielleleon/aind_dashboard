@@ -8,11 +8,11 @@ class SubjectHeatmap:
         """Initialize the subject heatmap component"""
         # Define the diverging color scale: dark orange (low) → grey (middle) → dark blue (high)
         self.colorscale = [
-            [0.0, '#993404'],      # Dark orange for low percentiles
-            [0.25, '#fe9929'],     # Medium orange
-            [0.5, '#cccccc'],      # Grey for 50th percentile
-            [0.75, '#4292c6'],     # Medium blue
-            [1.0, '#084594']       # Dark blue for high percentiles
+            [0.0, '#FFC380'],      # Dark orange for low percentiles
+            [0.25, '#FFC380'],     # Medium orange
+            [0.5, '#A6A6A6'],      # Grey for 50th percentile
+            [0.75, '#9FC5E8'],     # Medium blue
+            [1.0, '#9FC5E8']       # Dark blue for high percentiles
         ]
     
     def _calculate_grid_dimensions(self, n_subjects):
@@ -54,11 +54,10 @@ class SubjectHeatmap:
         # Extract relevant columns
         plot_data = data[['subject_id', 'overall_percentile', 'percentile_category']].copy()
         
-        # Count valid subjects (those with non-NS percentile category)
-        valid_subjects = plot_data[plot_data['percentile_category'] != 'NS']
-        n_subjects = len(valid_subjects)
+        # Filter out NS subjects
+        plot_data = plot_data[plot_data['percentile_category'] != 'NS']
         
-        if n_subjects == 0:
+        if plot_data.empty:
             # Return empty figure if no valid subjects
             return go.Figure().update_layout(
                 title="No subjects with percentile scores to display",
@@ -67,13 +66,16 @@ class SubjectHeatmap:
                 margin=dict(l=20, r=20, t=60, b=20)
             )
         
+        # Sort by percentile
+        plot_data = plot_data.sort_values(by = 'overall_percentile')
+        
         # Calculate grid dimensions
         rows, cols = self._calculate_grid_dimensions(len(plot_data))
         
-        # Create z-values, text labels, and mask for NS values
+        # Create z-values and text labels
         z = np.zeros((rows, cols))  # Initialize with zeros
         text = np.empty((rows, cols), dtype=object)  # For subject IDs
-        mask = np.zeros((rows, cols), dtype=bool)  # For NS values
+        mask = np.ones((rows, cols), dtype=bool) # Track which cells are empty
         
         # Fill grid with subject data
         for idx, row in enumerate(range(rows)):
@@ -82,56 +84,29 @@ class SubjectHeatmap:
                 if pos < len(plot_data):
                     subject = plot_data.iloc[pos]
                     text[row, col] = subject['subject_id']
-                    
-                    if subject['percentile_category'] == 'NS':
-                        # Mark as masked (will be white) for NS
-                        mask[row, col] = True
-                        z[row, col] = 0  # Value doesn't matter as it will be masked
-                    else:
-                        z[row, col] = subject['overall_percentile']
+                    z[row, col] = subject['overall_percentile']
                 else:
                     # Empty cells beyond our data
-                    mask[row, col] = True
                     text[row, col] = ""
-        
-        # Create a custom colorscale with white for masked values
-        colorscale = self.colorscale.copy()
-        
+                    mask[row, col] = False
+        # Modify the color scale to handle empty cells
+        modified_colorscale = [[0, 'white'], [0.001, self.colorscale[0][1]]]
+        for i in range(1, len(self.colorscale)):
+            # Scale colors to 0.001 to 1
+            position = 0.001 + (self.colorscale[i][0] * 0.999)
+            modified_colorscale.append([position, self.colorscale[i][1]])
+
         # Create heatmap figure
         fig = go.Figure(go.Heatmap(
-            z=z,
+            z=np.where(mask, z, -0.1),
             text=text,
             texttemplate="%{text}",
             hovertemplate='Subject: %{text}<br>Percentile: %{z:.1f}<extra></extra>',
-            colorscale=colorscale,
+            colorscale=modified_colorscale,
             showscale=False,
-            zmin=0,
+            zmin=-0.1,
             zmax=100
         ))
-        
-        # Apply mask for NS values by adding white rectangles
-        for row in range(rows):
-            for col in range(cols):
-                if mask[row, col]:
-                    fig.add_shape(
-                        type="rect",
-                        x0=col - 0.5,
-                        y0=row - 0.5,
-                        x1=col + 0.5,
-                        y1=row + 0.5,
-                        fillcolor="white",
-                        line=dict(width=1, color="lightgrey"),
-                        layer="above"
-                    )
-                    # Add the subject ID text on top for NS values
-                    if text[row, col]:
-                        fig.add_annotation(
-                            x=col,
-                            y=row,
-                            text=text[row, col],
-                            showarrow=False,
-                            font=dict(size=10)
-                        )
         
         # Update layout to remove axes and improve appearance
         fig.update_layout(

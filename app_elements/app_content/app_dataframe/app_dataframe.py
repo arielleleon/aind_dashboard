@@ -261,22 +261,22 @@ class AppDataFrame:
             # Row-level highlighting with lighter colors
             {
                 'if': {'filter_query': '{percentile_category} eq "SB"'},
-                'backgroundColor': '#FFDEB0',  # Light orange
+                'backgroundColor': '#FFC380',  # Light orange
                 'className': 'alert-sb-row'
             },
             {
                 'if': {'filter_query': '{percentile_category} eq "B"'},
-                'backgroundColor': '#FFF0D9',  # Very light orange
+                'backgroundColor': '#FFC380',  # Very light orange
                 'className': 'alert-b-row'
             },
             {
                 'if': {'filter_query': '{percentile_category} eq "G"'},
-                'backgroundColor': '#E5EEF5',  # Light blue
+                'backgroundColor': '#9FC5E8',  # Light blue
                 'className': 'alert-g-row'
             },
             {
                 'if': {'filter_query': '{percentile_category} eq "SG"'},
-                'backgroundColor': '#C6D8E8',  # Slightly darker blue
+                'backgroundColor': '#9FC5E8',  # Slightly darker blue
                 'className': 'alert-sg-row'
             }
         ]
