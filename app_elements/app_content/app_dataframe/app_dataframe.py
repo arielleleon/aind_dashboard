@@ -68,8 +68,8 @@ class AppDataFrame:
             reference_processor = app_utils.initialize_reference_processor(
                 features_config=self.features_config,
                 window_days = window_days,
-                min_sessions = 3,  # Minimum sessions requirement for eligibility
-                min_days = 4       # Minimum days requirement for eligibility
+                min_sessions = 1,  # Minimum sessions requirement for eligibility
+                min_days = 1       # Minimum days requirement for eligibility
             )
             print(f" Initialized reference processor")
 
@@ -110,6 +110,11 @@ class AppDataFrame:
 
                     # Store percentile value in dataframe
                     current_sessions_df.loc[i, 'overall_percentile'] = overall_percentile
+
+                    # Get strata and add to the dataframe
+                    if 'strata' in subject_percentile.columns:
+                        strata = subject_percentile['strata'].iloc[0]
+                        current_sessions_df.loc[i, 'strata'] = strata
                     
                     # Map to a category
                     category = alert_service.map_overall_percentile_to_category(overall_percentile)
@@ -132,6 +137,7 @@ class AppDataFrame:
             'subject_id',
             'percentile_category',
             'overall_percentile',
+            'strata',
             'session_date',
             'session',
             'rig',
@@ -193,6 +199,7 @@ class AppDataFrame:
             'subject_id': 'Subject ID',
             'percentile_category': 'Alert',  # Add label for the alert column
             'overall_percentile': 'Percentile',
+            'strata': 'Strata',
             'session_date': 'Date',
             'session': 'Session',
             'rig': 'Rig',

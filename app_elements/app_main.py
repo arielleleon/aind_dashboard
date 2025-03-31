@@ -1,9 +1,13 @@
 from dash import html
 import dash_bootstrap_components as dbc
-from .app_content import *
+from .app_content import AppContent
 
 
 class AppMain:
+    def __init__(self):
+        """Initialize main app components"""
+        self.app_content = AppContent()
+        
     def build(self):
         """
         Build app main with content
@@ -18,7 +22,7 @@ class AppMain:
             dbc.Row([
                 # Content column
                 dbc.Col([
-                    AppContent().build()
+                    self.app_content.build()
                 ], width=12, className="content-col"),
             ], className="g-0 main-content-row"),
         ], className="app-main")
