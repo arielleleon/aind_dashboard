@@ -281,6 +281,25 @@ class AppDataFrame:
             }
         ]
 
+        # Add highlight for columns used for overall percentile calculation
+        percentile_columns = list(self.features_config.keys())
+
+        for col in percentile_columns:
+            if col in formatted_data.columns:
+                # Add blue border to column
+                conditional_styles.append({
+                    'if': {'column_id': col},
+                    'border': '2px solid #5D9FD3',
+                    'borderRadius': '2px'
+                })
+
+        # Also highlight overall percentile column
+        conditional_styles.append({
+            'if': {'column_id': 'overall_percentile'},
+            'border': '2px solid #5D9FD3',
+            'borderRadius': '2px'
+        })
+
         # Build the table with updated styling
         return html.Div([
             dash_table.DataTable(

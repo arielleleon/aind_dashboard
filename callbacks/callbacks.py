@@ -36,10 +36,13 @@ rank_change_plot = RankChangePlot()
      Input("rig-filter", "value"),
      Input("trainer-filter", "value"),
      Input("pi-filter", "value"),
+     Input("sort-option", "value"),
+     Input("alert-category-filter", "value"),
      Input("clear-filters", "n_clicks")]
 )
 def update_active_filters(
-    time_window_value, stage_value, curriculum_value, rig_value, trainer_value, pi_value, clear_clicks
+    time_window_value, stage_value, curriculum_value, rig_value, trainer_value, pi_value, sort_option, 
+    alert_category, clear_clicks
 ):
     # Initialize active filters
     active_filters = []
@@ -51,6 +54,22 @@ def update_active_filters(
     # Get time window label for the selected value
     time_window_label = next((opt["label"] for opt in app_filter.time_window_options
                              if opt["value"] == time_window_value), f"Last {time_window_value} days")
+    
+    # Add sort option if not default
+    if sort_option != "none":
+        sort_label = next((opt["label"] for opt in app_filter.sort_options 
+                         if opt["value"] == sort_option), "Sorted")
+        active_filters.append(
+            create_filter_badge(f"Sort: {sort_label}", "sort-option", sort_option)
+        )
+    
+    # Add alert category filter if not "all"
+    if alert_category != "all":
+        alert_label = next((opt["label"] for opt in app_filter.alert_category_options
+                          if opt["value"] == alert_category), alert_category)
+        active_filters.append(
+            create_filter_badge(f"Alert: {alert_label}", "alert-category-filter", alert_category)
+        )
     
     # Add time window filter badge (always shown)
     active_filters.append(
@@ -108,7 +127,9 @@ def create_filter_badge(label, filter_type, filter_value):
      Output("curriculum-filter", "value"),
      Output("rig-filter", "value"),
      Output("trainer-filter", "value"),
-     Output("pi-filter", "value")],
+     Output("pi-filter", "value"),
+     Output("sort-option", "value"),
+     Output("alert-category-filter", "value")],
     [Input({"type": "remove-filter", "index": ALL}, "n_clicks"),
      Input("clear-filters", "n_clicks")],
     [State({"type": "remove-filter", "index": ALL}, "id"),
@@ -116,17 +137,21 @@ def create_filter_badge(label, filter_type, filter_value):
      State("curriculum-filter", "value"),
      State("rig-filter", "value"),
      State("trainer-filter", "value"),
-     State("pi-filter", "value")],
+     State("pi-filter", "value"),
+     State("sort-option", "value"),
+     State("alert-category-filter", "value")],
     prevent_initial_call=True
 )
 def remove_filter(remove_clicks, clear_clicks, remove_ids, 
-                 stage_value, curriculum_value, rig_value, trainer_value, pi_value):
+                 stage_value, curriculum_value, rig_value, trainer_value, 
+                 pi_value, sort_value, alert_category_value):
     # Initialize return values with current state
-    outputs = [stage_value, curriculum_value, rig_value, trainer_value, pi_value]
+    outputs = [stage_value, curriculum_value, rig_value, trainer_value, pi_value, 
+              sort_value, alert_category_value]
     
     # If clear button was clicked, clear all filters
     if ctx.triggered_id == "clear-filters":
-        return [None, None, None, None, None]
+        return [None, None, None, None, None, "none", "all"]
     
     # Find which filter was clicked to be removed
     for i, clicks in enumerate(remove_clicks):
@@ -150,6 +175,10 @@ def remove_filter(remove_clicks, clear_clicks, remove_ids,
                 outputs[3] = None
             elif filter_type == "pi-filter":
                 outputs[4] = None
+            elif filter_type == "sort-option":
+                outputs[5] = "none"  # Reset to default sort
+            elif filter_type == "alert-category-filter":
+                outputs[6] = "all"   # Reset to show all alerts
             
             # Only process one removal at a time
             break
@@ -165,10 +194,13 @@ def remove_filter(remove_clicks, clear_clicks, remove_ids,
      Input("rig-filter", "value"),
      Input("trainer-filter", "value"),
      Input("pi-filter", "value"),
+     Input("sort-option", "value"),
+     Input("alert-category-filter", "value"),
      Input("clear-filters", "n_clicks")]
 )
 def update_table_data(time_window_value, stage_value, curriculum_value, 
-                     rig_value, trainer_value, pi_value, clear_clicks):
+                     rig_value, trainer_value, pi_value, sort_option, 
+                     alert_category, clear_clicks):
     print(f"Updating table with time window: {time_window_value} days")
     
     # Get the full dataset
@@ -195,6 +227,37 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
     
     if pi_value:
         formatted_df = formatted_df[formatted_df["PI"] == pi_value]
+    
+    # Apply alert category filter if selected
+    if alert_category != "all":
+        formatted_df = formatted_df[formatted_df["percentile_category"] == alert_category]
+    
+    # Apply sorting based on selected option
+    if sort_option != "none":
+        if sort_option == "percentile_asc":
+            # Sort by overall percentile (ascending)
+            formatted_df = formatted_df.sort_values(by="overall_percentile", ascending=True)
+        elif sort_option == "percentile_desc":
+            # Sort by overall percentile (descending)
+            formatted_df = formatted_df.sort_values(by="overall_percentile", ascending=False)
+        elif sort_option == "alert_worst":
+            # Define alert category order from worst to best
+            alert_order = {"SB": 0, "B": 1, "N": 2, "G": 3, "SG": 4, "NS": 5}
+            # Create a temporary column for sorting
+            formatted_df["alert_sort"] = formatted_df["percentile_category"].map(alert_order)
+            # Sort by alert category (worst first)
+            formatted_df = formatted_df.sort_values(by="alert_sort", ascending=True)
+            # Remove temporary sort column
+            formatted_df = formatted_df.drop(columns=["alert_sort"])
+        elif sort_option == "alert_best":
+            # Define alert category order from best to worst
+            alert_order = {"SG": 0, "G": 1, "N": 2, "B": 3, "SB": 4, "NS": 5}
+            # Create a temporary column for sorting
+            formatted_df["alert_sort"] = formatted_df["percentile_category"].map(alert_order)
+            # Sort by alert category (best first)
+            formatted_df = formatted_df.sort_values(by="alert_sort", ascending=True)
+            # Remove temporary sort column
+            formatted_df = formatted_df.drop(columns=["alert_sort"])
     
     # Count and print alert statistics
     percentile_categories = formatted_df['percentile_category'].value_counts().to_dict()
