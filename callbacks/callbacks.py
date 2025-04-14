@@ -7,7 +7,6 @@ from datetime import datetime
 from app_utils import AppUtils
 from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
 from app_elements.app_filter.app_filter import AppFilter
-from app_elements.app_content.app_plot_content.app_subject_heatmap import SubjectHeatmap
 from app_elements.app_content.app_plot_content.app_rank_change_plot import RankChangePlot
 import plotly.graph_objects as go
 
@@ -19,9 +18,6 @@ app_dataframe = AppDataFrame()
 
 # Initialize AppFilter to access time_window_options
 app_filter = AppFilter()
-
-# Initialize subject heatmap
-subject_heatmap = SubjectHeatmap()
 
 # Initialize rank change plot
 rank_change_plot = RankChangePlot()
@@ -270,27 +266,7 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
     
     return formatted_df.to_dict('records')
 
-# Callback to update the heatmap based on filtered table data
-@callback(
-    Output("plot-content", "figure"),
-    [Input("session-table", "data")]
-)
-def update_plot(table_data):
-    # Convert filtered data back to dataframe
-    filtered_df = pd.DataFrame(table_data)
-    
-    # Return empty figure if no data
-    if filtered_df.empty:
-        return go.Figure().update_layout(
-            title="No data available with current filters",
-            xaxis={"title": ""},
-            yaxis={"title": ""}
-        )
-    
-    # Create the heatmap figure
-    return subject_heatmap.create_figure(filtered_df)
-
-# NEW CALLBACK: Update the rank change plot based on time window filter
+# Update the rank change plot based on time window filter
 @callback(
     Output("rank-change-plot", "figure"),
     [Input("time-window-filter", "value")]

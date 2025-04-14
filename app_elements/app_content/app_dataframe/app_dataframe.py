@@ -374,8 +374,9 @@ class AppDataFrame:
                     'overflowY': 'auto',
                     'overflowX': 'auto',
                     'backgroundColor': 'white',
-                    'height': 'calc(100vh - 300px)',
-                    'minHeight': '500px'
+                    'height': 'calc(100vh - 300px)',  # Adjusted height to fill available space
+                    'minHeight': '500px',
+                    'width': '100%'
                 },
                 style_cell={
                     'textAlign': 'left',
@@ -403,4 +404,4 @@ class AppDataFrame:
                 },
                 style_data_conditional=conditional_styles
             )
-        ], className="data-table-container")
+        ], className="data-table-container", style={'width': '100%'})

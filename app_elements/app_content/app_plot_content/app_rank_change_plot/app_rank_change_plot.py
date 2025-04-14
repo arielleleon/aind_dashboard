@@ -109,7 +109,7 @@ class RankChangePlot:
                     )
                 )
             
-            # Update layout
+            # Update layout to ensure proper sizing in new layout
             fig.update_layout(
                 title='Subject Performance Categories Over Time',
                 xaxis=dict(title='Date', tickangle=-45),
@@ -122,7 +122,9 @@ class RankChangePlot:
                     y=1.02,
                     xanchor="center",
                     x=0.5
-                )
+                ),
+                margin=dict(l=40, r=20, t=60, b=40),  # Adjusted margins
+                autosize=True  # Ensure the plot resizes with container
             )
             
             fig.update_yaxes(

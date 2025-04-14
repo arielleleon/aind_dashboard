@@ -37,3 +37,26 @@
 .js-plotly-plot, .plot-container {
     height: 100% !important;
 }
+
+.top-row {
+    height: 300px;
+    margin-bottom: 20px;
+}
+
+.filter-column, .plot-column {
+    height: 100%;
+}
+
+.rank-plot-wrapper {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.bottom-row {
+    height: calc(100vh - 380px);  /* Full remaining height minus margins/padding */
+}
+
+.data-table-column, .data-table-container {
+    height: 100%;
+}

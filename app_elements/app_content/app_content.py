@@ -18,15 +18,18 @@ class AppContent:
         return html.Div([
             dbc.Row([
                 dbc.Col([
-                    html.Div([
-                        self.app_filter.build(),
-                        html.Div([
-                            self.app_dataframe.build()
-                        ], style={"flex": "1", "overflow": "auto"})
-                    ], style={"display": "flex", "flexDirection": "column", "height": "100vh"})
-                ], width=6, className="content-column"),
+                    self.app_filter.build()
+                ], width = 6, className = "filter-column"),
+
+                # Rank change plot column
                 dbc.Col([
                     self.app_plot_content.build()
-                ], width=6, className="content-column")
-            ], className="g-0")
+                ], width=6, className="plot-column")
+            ], className="g-0 top-row"),
+
+            dbc.Row([
+                dbc.Col([
+                    self.app_dataframe.build()
+                ], width=12, className="data-table-column")
+            ], className="g-0 bottom-row")
         ], className="content-wrapper")
