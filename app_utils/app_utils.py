@@ -1,5 +1,5 @@
 from .app_data_load import AppLoadData
-from .app_analysis import ReferenceProcessor, QuantileAnalyzer
+from .app_analysis import ReferenceProcessor, QuantileAnalyzer, ThresholdAnalyzer
 from .app_alerts import AlertService
 from typing import Dict, List, Optional, Union, Any
 import pandas as pd
@@ -18,7 +18,7 @@ class AppUtils:
         self.reference_processor = None
         self.quantile_analyzer = None
         self.alert_service = None
-        
+        self.threshold_analyzer = None
     def get_session_data(self, load_bpod = False):
         """
         Get session data from the data loader
@@ -180,3 +180,18 @@ class AppUtils:
             Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their quantile alerts
         """
         return self.get_quantile_alerts(subject_ids)
+
+    def initialize_threshold_analyzer(self, threshold_config: Optional[Dict[str, Any]] = None) -> ThresholdAnalyzer:
+        """
+        Initialize threshold analyzer
+        
+        Parameters:
+            threshold_config: Optional[Dict[str, Any]]
+                Configuration for threshold alerts
+                
+        Returns:
+            ThresholdAnalyzer: Initialized threshold analyzer
+        """
+        
+        self.threshold_analyzer = ThresholdAnalyzer(threshold_config)
+        return self.threshold_analyzer

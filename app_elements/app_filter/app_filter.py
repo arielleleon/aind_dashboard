@@ -39,7 +39,8 @@ class AppFilter:
             {"label": "B", "value": "B"},
             {"label": "N", "value": "N"},
             {"label": "G", "value": "G"},
-            {"label": "SG", "value": "SG"}
+            {"label": "SG", "value": "SG"},
+            {"label": "Threshold", "value": "T"}  # Add threshold option
         ]
 
 

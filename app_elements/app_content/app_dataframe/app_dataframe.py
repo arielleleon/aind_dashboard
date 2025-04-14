@@ -20,6 +20,28 @@ class AppDataFrame:
             'abs(bias_naive)': True  # Lower is better 
         }
 
+        # Configure threshold alerts
+        self.threshold_config = {
+            'session': {
+                'condition': 'gt',
+                'value': 40  # Total sessions threshold
+            },
+            'water_day_total': {
+                'condition': 'gt',
+                'value': 3.5  # Water day total threshold (ml)
+            }
+        }
+
+        # Stage-specific session thresholds
+        self.stage_thresholds = {
+            'STAGE_1': 5,
+            'STAGE_2': 5,
+            'STAGE_3': 6,
+            'STAGE_4': 10,
+            'STAGE_FINAL': 10,
+            'GRADUATED': 20
+        }
+
         self.data_loader = self.app_utils.data_loader
         
         # Create reference processor with minimal default settings for filtering purposes
@@ -38,6 +60,7 @@ class AppDataFrame:
         2. Get most recent sessions for each subject
         3. Run quantile analysis pipeline on same window
         4. Match subjects and add alert categories
+        5. Add threshold-based alerts
         """
         df = df.copy()
         print(f" Starting data formatting with {len(df)} sessions, {window_days} day window")
@@ -56,6 +79,10 @@ class AppDataFrame:
         current_sessions_df['percentile_category'] = 'NS'  # Default to Not Scored
         # Add overall percentile column
         current_sessions_df['overall_percentile'] = float('nan')
+        # Add threshold alert column with default value
+        current_sessions_df['threshold_alert'] = 'N'  # Default to Normal
+        # Add combined alert column
+        current_sessions_df['combined_alert'] = 'NS'  # Default to Not Scored
 
         # Step 3: Run quantile analysis pipeline on same window data
         try: 
@@ -89,17 +116,23 @@ class AppDataFrame:
             alert_service = app_utils.initialize_alert_service()
             print(f" Initialized alert service")
 
-            # Step 3.5: Get subject IDs from current sessions dataframe
+            # Step 3.5: Initialize threshold analyzer
+            threshold_analyzer = app_utils.initialize_threshold_analyzer()
+            threshold_analyzer.set_threshold_config(self.threshold_config)
+            print(f" Initialized threshold analyzer")
+
+            # Step 3.6: Get subject IDs from current sessions dataframe
             subject_ids = current_sessions_df['subject_id'].tolist()
 
-            # Step 3.6: Calculate overall percentiles for subjects
+            # Step 3.7: Calculate overall percentiles for subjects
             overall_percentiles = quantile_analyzer.calculate_overall_percentile(subject_ids)
             print(f"Calculated overall percentiles for {len(overall_percentiles)} subjects") # DEBUGGING
 
-            # Step 4: Map overall percentiles to alert categories and update the dataframe
+            # Step 4: Apply threshold alerts
             alert_count = 0
             for i, row in current_sessions_df.iterrows():
                 subject_id = row['subject_id']
+                stage = row.get('current_stage_actual')
                 
                 # Find this subject in overall percentiles
                 subject_percentile = overall_percentiles[overall_percentiles['subject_id'] == subject_id]
@@ -116,26 +149,53 @@ class AppDataFrame:
                         strata = subject_percentile['strata'].iloc[0]
                         current_sessions_df.loc[i, 'strata'] = strata
                     
-                    # Map to a category
-                    category = alert_service.map_overall_percentile_to_category(overall_percentile)
+                    # Map to a category (percentile-based)
+                    percentile_category = alert_service.map_overall_percentile_to_category(overall_percentile)
                     
-                    # Update dataframe
-                    current_sessions_df.at[i, 'percentile_category'] = category
-                    
-                    # Count non-normal alerts
-                    if category not in ['N', 'NS']:
-                        alert_count += 1
+                    # Update dataframe with percentile category
+                    current_sessions_df.at[i, 'percentile_category'] = percentile_category
+                
+                # Apply stage-specific threshold alerts
+                if stage in self.stage_thresholds:
+                    threshold = self.stage_thresholds[stage]
+                    if 'session' in row and row['session'] > threshold:
+                        current_sessions_df.at[i, 'threshold_alert'] = 'T'
+                
+                # Apply total sessions threshold
+                if 'session' in row and row['session'] > 40:
+                    current_sessions_df.at[i, 'threshold_alert'] = 'T'
+                
+                # Combine alerts
+                percentile_category = current_sessions_df.at[i, 'percentile_category']
+                threshold_alert = current_sessions_df.at[i, 'threshold_alert']
+                
+                if threshold_alert == 'T':
+                    if percentile_category != 'NS':
+                        # Combine both alerts
+                        current_sessions_df.at[i, 'combined_alert'] = f"{percentile_category}, T"
+                    else:
+                        # Only threshold alert
+                        current_sessions_df.at[i, 'combined_alert'] = 'T'
+                else:
+                    # Only percentile alert
+                    current_sessions_df.at[i, 'combined_alert'] = percentile_category
+                
+                # Count non-normal alerts
+                if current_sessions_df.at[i, 'combined_alert'] not in ['N', 'NS']:
+                    alert_count += 1
 
             print(f"Total alerts found: {alert_count} out of {len(current_sessions_df)} subjects") # DEBUGGING 
 
         except Exception as e:
-            print(f"Error in quantile analysis pipeline: {str(e)}")
+            print(f"Error in analysis pipeline: {str(e)}")
             print(traceback.format_exc())
 
         # Define column order 
         column_order = [
             'subject_id',
+            'combined_alert',  # Change from percentile_category to combined_alert
             'percentile_category',
+            'threshold_alert',
             'overall_percentile',
             'strata',
             'session_date',
@@ -197,7 +257,9 @@ class AppDataFrame:
         # Improve column header display
         formatted_column_names = {
             'subject_id': 'Subject ID',
-            'percentile_category': 'Alert',  # Add label for the alert column
+            'combined_alert': 'Alert',  # Update label for combined alert column
+            'percentile_category': 'Percentile Alert', 
+            'threshold_alert': 'Threshold Alert',
             'overall_percentile': 'Percentile',
             'strata': 'Strata',
             'session_date': 'Date',
@@ -258,24 +320,24 @@ class AppDataFrame:
                 'if': {'column_id': 'subject_id'},
                 'fontWeight': 'bold'
             },
-            # Row-level highlighting with lighter colors
+            # Row-level highlighting with lighter colors - update to use combined_alert
             {
-                'if': {'filter_query': '{percentile_category} eq "SB"'},
+                'if': {'filter_query': '{combined_alert} contains "SB" || {combined_alert} eq "T"'},
                 'backgroundColor': '#FFC380',  # Light orange
                 'className': 'alert-sb-row'
             },
             {
-                'if': {'filter_query': '{percentile_category} eq "B"'},
+                'if': {'filter_query': '{combined_alert} contains "B" && !({combined_alert} contains "SB")'},
                 'backgroundColor': '#FFC380',  # Very light orange
                 'className': 'alert-b-row'
             },
             {
-                'if': {'filter_query': '{percentile_category} eq "G"'},
+                'if': {'filter_query': '{combined_alert} contains "G" && !({combined_alert} contains "SG")'},
                 'backgroundColor': '#9FC5E8',  # Light blue
                 'className': 'alert-g-row'
             },
             {
-                'if': {'filter_query': '{percentile_category} eq "SG"'},
+                'if': {'filter_query': '{combined_alert} contains "SG"'},
                 'backgroundColor': '#9FC5E8',  # Slightly darker blue
                 'className': 'alert-sg-row'
             }

@@ -230,7 +230,12 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
     
     # Apply alert category filter if selected
     if alert_category != "all":
-        formatted_df = formatted_df[formatted_df["percentile_category"] == alert_category]
+        if alert_category == "T":
+            # Filter for threshold alerts specifically
+            formatted_df = formatted_df[formatted_df["threshold_alert"] == "T"]
+        else:
+            # For other alert categories, use combined_alert field
+            formatted_df = formatted_df[formatted_df["combined_alert"].str.contains(alert_category)]
     
     # Apply sorting based on selected option
     if sort_option != "none":
