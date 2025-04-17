@@ -5,11 +5,15 @@ import traceback
 from app_utils import AppUtils
 from app_utils.app_analysis.reference_processor import ReferenceProcessor
 from dash import callback_context, Input, Output, clientside_callback
+from .tooltips import TooltipController
 
 class AppDataFrame:
     def __init__(self):
         # Initialize app utilities
         self.app_utils = AppUtils()
+
+        # Initialize tooltip controller
+        self.tooltip_controller = TooltipController()
 
         # Feature configuration for quantile analysis
         self.features_config = {
@@ -56,21 +60,79 @@ class AppDataFrame:
         """
         Format the dataframe for display in the table
 
-        1. Filter data to sliding window
-        2. Get most recent sessions for each subject
-        3. Run quantile analysis pipeline on same window
-        4. Match subjects and add alert categories
-        5. Add threshold-based alerts
+        1. Pre-compute all-time percentiles once
+        2. Filter data for display based on window_days
+        3. Get most recent sessions for each subject in the display window
+        4. Apply alerts based on pre-computed percentiles
         """
         df = df.copy()
         print(f" Starting data formatting with {len(df)} sessions, {window_days} day window")
         
-        # Step 1: Update window days in reference processor and apply sliding window filter
-        self.reference_processor.window_days = window_days
-        window_df = self.reference_processor.apply_sliding_window(df, reference_date)
-        print(f"Applied sliding window: {len(window_df)} sessions")
+        # Step 1: Compute all-time percentiles if not already done
+        if not hasattr(self, 'overall_percentiles'):
+            print("Computing all-time percentiles...")
+            
+            # Use a very large window for all-time computation (365 days * 10 years)
+            all_time_window = 365 * 10
+            
+            # Initialize app_utils
+            app_utils = AppUtils()
+            
+            # Initialize reference processor for all-time percentile calculation
+            reference_processor = app_utils.initialize_reference_processor(
+                features_config=self.features_config,
+                window_days=all_time_window,
+                min_sessions=1,  # Minimum sessions requirement for eligibility
+                min_days=1       # Minimum days requirement for eligibility
+            )
+            
+            # Apply sliding window for all-time data
+            all_time_df = reference_processor.apply_sliding_window(df, reference_date)
+            print(f"Applied all-time window: {len(all_time_df)} sessions")
+            
+            # Process data through reference pipeline to create strata
+            stratified_data = app_utils.process_reference_data(
+                df=all_time_df, 
+                reference_date=reference_date,
+                remove_outliers=False
+            )
+            print(f"Created {len(stratified_data)} strata")
+            
+            # Initialize quantile analyzer with strata
+            quantile_analyzer = app_utils.initialize_quantile_analyzer(stratified_data)
+            print(f"Initialized quantile analyzer")
+            
+            # Initialize alert service
+            alert_service = app_utils.initialize_alert_service()
+            print(f"Initialized alert service")
+            
+            # Initialize threshold analyzer
+            threshold_analyzer = app_utils.initialize_threshold_analyzer()
+            threshold_analyzer.set_threshold_config(self.threshold_config)
+            print(f"Initialized threshold analyzer")
+            
+            # Calculate overall percentiles for all subjects (one-time calculation)
+            self.overall_percentiles = quantile_analyzer.calculate_overall_percentile()
+            self.alert_service = alert_service
+            self.threshold_analyzer = threshold_analyzer
+            print(f"Calculated overall percentiles for {len(self.overall_percentiles)} subjects")
+        
+        # Step 2: Apply sliding window filter for DISPLAY only
+        # Make sure we have a reference processor for display filtering
+        if not hasattr(self, 'display_processor'):
+            self.display_processor = ReferenceProcessor(
+                features_config={},  # Empty dict since we're only using it for filtering
+                window_days=window_days,
+                min_sessions=1,
+                min_days=1
+            )
+        else:
+            self.display_processor.window_days = window_days
+        
+        window_df = self.display_processor.apply_sliding_window(df, reference_date)
+        print(f"Applied display window: {len(window_df)} sessions")
 
-        # Step 2: Get most current session for each subject in the window
+        # Step 3: Get most current session for each subject in the window
         window_df = window_df.sort_values('session_date', ascending=False)
         current_sessions_df = window_df.drop_duplicates(subset=['subject_id'], keep='first')
         print(f"Got current sessions for {len(current_sessions_df)} subjects")
@@ -84,111 +146,63 @@ class AppDataFrame:
         # Add combined alert column
         current_sessions_df['combined_alert'] = 'NS'  # Default to Not Scored
 
-        # Step 3: Run quantile analysis pipeline on same window data
-        try: 
-            print(f" Starting quantile analysis pipeline for {len(window_df)} sessions") # DEBUGGING
+        # Step 4: Apply pre-computed percentiles and alerts to the display data
+        alert_count = 0
+        for i, row in current_sessions_df.iterrows():
+            subject_id = row['subject_id']
+            stage = row.get('current_stage_actual')
+            
+            # Find this subject in overall percentiles
+            subject_percentile = self.overall_percentiles[self.overall_percentiles['subject_id'] == subject_id]
+            
+            if not subject_percentile.empty:
+                # Get the overall percentile value
+                overall_percentile = subject_percentile['overall_percentile'].iloc[0]
 
-            # Reset app_utils
-            app_utils = AppUtils()
+                # Store percentile value in dataframe
+                current_sessions_df.loc[i, 'overall_percentile'] = overall_percentile
 
-            # Step 3.1: Initialize reference processor with feature congfiguration
-            reference_processor = app_utils.initialize_reference_processor(
-                features_config=self.features_config,
-                window_days = window_days,
-                min_sessions = 1,  # Minimum sessions requirement for eligibility
-                min_days = 1       # Minimum days requirement for eligibility
-            )
-            print(f" Initialized reference processor")
-
-            # Step 3.2: Process data through reference pipeline to create strata
-            stratified_data = app_utils.process_reference_data(
-                df = window_df, 
-                reference_date = reference_date,
-                remove_outliers = False
-            )
-            print(f" Created {len(stratified_data)} strata")
-
-            # Step 3.3: Initialize quantile analyzer with strata
-            quantile_analyzer = app_utils.initialize_quantile_analyzer(stratified_data)
-            print(f" Initialized quantile analyzer")
-
-            # Step 3.4: Initialize alert service
-            alert_service = app_utils.initialize_alert_service()
-            print(f" Initialized alert service")
-
-            # Step 3.5: Initialize threshold analyzer
-            threshold_analyzer = app_utils.initialize_threshold_analyzer()
-            threshold_analyzer.set_threshold_config(self.threshold_config)
-            print(f" Initialized threshold analyzer")
-
-            # Step 3.6: Get subject IDs from current sessions dataframe
-            subject_ids = current_sessions_df['subject_id'].tolist()
-
-            # Step 3.7: Calculate overall percentiles for subjects
-            overall_percentiles = quantile_analyzer.calculate_overall_percentile(subject_ids)
-            print(f"Calculated overall percentiles for {len(overall_percentiles)} subjects") # DEBUGGING
-
-            # Step 4: Apply threshold alerts
-            alert_count = 0
-            for i, row in current_sessions_df.iterrows():
-                subject_id = row['subject_id']
-                stage = row.get('current_stage_actual')
+                # Get strata and add to the dataframe
+                if 'strata' in subject_percentile.columns:
+                    strata = subject_percentile['strata'].iloc[0]
+                    current_sessions_df.loc[i, 'strata'] = strata
                 
-                # Find this subject in overall percentiles
-                subject_percentile = overall_percentiles[overall_percentiles['subject_id'] == subject_id]
+                # Map to a category (percentile-based)
+                percentile_category = self.alert_service.map_overall_percentile_to_category(overall_percentile)
                 
-                if not subject_percentile.empty:
-                    # Get the overall percentile value
-                    overall_percentile = subject_percentile['overall_percentile'].iloc[0]
-
-                    # Store percentile value in dataframe
-                    current_sessions_df.loc[i, 'overall_percentile'] = overall_percentile
-
-                    # Get strata and add to the dataframe
-                    if 'strata' in subject_percentile.columns:
-                        strata = subject_percentile['strata'].iloc[0]
-                        current_sessions_df.loc[i, 'strata'] = strata
-                    
-                    # Map to a category (percentile-based)
-                    percentile_category = alert_service.map_overall_percentile_to_category(overall_percentile)
-                    
-                    # Update dataframe with percentile category
-                    current_sessions_df.at[i, 'percentile_category'] = percentile_category
-                
-                # Apply stage-specific threshold alerts
-                if stage in self.stage_thresholds:
-                    threshold = self.stage_thresholds[stage]
-                    if 'session' in row and row['session'] > threshold:
-                        current_sessions_df.at[i, 'threshold_alert'] = 'T'
-                
-                # Apply total sessions threshold
-                if 'session' in row and row['session'] > 40:
+                # Update dataframe with percentile category
+                current_sessions_df.at[i, 'percentile_category'] = percentile_category
+            
+            # Apply stage-specific threshold alerts
+            if stage in self.stage_thresholds:
+                threshold = self.stage_thresholds[stage]
+                if 'session' in row and row['session'] > threshold:
                     current_sessions_df.at[i, 'threshold_alert'] = 'T'
-                
-                # Combine alerts
-                percentile_category = current_sessions_df.at[i, 'percentile_category']
-                threshold_alert = current_sessions_df.at[i, 'threshold_alert']
-                
-                if threshold_alert == 'T':
-                    if percentile_category != 'NS':
-                        # Combine both alerts
-                        current_sessions_df.at[i, 'combined_alert'] = f"{percentile_category}, T"
-                    else:
-                        # Only threshold alert
-                        current_sessions_df.at[i, 'combined_alert'] = 'T'
+            
+            # Apply total sessions threshold
+            if 'session' in row and row['session'] > 40:
+                current_sessions_df.at[i, 'threshold_alert'] = 'T'
+            
+            # Combine alerts
+            percentile_category = current_sessions_df.at[i, 'percentile_category']
+            threshold_alert = current_sessions_df.at[i, 'threshold_alert']
+            
+            if threshold_alert == 'T':
+                if percentile_category != 'NS':
+                    # Combine both alerts
+                    current_sessions_df.at[i, 'combined_alert'] = f"{percentile_category}, T"
                 else:
-                    # Only percentile alert
-                    current_sessions_df.at[i, 'combined_alert'] = percentile_category
-                
-                # Count non-normal alerts
-                if current_sessions_df.at[i, 'combined_alert'] not in ['N', 'NS']:
-                    alert_count += 1
+                    # Only threshold alert
+                    current_sessions_df.at[i, 'combined_alert'] = 'T'
+            else:
+                # Only percentile alert
+                current_sessions_df.at[i, 'combined_alert'] = percentile_category
+            
+            # Count non-normal alerts
+            if current_sessions_df.at[i, 'combined_alert'] not in ['N', 'NS']:
+                alert_count += 1
 
-            print(f"Total alerts found: {alert_count} out of {len(current_sessions_df)} subjects") # DEBUGGING 
-
-        except Exception as e:
-            print(f"Error in analysis pipeline: {str(e)}")
-            print(traceback.format_exc())
+        print(f"Total alerts found: {alert_count} out of {len(current_sessions_df)} subjects")
 
         # Define column order 
         column_order = [
@@ -364,12 +378,22 @@ class AppDataFrame:
 
         # Build the table with updated styling
         return html.Div([
+            self.tooltip_controller.get_tooltip_container(),
+
             dash_table.DataTable(
                 id='session-table',
                 data=formatted_data.to_dict('records'),
                 columns=columns,
                 page_size=20,
                 fixed_rows={'headers': True},
+                style_data_conditional=conditional_styles + [
+                    {
+                        'if': {'column_id': 'subject_id'},
+                        'cursor': 'pointer'
+                    }
+                ],
+                tooltip_delay=0,
+                tooltip_duration=None,
                 style_table={
                     'overflowY': 'auto',
                     'overflowX': 'auto',
@@ -401,7 +425,6 @@ class AppDataFrame:
                     'textAlign': 'center',  
                     'padding': '10px 5px',  
                     'lineHeight': '15px'     
-                },
-                style_data_conditional=conditional_styles
+                }
             )
         ], className="data-table-container", style={'width': '100%'})

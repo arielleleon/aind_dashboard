@@ -23,6 +23,8 @@ class RankChangePlot:
     def build(self, window_days=None):
         """
         Build and return the rank change plot figure
+        
+        The time window is used for display filtering only, not for percentile calculation
         """
         # Default window days if not specified
         if window_days is None:
@@ -46,7 +48,7 @@ class RankChangePlot:
             reference_date = df['session_date'].max()
             start_date = reference_date - timedelta(days=window_days)
             
-            # Filter data to analysis window
+            # Filter data to display window
             window_df = df[(df['session_date'] >= start_date) & (df['session_date'] <= reference_date)].copy()
             
             if window_df.empty:
@@ -61,6 +63,7 @@ class RankChangePlot:
             time_bin_labels = [str(tb.date()) for tb in time_bins]
             
             # Get percentile category data
+            # Note: The _get_category_data method should be updated to use pre-computed percentiles
             df_with_categories = self._get_category_data(window_df, time_bins, reference_date)
             
             # If no categories data, return empty figure
@@ -160,12 +163,20 @@ class RankChangePlot:
     def _get_category_data(self, window_df, time_bins, reference_date):
         """
         Get category data from the window dataframe
+        
+        Uses the all-time percentile calculation, but only for subjects in the window
         """
         try:
             # Initialize new app_utils to avoid state issues
             app_utils = AppUtils()
             
-            # Initialize reference processor
+            # Set up a very long window for all-time percentile calculation
+            all_time_window = 365 * 10
+            
+            # Get full dataset for percentile calculation
+            full_df = app_utils.get_session_data()
+            
+            # Initialize reference processor for all-time calculation
             reference_processor = app_utils.initialize_reference_processor(
                 features_config={
                     'finished_trials': False,
@@ -174,14 +185,17 @@ class RankChangePlot:
                     'foraging_performance': False,
                     'abs(bias_naive)': True
                 },
-                window_days=30,
+                window_days=all_time_window,
                 min_sessions=1,
                 min_days=1
             )
             
-            # Process data
+            # Apply sliding window for all-time data
+            all_time_df = reference_processor.apply_sliding_window(full_df, reference_date)
+            
+            # Process data for all-time percentiles
             stratified_data = app_utils.process_reference_data(
-                df=window_df,
+                df=all_time_df,
                 reference_date=reference_date,
                 remove_outliers=False
             )
@@ -189,7 +203,7 @@ class RankChangePlot:
             # Initialize quantile analyzer
             quantile_analyzer = app_utils.initialize_quantile_analyzer(stratified_data)
             
-            # Get overall percentiles
+            # Get overall percentiles for all subjects
             overall_percentiles = quantile_analyzer.calculate_overall_percentile()
             
             # Initialize alert service
@@ -199,6 +213,12 @@ class RankChangePlot:
             overall_percentiles['category'] = overall_percentiles['overall_percentile'].apply(
                 lambda p: alert_service.map_overall_percentile_to_category(p)
             )
+            
+            # Get unique subjects in the display window
+            window_subjects = window_df['subject_id'].unique()
+            
+            # Filter overall percentiles to only include subjects in the window
+            window_percentiles = overall_percentiles[overall_percentiles['subject_id'].isin(window_subjects)].copy()
             
             # Create a time bin column in the window data
             window_df['time_bin'] = None
@@ -220,7 +240,7 @@ class RankChangePlot:
             # Join with percentile data
             result = pd.merge(
                 latest_sessions[['subject_id', 'time_bin']],
-                overall_percentiles[['subject_id', 'category']],
+                window_percentiles[['subject_id', 'category']],
                 on='subject_id',
                 how='inner'
             )

@@ -205,7 +205,8 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
     # Create a fresh dataframe formatter to avoid state issues
     app_dataframe = AppDataFrame()
     
-    # Apply complete formatting with alert population
+    # Apply formatting with window_days for display only
+    # Percentiles will be computed using all-time data on first call
     formatted_df = app_dataframe.format_dataframe(df, window_days=time_window_value)
     
     # Apply each filter if it has a value
