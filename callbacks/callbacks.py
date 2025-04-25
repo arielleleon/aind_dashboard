@@ -229,7 +229,13 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
     if alert_category != "all":
         if alert_category == "T":
             # Filter for threshold alerts specifically
-            formatted_df = formatted_df[formatted_df["threshold_alert"] == "T"]
+            # Updated to handle the new "T | STAGE_NAME" format in stage_sessions_alert
+            formatted_df = formatted_df[
+                (formatted_df["threshold_alert"] == "T") | 
+                (formatted_df["total_sessions_alert"] == "T") | 
+                (formatted_df["stage_sessions_alert"].str.contains("T |", na=False)) | 
+                (formatted_df["water_day_total_alert"] == "T")
+            ]
         else:
             # For other alert categories, use combined_alert field
             formatted_df = formatted_df[formatted_df["combined_alert"].str.contains(alert_category)]

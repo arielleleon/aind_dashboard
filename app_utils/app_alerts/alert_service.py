@@ -463,3 +463,294 @@ class AlertService:
             return "G"
         else:
             return "SG"
+        
+    def get_not_scored_reason(self, subject_id: str) -> str:
+        """
+        Get the reason why a subject is marked as Not Scored
+        Takes into account combined current and historical data
+
+        Parameters:
+            subject_id: str
+                The subject ID to check
+        
+        Returns:
+            str: Reason for Not Scored status
+        """
+        if not self._validate_analyzer():
+            return "Analysis not initialized"
+        
+        # Get the strata for this subject
+        overall_percentiles = self.app_utils.calculate_overall_percentile([subject_id])
+        if overall_percentiles.empty:
+            return "Subject not found in analyzed data"
+        
+        # Get the row for this subject
+        subject_row = overall_percentiles.iloc[0]
+        strata = subject_row.get('strata')
+        
+        if pd.isna(subject_row.get('overall_percentile')):
+            # Check if the strata exists in the percentile data
+            if strata not in self.app_utils.quantile_analyzer.percentile_data:
+                # Get total count of subjects in this strata (current + historical)
+                total_in_strata = 0
+                for df_strata, df in self.app_utils.quantile_analyzer.stratified_data.items():
+                    if df_strata == strata:
+                        total_in_strata = len(df)
+                        break
+                
+                if total_in_strata < 10:
+                    return f"Strata '{strata}' has only {total_in_strata} subjects (10+ required)"
+                else:
+                    return f"Strata '{strata}' not enough valid feature data"
+            else:
+                # Check for missing features
+                missing_features = []
+                for feature in self.app_utils.quantile_analyzer.features_config.keys():
+                    percentile_col = f"{feature}_percentile"
+                    if percentile_col in subject_row and pd.isna(subject_row[percentile_col]):
+                        missing_features.append(feature)
+                
+                if missing_features:
+                    return f"Missing data for features: {', '.join(missing_features)}"
+                
+                return "Unknown reason"
+        else:
+            return "Subject is scored (overall percentile available)"
+        
+    def get_unified_alerts(self, subject_ids=None):
+        """
+        Get unified alert structure combining both quantile and threshold alerts
+        
+        Parameters:
+            subject_ids (Optional[List[str]]): List of subject IDs to get alerts for
+            
+        Returns:
+            Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their unified alerts
+        """
+        # Validate analyzer requirements
+        if not self._validate_analyzer():
+            raise ValueError("Required analyzers not available. Initialize with AppUtils instance.")
+        
+        # Get quantile alerts
+        quantile_alerts = self.get_quantile_alerts(subject_ids)
+        
+        # Get threshold alerts if threshold analyzer is available
+        threshold_alerts = {}
+        if hasattr(self.app_utils, 'threshold_analyzer') and self.app_utils.threshold_analyzer is not None:
+            # Analyze most recent data with threshold analyzer
+            if hasattr(self.app_utils, 'get_session_data'):
+                df = self.app_utils.get_session_data()
+                threshold_df = self.app_utils.threshold_analyzer.analyze_thresholds(df)
+                
+                # Get most recent session for each subject
+                most_recent = threshold_df.sort_values('session_date').groupby('subject_id').last().reset_index()
+                
+                # Stage-specific session thresholds
+                stage_thresholds = {
+                    'STAGE_1': 5,
+                    'STAGE_2': 5,
+                    'STAGE_3': 6,
+                    'STAGE_4': 10,
+                    'STAGE_FINAL': 10,
+                    'GRADUATED': 20
+                }
+                
+                # Extract threshold alerts
+                for _, row in most_recent.iterrows():
+                    subject_id = row['subject_id']
+                    current_stage = row.get('current_stage_actual', '')
+                    session_count = row.get('session', 0)
+                    water_day_total = row.get('water_day_total', 0)
+                    
+                    # Initialize threshold alerts structure
+                    subject_threshold_alerts = {
+                        'threshold_alert': 'N',  # Overall threshold alert (N/T)
+                        'session_count': session_count,
+                        'water_day_total': water_day_total,
+                        'stage': current_stage,
+                        'session_date': row.get('session_date'),
+                        'specific_alerts': {
+                            'total_sessions': {
+                                'value': session_count,
+                                'threshold': 40,
+                                'alert': 'T' if session_count > 40 else 'N',
+                                'description': f"Total sessions: {session_count} > 40" if session_count > 40 else ''
+                            },
+                            'water_day_total': {
+                                'value': water_day_total,
+                                'threshold': 3.5,
+                                'alert': 'T' if water_day_total > 3.5 else 'N',
+                                'description': f"Water day total: {water_day_total} > 3.5ml" if water_day_total > 3.5 else ''
+                            }
+                        }
+                    }
+                    
+                    # Add stage-specific threshold
+                    if current_stage in stage_thresholds:
+                        stage_threshold = stage_thresholds[current_stage]
+                        subject_threshold_alerts['specific_alerts']['stage_sessions'] = {
+                            'value': session_count,
+                            'threshold': stage_threshold,
+                            'alert': 'T' if session_count > stage_threshold else 'N',
+                            'description': f"{current_stage}: {session_count} > {stage_threshold}" if session_count > stage_threshold else '',
+                            'stage': current_stage  # Add stage name to the alert data
+                        }
+                    
+                    # Set overall threshold alert to 'T' if any specific alert is 'T'
+                    if any(alert['alert'] == 'T' for alert in subject_threshold_alerts['specific_alerts'].values()):
+                        subject_threshold_alerts['threshold_alert'] = 'T'
+                    
+                    threshold_alerts[subject_id] = subject_threshold_alerts
+        
+        # Combine alerts into unified structure
+        unified_alerts = {}
+        
+        # Get all subjects to process
+        all_subjects = set()
+        if subject_ids is not None:
+            all_subjects.update(subject_ids)
+        else:
+            # Include all subjects from quantile and threshold alerts
+            all_subjects.update(quantile_alerts.keys())
+            all_subjects.update(threshold_alerts.keys())
+            
+            # If no subject_ids specified, also include all subjects from session data
+            if hasattr(self.app_utils, 'get_session_data'):
+                df = self.app_utils.get_session_data()
+                if df is not None and not df.empty:
+                    all_subjects.update(df['subject_id'].unique())
+        
+        # Start with all subjects in quantile alerts
+        for subject_id, alerts in quantile_alerts.items():
+            unified_alerts[subject_id] = {
+                'quantile': alerts,
+                'threshold': threshold_alerts.get(subject_id, {
+                    'threshold_alert': 'N',
+                    'specific_alerts': {}
+                })
+            }
+        
+        # Add any subjects that only have threshold alerts
+        for subject_id, alerts in threshold_alerts.items():
+            if subject_id not in unified_alerts:
+                unified_alerts[subject_id] = {
+                    'quantile': {'current': {}, 'historical': {}},
+                    'threshold': alerts
+                }
+        
+        # Add feature-specific percentiles and categories
+        if hasattr(self.app_utils, 'quantile_analyzer') and self.app_utils.quantile_analyzer is not None:
+            # Get comprehensive dataframe with all subject percentile data
+            all_data = self.app_utils.quantile_analyzer.create_comprehensive_dataframe(include_history=False)
+            
+            if not all_data.empty:
+                # Get all percentile columns
+                percentile_cols = [col for col in all_data.columns if col.endswith('_percentile')]
+                
+                # Filter to specified subjects if provided
+                if subject_ids is not None:
+                    all_data = all_data[all_data['subject_id'].isin(subject_ids)]
+                
+                # Process each subject
+                for subject_id in all_data['subject_id'].unique():
+                    # Skip if subject not in unified alerts (shouldn't happen)
+                    if subject_id not in unified_alerts:
+                        continue
+                        
+                    # Get current strata data for this subject
+                    subject_data = all_data[(all_data['subject_id'] == subject_id) & 
+                                           (all_data['is_current'] == True)]
+                    
+                    if subject_data.empty:
+                        continue
+                    
+                    # Get first row (most recent strata)
+                    row = subject_data.iloc[0]
+                    
+                    # Add feature-specific percentiles and categories
+                    feature_percentiles = {}
+                    
+                    for col in percentile_cols:
+                        # Get feature name
+                        feature = col.replace('_percentile', '')
+                        
+                        # Get percentile value
+                        percentile = row[col] if col in row and not pd.isna(row[col]) else None
+                        
+                        # Skip features with no percentile data
+                        if percentile is None:
+                            continue
+                        
+                        # Map to category
+                        category = self.map_percentile_to_category(percentile)
+                        
+                        # Add to feature percentiles
+                        feature_percentiles[feature] = {
+                            'percentile': percentile,
+                            'category': category,
+                            'description': self.get_category_description(category)
+                        }
+                        
+                        # Add processed value if available
+                        processed_col = f"{feature}_processed"
+                        if processed_col in row and not pd.isna(row[processed_col]):
+                            feature_percentiles[feature]['processed_value'] = row[processed_col]
+                    
+                    # Add feature percentiles to unified alerts
+                    unified_alerts[subject_id]['feature_percentiles'] = feature_percentiles
+                    
+                    # Add strata information
+                    if 'strata' in row:
+                        unified_alerts[subject_id]['strata'] = row['strata']
+        
+        # Calculate overall percentiles for all subjects
+        overall_percentiles = {}
+        try:
+            # Get overall percentiles for all subjects
+            overall_df = self.app_utils.calculate_overall_percentile(list(all_subjects))
+            if not overall_df.empty:
+                # Create mapping of subject_id to overall_percentile
+                overall_percentiles = dict(
+                    zip(overall_df['subject_id'], overall_df['overall_percentile'])
+                )
+        except Exception as e:
+            print(f"Error calculating overall percentiles: {e}")
+        
+        # Add subjects that don't have alerts yet and get NS reasons
+        subjects_without_alerts = all_subjects - set(unified_alerts.keys())
+        for subject_id in subjects_without_alerts:
+            # Get NS reason for this subject
+            ns_reason = self.get_not_scored_reason(subject_id)
+            
+            # Add to unified alerts with NS category
+            unified_alerts[subject_id] = {
+                'quantile': {'current': {}, 'historical': {}},
+                'threshold': {
+                    'threshold_alert': 'N',
+                    'specific_alerts': {}
+                },
+                'overall_percentile': None,
+                'alert_category': 'NS',
+                'ns_reason': ns_reason
+            }
+        
+        # Add overall percentiles and categories to all subjects
+        for subject_id in unified_alerts:
+            # Get overall percentile if available
+            overall_percentile = overall_percentiles.get(subject_id)
+            
+            # Add to unified alerts
+            unified_alerts[subject_id]['overall_percentile'] = overall_percentile
+            
+            # Calculate alert category from overall percentile
+            if overall_percentile is not None and not np.isnan(overall_percentile):
+                alert_category = self.map_overall_percentile_to_category(overall_percentile)
+            else:
+                alert_category = 'NS'
+                # Add NS reason if not already present
+                if 'ns_reason' not in unified_alerts[subject_id]:
+                    unified_alerts[subject_id]['ns_reason'] = self.get_not_scored_reason(subject_id)
+            
+            unified_alerts[subject_id]['alert_category'] = alert_category
+        
+        return unified_alerts

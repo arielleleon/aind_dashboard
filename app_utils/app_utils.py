@@ -56,7 +56,7 @@ class AppUtils:
     
     def process_reference_data(self, df, reference_date = None, remove_outliers = False):
         """
-        Process data through reference processor pipeline
+        Process data through reference processor pipeline with enhanced historical data handling
 
         Parameters:
             df (pd.DataFrame): Input dataframe with raw session data
@@ -71,19 +71,27 @@ class AppUtils:
         
         # Apply sliding window
         window_df = self.reference_processor.apply_sliding_window(df, reference_date)
+        print(f"Applied sliding window: {len(window_df)} sessions")
 
         # Get eligible subjects
         eligible_subjects = self.reference_processor.get_eligible_subjects(window_df)
         eligible_df = window_df[window_df['subject_id'].isin(eligible_subjects)]
+        print(f"Got {len(eligible_subjects)} eligible subjects")
 
         # Preprocess data
         processed_df = self.reference_processor.preprocess_data(eligible_df, remove_outliers)
+        print(f"Preprocessed data: {len(processed_df)} sessions")
 
-        # Prepare for quantile analysis
-        stratified_data = self.reference_processor.prepare_for_quantile_analysis(processed_df)
+        # Prepare for quantile analysis - with explicit include_history=True
+        stratified_data = self.reference_processor.prepare_for_quantile_analysis(
+            processed_df, 
+            include_history=True
+        )
+        print(f"Created {len(stratified_data)} strata including historical data")
 
         # Store historical data for later use
         self.historical_data = self.reference_processor.subject_history
+        print(f"Stored historical data for {len(self.historical_data) if self.historical_data is not None else 0} subject-strata combinations")
 
         return stratified_data
     
@@ -195,3 +203,10 @@ class AppUtils:
         
         self.threshold_analyzer = ThresholdAnalyzer(threshold_config)
         return self.threshold_analyzer
+
+    def get_unified_alerts(self, subject_ids = None):
+        """ Get unified alerts """
+        if self.alert_service is None:
+            self.initialize_alert_service()
+
+        return self.alert_service.get_unified_alerts(subject_ids)

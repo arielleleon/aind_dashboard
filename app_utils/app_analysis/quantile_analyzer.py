@@ -28,12 +28,16 @@ class QuantileAnalyzer:
     def calculate_percentiles(self):
         """
         Calculate percentile ranks for each subject within each stratified group
-        and for historical data if available
+        using combined current and historical data for more robust distributions
         """
-        # Calculate percentiles for current strata
+        # Calculate percentiles for strata (now contains both current and historical data)
         for strata, df in self.stratified_data.items():
-            # Skip strata with too few subjects
+            # Log strata size for debugging
+            print(f"Processing strata '{strata}' with {len(df)} subjects (current + historical)")
+            
+            # Skip strata with too few subjects (consider increasing minimum)
             if len(df) < 10:  # Minimum number for meaningful percentiles
+                print(f"  Skipping strata '{strata}' - too few subjects ({len(df)} < 10)")
                 continue
                 
             # Get processed feature columns
@@ -42,40 +46,17 @@ class QuantileAnalyzer:
             # Create a copy to store percentiles
             percentile_df = df.copy()
             
-            # Calculate percentile for each feature
+            # Calculate percentile for each feature - ranking all subjects together
             for feature in feature_cols:
                 percentile_df[f"{feature.replace('_processed', '_percentile')}"] = (
                     df[feature].rank(pct=True) * 100
                 )
                 
+            # Store percentile data with an indicator of data source
             self.percentile_data[strata] = percentile_df
         
-        # Calculate percentiles for historical data if available
-        if self.historical_data is not None:
-            # Create a copy of historical data
-            historical_percentile_df = self.historical_data.copy()
-            
-            # Process each strata separately
-            for strata in historical_percentile_df['strata'].unique():
-                # Get all subjects in this strata (both current and historical)
-                strata_mask = historical_percentile_df['strata'] == strata
-                strata_df = historical_percentile_df[strata_mask]
-                
-                # Skip strata with too few subjects
-                if len(strata_df) < 10:
-                    continue
-                
-                # Get processed feature columns
-                feature_cols = [col for col in strata_df.columns if col.endswith('_processed')]
-                
-                # Calculate percentile for each feature within this strata
-                for feature in feature_cols:
-                    percentile_col = f"{feature.replace('_processed', '_percentile')}"
-                    historical_percentile_df.loc[strata_mask, percentile_col] = (
-                        strata_df[feature].rank(pct=True) * 100
-                    )
-            
-            self.historical_percentile_data = historical_percentile_df
+        # We don't need separate handling for historical data anymore since
+        # it's already incorporated in the stratified_data from ReferenceProcessor
 
     def create_comprehensive_dataframe(self, include_history: bool = False) -> pd.DataFrame:
         """

@@ -53,6 +53,18 @@ class ReferenceProcessor:
             pd.DataFrame
                 Dataframe filtered to the sliding window
         """
+        # Add defensive check for debugging
+        if df is None:
+            raise ValueError("Input dataframe is None")
+        
+        # Add debugging information
+        print(f"DataFrame in apply_sliding_window has shape: {df.shape}")
+        print(f"DataFrame columns: {df.columns.tolist()[:5]}...")  # Print first 5 columns
+        
+        # Check specifically for session_date column
+        if 'session_date' not in df.columns:
+            raise KeyError(f"'session_date' column not found in DataFrame with columns: {df.columns.tolist()}")
+        
         df = df.copy()
 
         # Get reference date (max is default)
@@ -432,13 +444,39 @@ class ReferenceProcessor:
             stratified_df, include_history=include_history
         )
         
-        # Split current strata averages into separate dataframes by strata
-        strata_dfs = {}
-        for strata in subject_averages['strata'].unique():
-            strata_dfs[strata] = subject_averages[subject_averages['strata'] == strata].copy()
-        
         # Store the historical data as an attribute that can be accessed separately
         self.subject_history = subject_history
         
-        # Return only the strata_dfs to maintain backward compatibility
+        # Create enhanced strata dataframes that include historical data
+        strata_dfs = {}
+        if include_history and subject_history is not None:
+            # Get unique strata across both current and historical data
+            all_strata = set(subject_averages['strata'].unique())
+            if subject_history is not None:
+                all_strata.update(subject_history['strata'].unique())
+            
+            # For each strata, combine current and historical data
+            for strata in all_strata:
+                # Get current subjects in this strata
+                current_strata_df = subject_averages[subject_averages['strata'] == strata].copy()
+                
+                # Get historical subjects in this strata (exclude subjects already in current)
+                if subject_history is not None:
+                    historical_strata_df = subject_history[
+                        (subject_history['strata'] == strata) & 
+                        (~subject_history['subject_id'].isin(current_strata_df['subject_id']))
+                    ].copy()
+                    
+                    # Combine current and historical data for this strata
+                    if not historical_strata_df.empty:
+                        strata_dfs[strata] = pd.concat([current_strata_df, historical_strata_df])
+                    else:
+                        strata_dfs[strata] = current_strata_df
+                else:
+                    strata_dfs[strata] = current_strata_df
+        else:
+            # Just use current data if not including history
+            for strata in subject_averages['strata'].unique():
+                strata_dfs[strata] = subject_averages[subject_averages['strata'] == strata].copy()
+        
         return strata_dfs
