@@ -125,156 +125,184 @@ class AlertService:
 
     def calculate_quantile_alerts(self, subject_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         """
-        Calculate quantile alerts for given subjects based on percentile rankings
-
-        Parameters:
-            subject_ids (Optional[List[str]]): List of subject IDs to calculate alerts for
-
-        Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their alerts
-        """
-        # Validate analyzer
-        if not self._validate_analyzer():
-            raise ValueError("QuantileAnalyzer not available. Initialize with AppUtils instance.")
+        Calculate quantile-based alerts for subjects
         
-        # Get comprehensive dataframe with all subject percentile rankings
-        all_data = self.app_utils.quantile_analyzer.create_comprehensive_dataframe(include_history = True)
-
-        # If empty, return empty results
-        if all_data.empty: 
+        Parameters:
+            subject_ids: Optional[List[str]]
+                List of subject IDs to calculate alerts for
+        
+        Returns:
+            Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their quantile alerts
+        """
+        # Make sure we have the quantile analyzer
+        if not self._validate_analyzer():
             return {}
         
-        # Filter to specified subjects if provided
-        if subject_ids is not None:
-            all_data = all_data[all_data['subject_id'].isin(subject_ids)]
-
-        # Initialize alerts
+        # Get analyzer reference from app utils
+        analyzer = self.app_utils.quantile_analyzer
+        
+        # Calculate overall percentiles for all subjects
+        overall_percentiles = analyzer.calculate_overall_percentile(subject_ids=subject_ids)
+        
+        # Get raw data to determine the most recent strata for each subject
+        raw_data = None
+        if hasattr(self.app_utils, 'get_session_data'):
+            raw_data = self.app_utils.get_session_data()
+        
+        # Create a dictionary to map subjects to their latest strata
+        subject_latest_strata = {}
+        if raw_data is not None and not raw_data.empty:
+            # Get the most recent session for each subject
+            latest_sessions = raw_data.sort_values('session_date').groupby('subject_id').last().reset_index()
+            
+            # Map subject_id to their current strata, reconstructing it from session data
+            for _, row in latest_sessions.iterrows():
+                subject_id = row['subject_id']
+                
+                # Extract task and stage
+                task = row.get('task', '')
+                stage = row.get('current_stage_actual', '')
+                
+                # Determine version 
+                version = row.get('curriculum_version', '')
+                if "2.3" in version:
+                    ver_group = "v3"
+                elif "1.0" in version:
+                    ver_group = "v1"
+                else:
+                    ver_group = "v2"
+                
+                # Simplify stage
+                if 'STAGE_FINAL' in stage or 'GRADUATED' in stage:
+                    simplified_stage = 'ADVANCED'
+                elif any(s in stage for s in ['STAGE_4', 'STAGE_3']):
+                    simplified_stage = 'INTERMEDIATE'
+                elif any(s in stage for s in ['STAGE_2', 'STAGE_1', 'STAGE_1_WARMUP']):
+                    simplified_stage = 'BEGINNER'
+                else:
+                    simplified_stage = 'UNKNOWN'
+                
+                # Create the strata string
+                strata = f"{task}_{simplified_stage}_{ver_group}"
+                
+                # Add to the mapping
+                subject_latest_strata[subject_id] = strata
+        
+        # Create a dictionary to store alerts by subject ID
         alerts = {}
-
-        # Get all percentile columns
-        percentile_cols = [col for col in all_data.columns if col.endswith('_percentile')]
-
+        
         # Process each subject
-        for subject_id in all_data['subject_id'].unique():
-            # Get all data for this subject
-            subject_data = all_data[all_data['subject_id'] == subject_id]
-
-            # Get the current strata row(s)
-            current_strata = subject_data[subject_data['is_current'] == True]
-
-            # Skip if no current strata
-            if current_strata.empty:
+        for subject_id, subject_group in overall_percentiles.groupby('subject_id'):
+            # Get the actual latest strata if available, otherwise use logic from overall_percentiles
+            if subject_id in subject_latest_strata:
+                # Find the entry with matching strata
+                latest_strata = subject_latest_strata[subject_id]
+                matching_rows = subject_group[subject_group['strata'] == latest_strata]
+                
+                # Use matching row if found, otherwise fallback to date-based or other methods
+                if not matching_rows.empty:
+                    subject_data = matching_rows.iloc[0]
+                elif 'last_date' in subject_group.columns:
+                    subject_data = subject_group.sort_values('last_date', ascending=False).iloc[0]
+                else:
+                    subject_data = subject_group.iloc[0]
+            elif 'last_date' in subject_group.columns:
+                # Sort by date if available
+                subject_data = subject_group.sort_values('last_date', ascending=False).iloc[0]
+            else:
+                # Fallback to first row if no better method
+                subject_data = subject_group.iloc[0]
+        
+            # Extract overall percentile
+            overall_percentile = subject_data.get('overall_percentile')
+            
+            # Skip subjects with no percentile (not scored)
+            if pd.isna(overall_percentile):
+                # Get reason for not scored
+                ns_reason = self.get_not_scored_reason(subject_id)
+                
+                # Create alert with not scored status
+                alerts[subject_id] = {
+                    'subject_id': subject_id,
+                    'overall_percentile': None,
+                    'alert_category': 'NS',
+                    'ns_reason': ns_reason,
+                    'strata': subject_data.get('strata')
+                }
                 continue
-
-            # Get historical strata
-            historical_strata = subject_data[subject_data['is_current'] == False]
-
-            # Initialize subject alerts
-            subject_alerts = {
-                'current': {},
-                'historical': {}
+            
+            # Map percentile to category using configured thresholds
+            alert_category = self.map_percentile_to_category(overall_percentile)
+            
+            # Create alert
+            alerts[subject_id] = {
+                'subject_id': subject_id,
+                'overall_percentile': overall_percentile,
+                'alert_category': alert_category,
+                'strata': subject_data.get('strata')
             }
-
-            # Process current strata percentiles
-            for _, row in current_strata.iterrows():
-                strata = row['strata']
-                strata_alerts = {}
-
-                # Process each percentile column
-                for col in percentile_cols:
-                    # Extract feature names
-                    feature = col.replace('_percentile', '')
-
-                    # Get percentile and map to category
-                    percentile = row[col]
-                    if not pd.isna(percentile):
-                        category = self.map_percentile_to_category(percentile)
-
-                        # Create alert entry with details
-                        strata_alerts[feature] = {
-                            'percentile': percentile,
-                            'category': category,
-                            'description': self.get_category_description(category),
-                            'strata': strata
-                        }
-
-                        # Add processed value if available
-                        processed_col = f"{feature}_processed"
-                        if processed_col in row and not pd.isna(row[processed_col]):
-                            strata_alerts[feature]['processed_value'] = row[processed_col]
-
-                # Add strata alerts to subject's current alerts
-                subject_alerts['current'][strata] = strata_alerts
-
-            # Process historical strata in chronological order
-            if not historical_strata.empty and 'first_date' in historical_strata.columns:
-                # Sort by date
-                historical_strata = historical_strata.sort_values('first_date')
-
-                # Process each historical strata
-                for _, row in historical_strata.iterrows():
-                    strata = row['strata']
-                    strata_alerts = {}
-
-                    # Process each percentile column
-                    for col in percentile_cols:
-                        # Extract feature names
-                        feature = col.replace('_percentile', '')
-
-                        # Get percentile and map to category
-                        percentile = row[col]
-                        if not pd.isna(percentile):
-                            category = self.map_percentile_to_category(percentile)
-
-                            # Create alert entry with details
-                            strata_alerts[feature] = {
-                                'percentile': percentile,
-                                'category': category,
-                                'description': self.get_category_description(category),
-                                'strata': strata,
-                                'first_date': row.get('first_date'),
-                                'last_date': row.get('last_date')
-                            }
-
-                            # Add processed value if available
-                            processed_col = f"{feature}_processed"
-                            if processed_col in row and not pd.isna(row[processed_col]):
-                                strata_alerts[feature]['processed_value'] = row[processed_col]
-
-                    # Add strata alerts to subject's historical alerts
-                    if strata_alerts:
-                        subject_alerts['historical'][strata] = strata_alerts
-
-            # Only add subjects if there are alerts
-            if subject_alerts['current'] or subject_alerts['historical']:
-                alerts[subject_id] = subject_alerts
-
-        # Update the cache
+            
+            # Add feature-specific percentiles if available
+            feature_percentiles = {}
+            for feature in self.config["feature_config"].keys():
+                percentile_col = f"{feature}_percentile"
+                
+                # Check if feature percentile is in the data
+                if percentile_col in subject_data:
+                    feature_percentile = subject_data[percentile_col]
+                    
+                    # Map to category if percentile is valid
+                    if not pd.isna(feature_percentile):
+                        feature_category = self.map_percentile_to_category(feature_percentile)
+                    else:
+                        feature_category = 'NS'
+                    
+                    # Add to feature percentiles
+                    feature_percentiles[feature] = {
+                        'percentile': feature_percentile,
+                        'category': feature_category
+                    }
+            
+            # Add feature percentiles to alert
+            if feature_percentiles:
+                alerts[subject_id]['feature_percentiles'] = feature_percentiles
+        
+        # Store alerts for later retrieval
         self._quantile_alerts = alerts
-        self._last_update_time = pd.Timestamp.now()
-
-        # Make sure to return the alerts dictionary
+        
+        # Return alerts dictionary
         return alerts
     
     def get_quantile_alerts(self, subject_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         """
-        Get quantile alerts for given subjects
-
-        Parameters:
-            subject_ids (Optional[List[str]]): List of subject IDs to get alerts for
-
-        Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their alerts
-        """
-        # Calculate alerts if not already calculated
-        if not self._quantile_alerts or subject_ids is None:
-            self.calculate_quantile_alerts(subject_ids)
-
-        # If subject_ids specified, filter to those subjects
-        if subject_ids is not None:
-            return {sid: alerts for sid, alerts in self._quantile_alerts.items() if sid in subject_ids}
+        Get precomputed quantile alerts for specified subjects
         
-        return self._quantile_alerts
+        Parameters:
+            subject_ids: Optional[List[str]]
+                List of subject IDs to get alerts for
+        
+        Returns:
+            Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their quantile alerts
+        """
+        # Validate that we have an analyzer
+        if not self._validate_analyzer():
+            return {}
+        
+        # Calculate alerts if not already calculated
+        if not hasattr(self, '_quantile_alerts') or self._quantile_alerts is None:
+            self.calculate_quantile_alerts()
+        
+        # Return all alerts if no subject IDs specified
+        if subject_ids is None:
+            return self._quantile_alerts
+        
+        # Otherwise, filter alerts for specified subjects
+        result = {}
+        for subject_id in subject_ids:
+            if subject_id in self._quantile_alerts:
+                result[subject_id] = self._quantile_alerts[subject_id]
+        
+        return result
     
     def get_subjects_with_quantile_alerts(self, features: Optional[List[str]] = None, 
                                         categories: Optional[List[str]] = None) -> List[str]:

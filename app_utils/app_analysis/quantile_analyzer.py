@@ -261,7 +261,7 @@ class QuantileAnalyzer:
                 'subject_id': subject_id,
                 'strata': strata,
                 'overall_percentile': overall_percentile,
-                'is_current': row.get('is_current', True)
+                'is_current': row.get('is_current', False)
             }
 
             # Add additional information if available

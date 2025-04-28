@@ -19,6 +19,7 @@ class AppUtils:
         self.quantile_analyzer = None
         self.alert_service = None
         self.threshold_analyzer = None
+
     def get_session_data(self, load_bpod = False):
         """
         Get session data from the data loader
