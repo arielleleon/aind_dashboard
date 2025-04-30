@@ -202,11 +202,22 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
     # Get the full dataset
     df = app_utils.get_session_data()
     
+    # Investigate data type of key columns for debugging
+    print(f"Data types: curriculum_name={df['curriculum_name'].dtype}, current_stage_actual={df['current_stage_actual'].dtype}")
+    
+    # Look for string 'None' values vs actual None values
+    none_curriculum = df[df['curriculum_name'] == 'None'].shape[0]
+    none_stage = df[df['current_stage_actual'] == 'None'].shape[0]
+    null_curriculum = df['curriculum_name'].isna().sum()
+    null_stage = df['current_stage_actual'].isna().sum()
+    
+    print(f"String 'None' values: curriculum={none_curriculum}, stage={none_stage}")
+    print(f"Actual null values: curriculum={null_curriculum}, stage={null_stage}")
+    
     # Create a fresh dataframe formatter to avoid state issues
     app_dataframe = AppDataFrame()
     
     # Apply formatting with window_days for display only
-    # Percentiles will be computed using all-time data on first call
     formatted_df = app_dataframe.format_dataframe(df, window_days=time_window_value)
     
     # Apply each filter if it has a value

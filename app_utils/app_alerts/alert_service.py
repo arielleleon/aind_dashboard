@@ -16,6 +16,9 @@ class AlertService:
             "SG": 100   # Significantly Good: > 93.5% ( > +2.75 std dev)
         }
 
+    # Default minimum sessions for eligibility
+    DEFAULT_MIN_SESSIONS = 1
+
     def __init__(self, app_utils=None, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the AlertService
@@ -494,56 +497,41 @@ class AlertService:
         
     def get_not_scored_reason(self, subject_id: str) -> str:
         """
-        Get the reason why a subject is marked as Not Scored
-        Takes into account combined current and historical data
-
-        Parameters:
-            subject_id: str
-                The subject ID to check
-        
-        Returns:
-            str: Reason for Not Scored status
+        Get the reason why a subject is not scored
         """
+        # First check if subject has off-curriculum sessions
+        if hasattr(self.app_utils, 'off_curriculum_subjects') and subject_id in self.app_utils.off_curriculum_subjects:
+            info = self.app_utils.off_curriculum_subjects[subject_id]
+            percent = (info['count'] / info['total_sessions']) * 100
+            return f"Off-curriculum session: ({info['count']}, {percent:.0f}% of total)"
+        
+        # Rest of the checks...
         if not self._validate_analyzer():
-            return "Analysis not initialized"
+            return "Analyzer not initialized"
         
-        # Get the strata for this subject
-        overall_percentiles = self.app_utils.calculate_overall_percentile([subject_id])
-        if overall_percentiles.empty:
-            return "Subject not found in analyzed data"
+        # Get min_sessions from config
+        min_sessions = self.DEFAULT_MIN_SESSIONS
+        if hasattr(self, 'config') and self.config and 'min_sessions' in self.config:
+            min_sessions = self.config['min_sessions']
         
-        # Get the row for this subject
-        subject_row = overall_percentiles.iloc[0]
-        strata = subject_row.get('strata')
-        
-        if pd.isna(subject_row.get('overall_percentile')):
-            # Check if the strata exists in the percentile data
-            if strata not in self.app_utils.quantile_analyzer.percentile_data:
-                # Get total count of subjects in this strata (current + historical)
-                total_in_strata = 0
-                for df_strata, df in self.app_utils.quantile_analyzer.stratified_data.items():
-                    if df_strata == strata:
-                        total_in_strata = len(df)
-                        break
+        # Check if subject exists in any strata
+        analyzer = self.app_utils.quantile_analyzer
+        for strata, strata_df in analyzer.stratified_data.items():
+            if subject_id in strata_df['subject_id'].values:
+                # Check session count
+                row = strata_df[strata_df['subject_id'] == subject_id]
+                if row['session_count'].values[0] < min_sessions:
+                    return f"Insufficient sessions (< {min_sessions})"
                 
-                if total_in_strata < 10:
-                    return f"Strata '{strata}' has only {total_in_strata} subjects (10+ required)"
-                else:
-                    return f"Strata '{strata}' not enough valid feature data"
-            else:
-                # Check for missing features
-                missing_features = []
-                for feature in self.app_utils.quantile_analyzer.features_config.keys():
-                    percentile_col = f"{feature}_percentile"
-                    if percentile_col in subject_row and pd.isna(subject_row[percentile_col]):
-                        missing_features.append(feature)
-                
-                if missing_features:
-                    return f"Missing data for features: {', '.join(missing_features)}"
+                # Check overall percentiles
+                overall_df = analyzer.calculate_overall_percentile()
+                subject_row = overall_df[overall_df['subject_id'] == subject_id]
+                if subject_row.empty or pd.isna(subject_row['overall_percentile'].values[0]):
+                    return "No percentile data (strata may be too small)"
                 
                 return "Unknown reason"
-        else:
-            return "Subject is scored (overall percentile available)"
+        
+        return "No eligible sessions in analysis window"
         
     def get_unified_alerts(self, subject_ids=None):
         """
@@ -648,8 +636,32 @@ class AlertService:
                 if df is not None and not df.empty:
                     all_subjects.update(df['subject_id'].unique())
         
-        # Start with all subjects in quantile alerts
+        # Handle off-curriculum subjects first
+        for subject_id in all_subjects:
+            # Check if this is an off-curriculum subject
+            if hasattr(self.app_utils, 'off_curriculum_subjects') and subject_id in self.app_utils.off_curriculum_subjects:
+                # Create NS alert for this subject
+                ns_reason = self.get_not_scored_reason(subject_id)
+                unified_alerts[subject_id] = {
+                    'alert_category': 'NS',
+                    'overall_percentile': None,
+                    'ns_reason': ns_reason,
+                    'threshold': {
+                        'threshold_alert': 'N',
+                        'specific_alerts': {}
+                    }
+                }
+        
+        # Start with all subjects in quantile alerts, except off-curriculum ones
+        off_curriculum_subjects = set()
+        if hasattr(self.app_utils, 'off_curriculum_subjects'):
+            off_curriculum_subjects = set(self.app_utils.off_curriculum_subjects.keys())
+        
         for subject_id, alerts in quantile_alerts.items():
+            # Skip off-curriculum subjects as they're already handled above
+            if subject_id in off_curriculum_subjects:
+                continue
+            
             unified_alerts[subject_id] = {
                 'quantile': alerts,
                 'threshold': threshold_alerts.get(subject_id, {

@@ -3,6 +3,7 @@ from .app_analysis import ReferenceProcessor, QuantileAnalyzer, ThresholdAnalyze
 from .app_alerts import AlertService
 from typing import Dict, List, Optional, Union, Any
 import pandas as pd
+from datetime import datetime, timedelta
 
 class AppUtils:
     """
@@ -57,21 +58,49 @@ class AppUtils:
     
     def process_reference_data(self, df, reference_date = None, remove_outliers = False):
         """
-        Process data through reference processor pipeline with enhanced historical data handling
-
-        Parameters:
-            df (pd.DataFrame): Input dataframe with raw session data
-            reference_date (datetime, optional): Reference date for sliding window
-            remove_outliers (bool, optional): Whether to remove outliers
-
-        Returns:
-            Dict[str, pd.DataFrame]: Dictionary of stratified data for quantile analysis
+        Process data through reference pipeline with enhanced historical data handling
         """
         if self.reference_processor is None:
             raise ValueError("Reference processor not initialized. Call initialize_reference_processor first.")
         
-        # Apply sliding window
-        window_df = self.reference_processor.apply_sliding_window(df, reference_date)
+        # Filter out off-curriculum sessions FIRST
+        original_count = len(df)
+        
+        # Track subjects with off-curriculum sessions
+        self.off_curriculum_subjects = {}
+        
+        # Create a boolean mask for off-curriculum sessions
+        off_curriculum_mask = (
+            df['curriculum_name'].isna() | 
+            (df['curriculum_name'] == "None") |
+            df['current_stage_actual'].isna() | 
+            (df['current_stage_actual'] == "None") |
+            df['curriculum_version'].isna() |
+            (df['curriculum_version'] == "None")
+        )
+        
+        # Identify subjects with off-curriculum sessions
+        for subject_id in df['subject_id'].unique():
+            subject_sessions = df[df['subject_id'] == subject_id]
+            off_curriculum_sessions = subject_sessions[off_curriculum_mask.loc[subject_sessions.index]]
+            
+            if not off_curriculum_sessions.empty:
+                # Store information about this subject's off-curriculum sessions
+                self.off_curriculum_subjects[subject_id] = {
+                    'count': len(off_curriculum_sessions),
+                    'total_sessions': len(subject_sessions),
+                    'latest_date': off_curriculum_sessions['session_date'].max()
+                }
+        
+        # Remove all off-curriculum sessions from the analysis pipeline
+        df_filtered = df[~off_curriculum_mask].copy()
+        off_curriculum_count = original_count - len(df_filtered)
+        
+        print(f"Filtered out {off_curriculum_count} off-curriculum sessions ({off_curriculum_count/original_count:.1%} of total)")
+        print(f"Identified {len(self.off_curriculum_subjects)} subjects with off-curriculum sessions")
+        
+        # Continue with the rest of the method using ONLY filtered data
+        window_df = self.reference_processor.apply_sliding_window(df_filtered, reference_date)
         print(f"Applied sliding window: {len(window_df)} sessions")
 
         # Get eligible subjects
@@ -83,7 +112,7 @@ class AppUtils:
         processed_df = self.reference_processor.preprocess_data(eligible_df, remove_outliers)
         print(f"Preprocessed data: {len(processed_df)} sessions")
 
-        # Prepare for quantile analysis - with explicit include_history=True
+        # Prepare for quantile analysis
         stratified_data = self.reference_processor.prepare_for_quantile_analysis(
             processed_df, 
             include_history=True

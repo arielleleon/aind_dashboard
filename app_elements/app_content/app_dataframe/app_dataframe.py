@@ -5,15 +5,11 @@ import traceback
 from app_utils import AppUtils
 from app_utils.app_analysis.reference_processor import ReferenceProcessor
 from dash import callback_context, Input, Output, clientside_callback
-from .tooltips import TooltipController
 
 class AppDataFrame:
     def __init__(self):
         # Initialize app utilities
         self.app_utils = AppUtils()
-
-        # Initialize tooltip controller
-        self.tooltip_controller = TooltipController()
 
         # Feature configuration for quantile analysis
         self.features_config = {
@@ -91,18 +87,18 @@ class AppDataFrame:
         
         # Handle different strata formats
         if len(parts) >= 3:
-            # Format: Task_Stage_Version (e.g., "Uncoupled Baiting_ADVANCED_v3")
-            task = '_'.join(parts[:-2])
+            # Format: curriculum_Stage_Version (e.g., "Uncoupled Baiting_ADVANCED_v3")
+            curriculum = '_'.join(parts[:-2])
             stage = parts[-2]
             version = parts[-1]
 
             # Get abbreviations from mappings
-            task_abbr = strata_mappings.get(task, task[:2].upper())
+            curriculum_abbr = strata_mappings.get(curriculum, curriculum[:2].upper())
             stage_abbr = strata_mappings.get(stage, stage[0])
             version_abbr = strata_mappings.get(version, version[-1])
             
             # Combine abbreviations
-            return f"{task_abbr}{stage_abbr}{version_abbr}"
+            return f"{curriculum_abbr}{stage_abbr}{version_abbr}"
         else:
             return strata_name.replace(" ", "")
 
@@ -131,6 +127,31 @@ class AppDataFrame:
                                         'overall_percentile', 'session_date', 'session'])
         
         print(f" Starting data formatting with {len(original_df)} sessions, {window_days} day window")
+        
+        # Create a boolean mask for off-curriculum sessions
+        off_curriculum_mask = (
+            original_df['curriculum_name'].isna() | 
+            (original_df['curriculum_name'] == "None") |
+            original_df['current_stage_actual'].isna() | 
+            (original_df['current_stage_actual'] == "None") |
+            original_df['curriculum_version'].isna() |
+            (original_df['curriculum_version'] == "None")
+        )
+        
+        # Count and track off-curriculum subjects for display and debugging
+        off_curriculum_df = original_df[off_curriculum_mask]
+        off_curriculum_count = len(off_curriculum_df)
+        print(f"Display: Found {off_curriculum_count} off-curriculum sessions ({off_curriculum_count/len(original_df):.1%} of total)")
+        
+        # Track subjects with off-curriculum sessions
+        off_curriculum_subjects = {}
+        for subject_id in off_curriculum_df['subject_id'].unique():
+            subject_sessions = off_curriculum_df[off_curriculum_df['subject_id'] == subject_id]
+            off_curriculum_subjects[subject_id] = {
+                'count': len(subject_sessions),
+                'latest_date': subject_sessions['session_date'].max()
+            }
+        print(f"Display: Identified {len(off_curriculum_subjects)} subjects with off-curriculum sessions")
         
         # Step 1: Compute all-time percentiles if not already done
         if not hasattr(self, 'overall_percentiles'):
@@ -205,6 +226,24 @@ class AppDataFrame:
         current_sessions_df = window_df.drop_duplicates(subset=['subject_id'], keep='first')
         print(f"Got current sessions for {len(current_sessions_df)} subjects")
 
+        # Before proceeding, mark subjects with off-curriculum sessions for special handling
+        off_curriculum_subjects = set()
+        if hasattr(self.app_utils, 'off_curriculum_subjects'):
+            off_curriculum_subjects = set(self.app_utils.off_curriculum_subjects.keys())
+            print(f"Format dataframe: Found {len(off_curriculum_subjects)} subjects with off-curriculum sessions")
+            
+            # Check some sample subjects
+            off_subjects_in_display = set(current_sessions_df['subject_id']) & off_curriculum_subjects
+            print(f"Off-curriculum subjects in current display: {len(off_subjects_in_display)}")
+            
+            if off_subjects_in_display:
+                sample_size = min(5, len(off_subjects_in_display))
+                sample_subjects = list(off_subjects_in_display)[:sample_size]
+                print("Sample off-curriculum subjects:")
+                for subject_id in sample_subjects:
+                    info = self.app_utils.off_curriculum_subjects[subject_id]
+                    print(f"  Subject {subject_id}: {info['count']} of {info['total_sessions']} sessions")
+
         # Initialize columns with default values
         feature_list = list(self.features_config.keys())
 
@@ -215,6 +254,14 @@ class AppDataFrame:
         current_sessions_df['combined_alert'] = 'NS'  # Default to Not Scored
         current_sessions_df['strata_abbr'] = ''  # Default to empty string
         current_sessions_df['ns_reason'] = ''  # Initialize NS reason column
+        
+        # Set NS reason for off-curriculum subjects immediately
+        for i, row in current_sessions_df.iterrows():
+            subject_id = row['subject_id']
+            if subject_id in off_curriculum_subjects:
+                info = self.app_utils.off_curriculum_subjects[subject_id]
+                percent = (info['count'] / info['total_sessions']) * 100
+                current_sessions_df.at[i, 'ns_reason'] = f"Off-curriculum sessions ({info['count']}, {percent:.0f}% of total)"
         
         # Threshold alert columns
         current_sessions_df['total_sessions_alert'] = 'N'
@@ -290,8 +337,13 @@ class AppDataFrame:
         for i, row in current_sessions_df.iterrows():
             subject_id = row['subject_id']
             
-            # Skip if subject has no alerts
-            if subject_id not in unified_alerts:
+            # Skip if subject has no alerts or is an off-curriculum subject
+            if subject_id not in unified_alerts or subject_id in off_curriculum_subjects:
+                # For off-curriculum subjects, ensure they are marked as "NS"
+                if subject_id in off_curriculum_subjects:
+                    current_sessions_df.at[i, 'percentile_category'] = 'NS'
+                    current_sessions_df.at[i, 'combined_alert'] = 'NS'
+                    # NS reason is already set above
                 continue
             
             # Get alerts for this subject
@@ -391,7 +443,7 @@ class AppDataFrame:
             'strata',
             'strata_abbr',
             'current_stage_actual',
-            'task',
+            'curriculum',
             'session_date',
             'session',
             'rig',
@@ -493,7 +545,7 @@ class AppDataFrame:
             'strata': 'Strata',
             'strata_abbr': 'Strata (Abbr)',
             'current_stage_actual': 'Stage',
-            'task': 'Task',
+            'curriculum': 'curriculum',
             'session_date': 'Date',
             'session': 'Session',
             'rig': 'Rig',
@@ -647,7 +699,6 @@ class AppDataFrame:
 
         # Build the table with updated styling
         return html.Div([
-            self.tooltip_controller.get_tooltip_container(),
 
             dash_table.DataTable(
                 id='session-table',
@@ -661,8 +712,6 @@ class AppDataFrame:
                         'cursor': 'pointer'
                     }
                 ],
-                tooltip_delay=0,
-                tooltip_duration=None,
                 style_table={
                     'overflowY': 'auto',
                     'overflowX': 'auto',

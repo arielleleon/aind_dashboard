@@ -135,7 +135,23 @@ class ReferenceProcessor:
         if not pd.api.types.is_datetime64_any_dtype(df['session_date']):
             df['session_date'] = pd.to_datetime(df['session_date'])
 
-        # Clean data
+        # Enhanced filtering of off-curriculum sessions (check for both None value and string "None")
+        off_curriculum_mask = (
+            df['curriculum_name'].isna() | 
+            (df['curriculum_name'] == "None") |
+            df['current_stage_actual'].isna() | 
+            (df['current_stage_actual'] == "None") |
+            df['curriculum_version'].isna() |
+            (df['curriculum_version'] == "None")
+        )
+        
+        # Report and remove off-curriculum sessions
+        off_count = off_curriculum_mask.sum()
+        if off_count > 0:
+            print(f"Reference processor preprocess: Removing {off_count} off-curriculum sessions")
+            df = df[~off_curriculum_mask].copy()
+
+        # Clean data - additional filtering
         df_clean = df.query('curriculum_name != "None" and curriculum_version != "0.1"').copy()
 
         def _map_curriculum_ver(ver):
@@ -184,20 +200,20 @@ class ReferenceProcessor:
         Returns:
             Simplified group identifier
         """
-        # First, separate task name from the rest
+        # First, separate curriculum name from the rest
         parts = strat_id.split('_')
         
-        # Handle task name
+        # Handle curriculum name
         if 'Without' in strat_id:
             # Find the index where the stage info starts
             stage_start = next(i for i, part in enumerate(parts) if 'STAGE' in part or 'GRADUATED' in part)
-            task = '_'.join(parts[:stage_start])
-            stage_parts = parts[stage_start:]  # Get all parts after task name
+            curriculum = '_'.join(parts[:stage_start])
+            stage_parts = parts[stage_start:]  # Get all parts after curriculum name
         else:
             # Find the index where the stage info starts
             stage_start = next(i for i, part in enumerate(parts) if 'STAGE' in part or 'GRADUATED' in part)
-            task = '_'.join(parts[:stage_start])
-            stage_parts = parts[stage_start:]  # Get all parts after task name
+            curriculum = '_'.join(parts[:stage_start])
+            stage_parts = parts[stage_start:]  # Get all parts after curriculum name
         
         # Get the full stage name and version
         stage = '_'.join(stage_parts[:-1])  # Join all parts except the last (version)
@@ -214,7 +230,7 @@ class ReferenceProcessor:
             print(f"Warning: Unknown stage format: {stage}")
             simplified_stage = 'UNKNOWN'
 
-        return f"{task}_{simplified_stage}_{version}"
+        return f"{curriculum}_{simplified_stage}_{version}"
 
     def assign_subject_strata(self, df: pd.DataFrame, use_simplified: bool = True) -> pd.DataFrame:
         """
@@ -234,7 +250,7 @@ class ReferenceProcessor:
         
         # Create strata ID for each session
         df['strata_id'] = df.apply(
-            lambda row: f"{row['task']}_{row['current_stage_actual']}_{row['curriculum_version_group']}",
+            lambda row: f"{row['curriculum_name']}_{row['current_stage_actual']}_{row['curriculum_version_group']}",
             axis=1
         )
 

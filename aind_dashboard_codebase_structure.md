@@ -7,11 +7,6 @@
             └── 📁app_dataframe
                 └── __init__.py
                 └── app_dataframe.py
-                └── 📁tooltips
-                    └── __init__.py
-                    └── subject_tooltip_service.py
-                    └── subject_tooltip.py
-                    └── tooltip_controller.py
             └── 📁app_plot_content
                 └── __init__.py
                 └── app_plot_content.py
