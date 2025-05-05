@@ -1,41 +1,33 @@
 └── 📁aind_dashboard
     └── 📁app_elements
-        └── __init__.py
         └── 📁app_content
-            └── __init__.py
             └── app_content.py
             └── 📁app_dataframe
-                └── __init__.py
                 └── app_dataframe.py
             └── 📁app_plot_content
-                └── __init__.py
                 └── app_plot_content.py
                 └── 📁app_rank_change_plot
-                    └── __init__.py
                     └── app_rank_change_plot.py
         └── 📁app_filter
-            └── __init__.py
             └── app_filter.py
         └── app_main.py
+        └── 📁app_subject_detail
+            └── app_feature_chart.py
+            └── app_subject_detail.py
     └── 📁app_utils
-        └── __init__.py
         └── 📁app_alerts
-            └── __init__.py
             └── alert_service.py
         └── 📁app_analysis
-            └── __init__.py
             └── quantile_analyzer.py
             └── reference_processor.py
             └── threshold_analyzer.py
         └── 📁app_data_load
-            └── __init__.py
             └── app_load_data.py
         └── app_utils.py
     └── 📁assets
         └── custom_styles.css
         └── style.css
     └── 📁callbacks
-        └── __init__.py
         └── callbacks.py
     └── app.py
     └── requirements.txt

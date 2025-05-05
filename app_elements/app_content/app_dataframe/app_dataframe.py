@@ -716,9 +716,10 @@ class AppDataFrame:
                     'overflowY': 'auto',
                     'overflowX': 'auto',
                     'backgroundColor': 'white',
-                    'height': 'calc(100vh - 300px)',  # Adjusted height to fill available space
-                    'minHeight': '500px',
-                    'width': '100%'
+                    'height': 'calc(100vh - 350px)',
+                    'minHeight': '400px',
+                    'width': '100%',
+                    'marginBottom': '0px'
                 },
                 style_cell={
                     'textAlign': 'left',
@@ -743,6 +744,8 @@ class AppDataFrame:
                     'textAlign': 'center',  
                     'padding': '10px 5px',  
                     'lineHeight': '15px'     
-                }
+                },
+                cell_selectable=True,
+                row_selectable=False
             )
         ], className="data-table-container", style={'width': '100%'})

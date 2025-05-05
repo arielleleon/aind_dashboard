@@ -1,4 +1,4 @@
-from dash import Input, Output, State, callback, ALL, MATCH, ctx
+from dash import Input, Output, State, callback, ALL, MATCH, ctx, clientside_callback
 from dash import html
 from dash import dcc
 import dash_bootstrap_components as dbc
@@ -8,7 +8,9 @@ from app_utils import AppUtils
 from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
 from app_elements.app_filter.app_filter import AppFilter
 from app_elements.app_content.app_plot_content.app_rank_change_plot import RankChangePlot
+from app_elements.app_subject_detail.app_feature_chart import AppFeatureChart
 import plotly.graph_objects as go
+import json
 
 # Initialize app utilities
 app_utils = AppUtils()
@@ -21,6 +23,9 @@ app_filter = AppFilter()
 
 # Initialize rank change plot
 rank_change_plot = RankChangePlot()
+
+# Initialize feature chart
+feature_chart = AppFeatureChart()
 
 # Callback to update active filters display and count
 @callback(
@@ -301,3 +306,146 @@ def update_rank_change_plot(time_window_value):
     """
     # Generate the rank change plot using the specified time window
     return rank_change_plot.build(window_days=time_window_value)
+
+# Subject selection from table
+@callback(
+    [Output("subject-detail-footer", "style"),
+     Output("detail-strata", "children"),
+     Output("detail-subject-id", "children"),
+     Output("detail-pi", "children"),
+     Output("detail-trainer", "children"),
+     Output("detail-percentile", "children"),
+     Output("detail-last-session", "children"),
+     Output("detail-consistency", "children"),
+     Output("detail-threshold-alerts", "children"),
+     Output("detail-ns-reason", "children"),
+     Output("detail-ns-reason-container", "style"),
+     Output("feature-chart-container", "children")],
+    [Input("session-table", "active_cell")],
+    [State("session-table", "data"),
+     State("session-table", "page_current"),
+     State("session-table", "page_size")]
+)
+def update_subject_detail(active_cell, table_data, page_current, page_size):
+    print("Subject detail callback triggered")
+    print(f"Active cell: {active_cell}")
+    print(f"Current page: {page_current}, Page size: {page_size}")
+    
+    default_style = {"display": "none"}
+    default_ns_style = {"display": "none"}
+    empty_chart = feature_chart.build(None)
+
+    # Check if cell is clicked
+    if not active_cell or active_cell['column_id'] != 'subject_id':
+        print("No active cell or not in subject_id column")
+        return default_style, "", "", "", "", "", "", "", "", "", default_ns_style, empty_chart
+    
+    # Calculate the actual row index in the full dataset
+    # If page_current is None (which can happen on initial load), default to 0
+    current_page = page_current if page_current is not None else 0
+    # If page_size is None, default to 20 (or whatever your default page size is)
+    rows_per_page = page_size if page_size is not None else 20
+    
+    # Calculate the absolute row index in the dataset
+    absolute_row_idx = (current_page * rows_per_page) + active_cell['row']
+    
+    # Safety check to make sure we don't go out of bounds
+    if absolute_row_idx >= len(table_data):
+        print(f"Row index {absolute_row_idx} is out of bounds for data length {len(table_data)}")
+        return default_style, "", "", "", "", "", "", "", "", "", default_ns_style, empty_chart
+    
+    # Get the correct subject data using the absolute row index
+    subject_data = table_data[absolute_row_idx]
+    subject_id = subject_data['subject_id']
+    print(f"Selected subject: {subject_id} at absolute row {absolute_row_idx}")
+
+    # Extract data for display
+    strata = f"Current Strata: {subject_data.get('strata_abbr', 'N/A')}"
+    pi = subject_data.get('PI', 'N/A')
+    trainer = subject_data.get('trainer', 'N/A')
+
+    # Format percent with color based on category
+    percentile_val = subject_data.get('overall_percentile')
+    percentile_cat = subject_data.get('percentile_category', 'NS')
+
+    if percentile_cat == 'NS' or pd.isna(percentile_val):
+        percentile = "NS"
+    else:
+        percentile = f"{percentile_val:.2f}%"
+    
+    # Format last session
+    session_date = subject_data.get('session_date')
+    if session_date:
+        try:
+            if isinstance(session_date, str):
+                session_date = datetime.strptime(session_date, '%Y-%m-%d %H:%M:%S')
+            last_session = session_date.strftime('%Y-%m-%d')
+        except:
+            last_session = str(session_date)
+    else:
+        last_session = 'N/A'
+    
+    # Format training consistency
+    consistency = f"{subject_data.get('training_consistency', 'N/A')}%" # NEED TO IMPLEMENT
+
+    # Format threshold alerts
+    threshold_alerts = []
+
+    if subject_data.get('total_sessions_alert') == 'T':
+        threshold_alerts.append('Total Sessions')
+
+    stage_alert = subject_data.get('stage_sessions_alert', '')
+    if 'T |' in stage_alert:
+        stage_name = stage_alert.split('|')[1].strip()
+        threshold_alerts.append(f"Stage Sessions: ({stage_name})")
+
+    if subject_data.get('water_day_total_alert') == 'T':
+        threshold_alerts.append('Water Day Total')
+
+    if threshold_alerts:
+        threshold_text = html.Ul([html.Li(alert) for alert in threshold_alerts], className="threshold_list")
+    else:
+        threshold_text = "None"
+
+    # Check NS reason
+    ns_reason = subject_data.get('ns_reason', '')
+    if percentile_cat == 'NS' and ns_reason:
+        ns_reason_style = {'display': 'block'}
+    else:
+        ns_reason_style = {'display': 'none'}
+
+    # Build feature chart
+    chart = feature_chart.build(subject_data)
+
+    # Return values to update UI
+    return (
+        {'display': 'block'}, # Show footer
+        strata,
+        subject_id,
+        pi,
+        trainer,
+        percentile,
+        last_session,
+        consistency,
+        threshold_text,
+        ns_reason,
+        ns_reason_style,
+        chart
+    )
+
+# Updated callback with notification
+@callback(
+    [Output("subject-detail-page", "style"),
+     Output("view-details-button", "children")],
+    Input("view-details-button", "n_clicks"),
+    prevent_initial_call=True
+)
+def show_subject_detail_page(n_clicks):
+    if not n_clicks:
+        return {'display': 'none'}, "Show Subject Details Section"
+    
+    # Show page and update button text to indicate it worked
+    return {'display': 'block'}, [
+        "Subject Details Loaded ", 
+        html.I(className="fas fa-check ml-1", style={"color": "white"})
+    ]
