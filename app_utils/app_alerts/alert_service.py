@@ -604,11 +604,17 @@ class AlertService:
                     # Add stage-specific threshold
                     if current_stage in stage_thresholds:
                         stage_threshold = stage_thresholds[current_stage]
+                        # Calculate number of sessions in this stage for this subject
+                        if hasattr(self.app_utils, 'get_session_data'):
+                            all_sessions = self.app_utils.get_session_data()
+                            stage_sessions_count = len(all_sessions[(all_sessions['subject_id'] == subject_id) & (all_sessions['current_stage_actual'] == current_stage)])
+                        else:
+                            stage_sessions_count = 0
                         subject_threshold_alerts['specific_alerts']['stage_sessions'] = {
-                            'value': session_count,
+                            'value': stage_sessions_count,
                             'threshold': stage_threshold,
-                            'alert': 'T' if session_count > stage_threshold else 'N',
-                            'description': f"{current_stage}: {session_count} > {stage_threshold}" if session_count > stage_threshold else '',
+                            'alert': 'T' if stage_sessions_count > stage_threshold else 'N',
+                            'description': f"{current_stage}: {stage_sessions_count} > {stage_threshold}" if stage_sessions_count > stage_threshold else '',
                             'stage': current_stage  # Add stage name to the alert data
                         }
                     

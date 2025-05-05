@@ -7,7 +7,6 @@ from datetime import datetime
 from app_utils import AppUtils
 from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
 from app_elements.app_filter.app_filter import AppFilter
-from app_elements.app_content.app_plot_content.app_rank_change_plot import RankChangePlot
 from app_elements.app_subject_detail.app_feature_chart import AppFeatureChart
 import plotly.graph_objects as go
 import json
@@ -20,9 +19,6 @@ app_dataframe = AppDataFrame()
 
 # Initialize AppFilter to access time_window_options
 app_filter = AppFilter()
-
-# Initialize rank change plot
-rank_change_plot = RankChangePlot()
 
 # Initialize feature chart
 feature_chart = AppFeatureChart()
@@ -289,24 +285,6 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
     
     return formatted_df.to_dict('records')
 
-# Update the rank change plot based on time window filter
-@callback(
-    Output("rank-change-plot", "figure"),
-    [Input("time-window-filter", "value")]
-)
-def update_rank_change_plot(time_window_value):
-    """
-    Update the rank change plot based on the selected time window
-    
-    Parameters:
-        time_window_value (int): Number of days to include in the analysis window
-        
-    Returns:
-        go.Figure: The updated rank change plot
-    """
-    # Generate the rank change plot using the specified time window
-    return rank_change_plot.build(window_days=time_window_value)
-
 # Subject selection from table
 @callback(
     [Output("subject-detail-footer", "style"),
@@ -391,19 +369,43 @@ def update_subject_detail(active_cell, table_data, page_current, page_size):
     # Format threshold alerts
     threshold_alerts = []
 
-    if subject_data.get('total_sessions_alert') == 'T':
-        threshold_alerts.append('Total Sessions')
+    # Check total sessions alert
+    total_sessions_alert = subject_data.get('total_sessions_alert', 'N')
+    if 'T |' in total_sessions_alert:
+        # Parse the value: "T | 45"
+        parts = total_sessions_alert.split('|')
+        value = parts[1].strip()
+        threshold_alerts.append(html.Div([
+            html.Span("Total Sessions: ", className="alert-label"),
+            html.Span(f"Out of Range ({value})", className="alert-value")
+        ]))
 
+    # Check stage sessions alert
     stage_alert = subject_data.get('stage_sessions_alert', '')
     if 'T |' in stage_alert:
-        stage_name = stage_alert.split('|')[1].strip()
-        threshold_alerts.append(f"Stage Sessions: ({stage_name})")
+        # Parse the format: "T | STAGE_FINAL | 30"
+        parts = stage_alert.split('|')
+        stage_name = parts[1].strip()
+        sessions = parts[2].strip() if len(parts) > 2 else ""
+        threshold_alerts.append(html.Div([
+            html.Span("Stage-Specific: ", className="alert-label"),
+            html.Span(f"Out of Range | {stage_name} ({sessions})", className="alert-value")
+        ]))
 
-    if subject_data.get('water_day_total_alert') == 'T':
-        threshold_alerts.append('Water Day Total')
+    # Check water day total alert
+    water_alert = subject_data.get('water_day_total_alert', '')
+    if 'T |' in water_alert:
+        # Parse the format: "T | 3.7"
+        parts = water_alert.split('|')
+        value = parts[1].strip()
+        threshold_alerts.append(html.Div([
+            html.Span("water_day_total: ", className="alert-label"),
+            html.Span(f"Out of Range ({value} mL)", className="alert-value")
+        ]))
 
+    # Format threshold alerts text
     if threshold_alerts:
-        threshold_text = html.Ul([html.Li(alert) for alert in threshold_alerts], className="threshold_list")
+        threshold_text = html.Div(threshold_alerts, className="threshold-alerts-container")
     else:
         threshold_text = "None"
 

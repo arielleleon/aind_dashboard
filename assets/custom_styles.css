@@ -38,82 +38,98 @@
     height: 100% !important;
 }
 
-.top-row {
-    height: 300px;
-    margin-bottom: 20px;
+/* Updated row heights for new layout */
+.filter-row {
+    height: auto;
+    min-height: 120px;
+    margin-bottom: 15px;
 }
 
-.filter-column, .plot-column {
+.filter-column {
     height: 100%;
 }
 
-.rank-plot-wrapper {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-}
-
-.bottom-row {
-    height: calc(100vh - 380px);  /* Full remaining height minus margins/padding */
+/* Data row with increased height */
+.data-row {
+    height: calc(100vh - 300px);
+    margin-bottom: 10px;
 }
 
 .data-table-column, .data-table-container {
     height: 100%;
 }
 
+/* Compact filters for smaller height */
+.filter-dropdown-sm {
+    min-height: 28px !important;
+    font-size: 12px !important;
+}
+
+.filter-dropdown-sm .Select-control {
+    min-height: 28px !important;
+    height: 28px !important;
+}
+
+.filter-dropdown-sm .Select-value, 
+.filter-dropdown-sm .Select-placeholder {
+    line-height: 28px !important;
+    font-size: 12px !important;
+}
+
 /* Subject Detail Styles */
 .subject-detail-container {
     margin-top: 0;  /* Remove top margin */
     width: 100%;
+    height: auto;
 }
 
 .subject-detail-section {
     background-color: white;
     border-radius: 8px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    padding: 20px;
-    margin-bottom: 20px;
+    padding: 15px;  /* Reduced padding */
+    margin-bottom: 0;
     height: auto; 
     max-height: none;
     overflow: visible;
 }
 
 .subject-strata {
-    font-size: 1.8rem;
+    font-size: 1.6rem;  /* Reduced size */
     font-weight: 600;
     color: #333;
-    margin-bottom: 15px;
+    margin-bottom: 10px;  /* Reduced margin */
 }
 
 .detail-item {
-    margin-bottom: 12px;
+    margin-bottom: 8px;  /* Reduced margin */
 }
 
 .detail-label {
     font-weight: 600;
     color: #777;
-    margin-bottom: 4px;
+    margin-bottom: 2px;  /* Reduced margin */
 }
 
 .detail-value {
-    font-size: 1.1rem;
+    font-size: 1rem;  /* Reduced size */
     color: #333;
 }
 
 .threshold-container, .chart-container {
-    padding: 10px;
+    padding: 8px;  /* Reduced padding */
     background-color: #f9f9f9;
     border-radius: 5px;
 }
 
 .threshold-list {
     margin: 0;
-    padding-left: 20px;
+    padding-left: 15px;  /* Reduced padding */
 }
 
 .ns-reason-container {
     background-color: #fff3cd;
-    padding: 10px;
+    padding: 8px;  /* Reduced padding */
     border-radius: 5px;
     border-left: 4px solid #ffc107;
 }
@@ -125,9 +141,9 @@
 /* Subject detail page container - simplified */
 .subject-detail-page-container {
     background-color: #f9f9f9;
-    padding: 20px;
-    margin-top: 30px;
-    border-top: 3px solid #4a6dff;  /* Add a colored border to visually separate */
+    padding: 15px;  /* Reduced padding */
+    margin-top: 20px;  /* Reduced margin */
+    border-top: 3px solid #4a6dff;
 }
 
 /* Detail page content */
@@ -135,9 +151,9 @@
     background-color: white;
     border-radius: 8px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    padding: 30px;
-    margin: 20px 0;
-    min-height: 300px;
+    padding: 20px;  /* Reduced padding */
+    margin: 15px 0;  /* Reduced margin */
+    min-height: 250px;  /* Reduced height */
 }
 
 .placeholder-text {
@@ -147,21 +163,45 @@
 
 /* Make sure chart container has fixed height */
 .chart-container {
-    height: 300px;  /* Fixed height */
-    padding: 10px;
+    height: 250px;  /* Reduced height */
+    padding: 8px;  /* Reduced padding */
     background-color: #f9f9f9;
     border-radius: 5px;
-    overflow: hidden;  /* Prevent overflow */
+    overflow: hidden;
 }
 
 /* Fix data table bottom spacing */
 .data-table-container {
-    margin-bottom: 0 !important; /* Remove bottom margin */
-    padding-bottom: 0 !important; /* Remove bottom padding */
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
 }
 
 /* Fix layout row spacing */
-.bottom-row, .detail-row {
+.data-row, .detail-row {
     margin: 0 !important;
     padding: 0 !important;
+}
+
+/* Enhanced threshold alert styling */
+.threshold-alerts-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;  /* Reduced gap */
+}
+
+.alert-label {
+    font-weight: 600;
+    color: #666;
+}
+
+.alert-value {
+    color: #333;
+}
+
+.out-of-range {
+    color: #d35400;
+}
+
+.within-range {
+    color: #27ae60;
 }

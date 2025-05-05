@@ -57,7 +57,7 @@ html, body {
 
 /* Data table container - actual scroll container */
 .data-table-container {
-    max-height: calc(100vh - 230px);
+    max-height: calc(100vh - 200px); /* Updated for new layout - less height for filter */
     overflow-y: auto;
     width: 100%;
     flex: 1;  /* Allow it to grow */
@@ -72,6 +72,7 @@ html, body {
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     width: 100%;
     flex-shrink: 0;  /* Prevent filter from shrinking */
+    height: auto;
 }
 
 .filter-header {

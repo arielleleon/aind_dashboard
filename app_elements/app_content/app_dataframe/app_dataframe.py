@@ -379,31 +379,36 @@ class AppDataFrame:
             
             # Apply threshold alerts
             threshold_data = alerts.get('threshold', {})
-            
-            # Overall threshold alert
-            threshold_alert = threshold_data.get('threshold_alert', 'N')
-            current_sessions_df.at[i, 'threshold_alert'] = threshold_alert
-            
-            # Get specific threshold alerts
             specific_alerts = threshold_data.get('specific_alerts', {})
             
             # Total sessions threshold
-            total_sessions_alert = specific_alerts.get('total_sessions', {}).get('alert', 'N')
-            current_sessions_df.at[i, 'total_sessions_alert'] = total_sessions_alert
+            total_sessions_alert_info = specific_alerts.get('total_sessions', {})
+            total_sessions_alert = total_sessions_alert_info.get('alert', 'N')
+            if total_sessions_alert == 'T':
+                total_sessions_value = total_sessions_alert_info.get('value', '')
+                current_sessions_df.at[i, 'total_sessions_alert'] = f"T | {total_sessions_value}"
+            else:
+                current_sessions_df.at[i, 'total_sessions_alert'] = 'N'
             
-            # Stage sessions threshold - include stage name when threshold is exceeded
+            # Stage sessions threshold
             stage_alert_info = specific_alerts.get('stage_sessions', {})
             if stage_alert_info.get('alert') == 'T':
-                # Include stage name with the alert
                 stage_name = stage_alert_info.get('stage', row.get('current_stage_actual', ''))
-                # Format as "T | STAGE_NAME"
-                current_sessions_df.at[i, 'stage_sessions_alert'] = f"T | {stage_name}"
+                stage_value = stage_alert_info.get('value', '')
+                current_sessions_df.at[i, 'stage_sessions_alert'] = f"T | {stage_name} | {stage_value}"
             else:
                 current_sessions_df.at[i, 'stage_sessions_alert'] = 'N'
             
             # Water day total threshold
-            water_day_total_alert = specific_alerts.get('water_day_total', {}).get('alert', 'N')
-            current_sessions_df.at[i, 'water_day_total_alert'] = water_day_total_alert
+            water_alert_info = specific_alerts.get('water_day_total', {})
+            if not isinstance(water_alert_info, dict):
+                water_alert_info = {'alert': 'N', 'value': water_alert_info}
+            water_day_total_alert = water_alert_info.get('alert', 'N')
+            if water_day_total_alert == 'T':
+                water_value = water_alert_info.get('value', '')
+                current_sessions_df.at[i, 'water_day_total_alert'] = f"T | {water_value:.1f}"
+            else:
+                current_sessions_df.at[i, 'water_day_total_alert'] = 'N'
             
             # Process feature-specific percentiles and categories
             feature_percentiles = alerts.get('feature_percentiles', {})
@@ -415,7 +420,7 @@ class AppDataFrame:
                     current_sessions_df.at[i, f'{feature}_category'] = details.get('category', 'NS')
             
             # Combine alerts - simplify logic
-            if threshold_alert == 'T':
+            if threshold_data.get('threshold_alert', 'N') == 'T':
                 if alert_category != 'NS':
                     current_sessions_df.at[i, 'combined_alert'] = f"{alert_category}, T"
                 else:

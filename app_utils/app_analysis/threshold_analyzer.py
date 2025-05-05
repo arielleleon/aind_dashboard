@@ -154,13 +154,6 @@ class ThresholdAnalyzer:
     def apply_standard_thresholds(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Apply standard session thresholds based on stages as specified:
-        - Total sessions: > 40 sessions -> T
-        - Stage 1: > 5 sessions -> T
-        - Stage 2: > 5 sessions -> T
-        - Stage 3: > 6 sessions -> T
-        - Stage 4/Final > 10 sessions -> T
-        - GRADUATED: > 20 sessions -> T
-        - Water day total: > 3.5 ml -> T
         
         Parameters:
             df: pd.DataFrame
@@ -214,3 +207,83 @@ class ThresholdAnalyzer:
                     df_result.at[idx, 'threshold_alert'] = 'T'
                     
         return df_result
+
+    def generate_alert(self, condition_met, alert_type, value=None, stage=None):
+        """
+        Generate detailed alert format with contextual information
+        
+        Parameters:
+            condition_met (bool): Whether the alert condition is met
+            alert_type (str): Type of alert (total_sessions, stage_sessions, water_day_total)
+            value (float/int): The value that triggered the alert
+            stage (str): Stage name for stage-specific alerts
+            
+        Returns:
+            dict: Alert information with detailed format
+        """
+        if not condition_met:
+            return {
+                'alert': 'N',
+                'value': value,
+                'stage': stage,
+                'display_format': 'N'
+            }
+        
+        # Alert condition is met
+        if alert_type == 'total_sessions':
+            # Format: "T | 45"
+            display_format = f"T | {value}"
+        elif alert_type == 'stage_sessions':
+            # Format: "T | STAGE_FINAL | 30"
+            display_format = f"T | {stage} | {value}"
+        elif alert_type == 'water_day_total':
+            # Format: "T | 3.7"
+            display_format = f"T | {value:.1f}"
+        else:
+            display_format = "T"
+        
+        return {
+            'alert': 'T',
+            'value': value,
+            'stage': stage,
+            'display_format': display_format
+        }
+
+    def check_total_sessions(self, sessions):
+        """Check if total sessions exceed threshold"""
+        threshold = self.threshold_config.get('session', {}).get('value', 40)
+        condition = self.threshold_config.get('session', {}).get('condition', 'gt')
+        
+        session_count = len(sessions)
+        alert_condition = (condition == 'gt' and session_count > threshold) or \
+                         (condition == 'lt' and session_count < threshold)
+        
+        return self.generate_alert(alert_condition, 'total_sessions', value=session_count)
+
+    def check_stage_sessions(self, sessions, current_stage):
+        """Check if sessions in current stage exceed threshold"""
+        # Get stage-specific threshold
+        stage_threshold = self.threshold_config.get(f"stage_{current_stage}_sessions", {}).get('value', 10)
+        
+        # Count sessions in this stage
+        stage_sessions = sessions[sessions['current_stage_actual'] == current_stage]
+        stage_count = len(stage_sessions)
+        
+        # Check if count exceeds threshold
+        alert_condition = stage_count > stage_threshold
+        
+        return self.generate_alert(alert_condition, 'stage_sessions', 
+                                 value=stage_count, stage=current_stage)
+
+    def check_water_day_total(self, water_day_total):
+        """Check if water day total exceeds threshold"""
+        threshold = self.threshold_config.get('water_day_total', {}).get('value', 3.5)
+        condition = self.threshold_config.get('water_day_total', {}).get('condition', 'gt')
+        
+        if pd.isna(water_day_total):
+            return self.generate_alert(False, 'water_day_total')
+        
+        alert_condition = (condition == 'gt' and water_day_total > threshold) or \
+                         (condition == 'lt' and water_day_total < threshold)
+        
+        return self.generate_alert(alert_condition, 'water_day_total', value=water_day_total)
