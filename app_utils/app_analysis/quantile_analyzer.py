@@ -187,15 +187,14 @@ class QuantileAnalyzer:
                                      feature_weights: Optional[Dict[str, float]] = None,
                                      include_history: bool = False) -> pd.DataFrame:
         """
-        Calculate overall percentile performance for subjects via averaging across features
+        Calculate overall percentile performance for subjects via a simple average across features
 
         Parameters:
             subject_ids: Optional[List[str]]
                 List of subject IDs to calculate overall percentiles for
                 If None: all subjects in dataframe will be used
             feature_weights: Optional[Dict[str, float]]
-                Dictionary mapping feature names to their weights
-                If None: all features will be weighted equally
+                Not used in this implementation as we're using a simple average
             include_history: bool
                 Whether to include historical strata in averaging
         
@@ -216,43 +215,24 @@ class QuantileAnalyzer:
         
         # Get all percentile columns
         percentile_cols = [col for col in all_data.columns if col.endswith('_percentile')]
-        features = [col.replace('_percentile', '') for col in percentile_cols]
 
-        # Create weights for each feature
-        if feature_weights is None:
-            # Equal weights if not specified (normal average)
-            weights = {feature: 1.0 for feature in features}
-        else:
-            # Use provided weights (default to 1.0 if not specified)
-            weights = {feature: feature_weights.get(feature, 1.0) for feature in features}
-
-        # Normalize weights to sum to 1
-        weight_sum = sum(weights.values())
-        normalized_weights = {feature: weight / weight_sum for feature, weight in weights.items()}
-
-        # Calculate weighted average for each subject in each strata
+        # Calculate simple average for each subject in each strata
         results = []
 
         # Group by subject and strata to handle historical data
         for (subject_id, strata), group in all_data.groupby(['subject_id', 'strata']):
             # Get first row for this subject-strata combination
             row = group.iloc[0]
-
-            # Calculate weighted average of percentile values
-            weighted_sum = 0
-            valid_weight_sum = 0
-
-            for feature in features:
-                percentile_col = f'{feature}_percentile'
-                if percentile_col in row and not pd.isna(row[percentile_col]):
-                    feature_weight = normalized_weights[feature]
-                    weighted_sum += row[percentile_col] * feature_weight
-                    valid_weight_sum += feature_weight
-
-            # Only calculate overall percentile if data is valid
-            if valid_weight_sum > 0:
-                # Renormalize based on available features
-                overall_percentile = weighted_sum / valid_weight_sum
+            
+            # Extract all percentile values that are not NaN
+            percentile_values = []
+            for col in percentile_cols:
+                if col in row and not pd.isna(row[col]):
+                    percentile_values.append(row[col])
+            
+            # Calculate simple average if we have any valid percentiles
+            if percentile_values:
+                overall_percentile = sum(percentile_values) / len(percentile_values)
             else:
                 overall_percentile = np.nan
 

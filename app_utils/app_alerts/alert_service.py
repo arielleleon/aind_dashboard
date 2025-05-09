@@ -144,7 +144,7 @@ class AlertService:
         # Get analyzer reference from app utils
         analyzer = self.app_utils.quantile_analyzer
         
-        # Calculate overall percentiles for all subjects
+        # Calculate overall percentiles for all subjects using the simple average method
         overall_percentiles = analyzer.calculate_overall_percentile(subject_ids=subject_ids)
         
         # Get raw data to determine the most recent strata for each subject
@@ -715,6 +715,7 @@ class AlertService:
                     
                     # Add feature-specific percentiles and categories
                     feature_percentiles = {}
+                    percentile_values = []
                     
                     for col in percentile_cols:
                         # Get feature name
@@ -726,6 +727,9 @@ class AlertService:
                         # Skip features with no percentile data
                         if percentile is None:
                             continue
+                            
+                        # Store for overall percentile calculation
+                        percentile_values.append(percentile)
                         
                         # Map to category
                         category = self.map_percentile_to_category(percentile)
@@ -745,14 +749,20 @@ class AlertService:
                     # Add feature percentiles to unified alerts
                     unified_alerts[subject_id]['feature_percentiles'] = feature_percentiles
                     
+                    # Calculate overall percentile directly as simple average of feature percentiles
+                    if percentile_values:
+                        calculated_overall = sum(percentile_values) / len(percentile_values)
+                        # Add the calculated overall percentile
+                        unified_alerts[subject_id]['calculated_overall_percentile'] = calculated_overall
+                    
                     # Add strata information
                     if 'strata' in row:
                         unified_alerts[subject_id]['strata'] = row['strata']
         
-        # Calculate overall percentiles for all subjects
+        # Calculate overall percentiles for all subjects using the app_utils method 
         overall_percentiles = {}
         try:
-            # Get overall percentiles for all subjects
+            # Get overall percentiles for all subjects using app_utils method 
             overall_df = self.app_utils.calculate_overall_percentile(list(all_subjects))
             if not overall_df.empty:
                 # Create mapping of subject_id to overall_percentile
@@ -782,8 +792,14 @@ class AlertService:
         
         # Add overall percentiles and categories to all subjects
         for subject_id in unified_alerts:
-            # Get overall percentile if available
-            overall_percentile = overall_percentiles.get(subject_id)
+            # Use the directly calculated percentile if available, otherwise fall back to the app_utils one
+            if 'calculated_overall_percentile' in unified_alerts[subject_id]:
+                overall_percentile = unified_alerts[subject_id]['calculated_overall_percentile']
+                # Clean up temporary variable
+                unified_alerts[subject_id].pop('calculated_overall_percentile', None)
+            else:
+                # Fall back to app_utils calculation if direct calculation not available
+                overall_percentile = overall_percentiles.get(subject_id)
             
             # Add to unified alerts
             unified_alerts[subject_id]['overall_percentile'] = overall_percentile

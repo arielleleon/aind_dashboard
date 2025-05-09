@@ -20,28 +20,74 @@ class AppUtils:
         self.quantile_analyzer = None
         self.alert_service = None
         self.threshold_analyzer = None
+        
+        # Simplified cache for processed data
+        self._cache = {
+            'raw_data': None,
+            'processed_data': None,  # No longer keyed by window_days
+            'formatted_data': None,  # No longer keyed by window_days
+            'stratified_data': None,  # No longer keyed by window_days
+            'overall_percentiles': None,
+            'unified_alerts': None,
+            'last_process_time': None,
+            'data_hash': None
+        }
 
-    def get_session_data(self, load_bpod = False):
+    def get_session_data(self, load_bpod = False, use_cache = True):
         """
         Get session data from the data loader
+        
+        Parameters:
+            load_bpod (bool): Whether to load bpod data
+            use_cache (bool): Whether to use cached data if available
+            
+        Returns:
+            pd.DataFrame: Session data
         """
+        if use_cache and self._cache['raw_data'] is not None:
+            return self._cache['raw_data']
+            
         if load_bpod:
-            return self.data_loader.load(load_bpod = True)
-        return self.data_loader.get_data()
+            data = self.data_loader.load(load_bpod = True)
+        else:
+            data = self.data_loader.get_data()
+            
+        # Cache the raw data
+        self._cache['raw_data'] = data
+        
+        # Reset other caches since raw data has changed
+        self._invalidate_derived_caches()
+        
+        return data
+    
+    def _invalidate_derived_caches(self):
+        """Reset all derived data caches when raw data changes"""
+        self._cache['processed_data'] = None
+        self._cache['formatted_data'] = None
+        self._cache['stratified_data'] = None
+        self._cache['overall_percentiles'] = None
+        self._cache['unified_alerts'] = None
+        self._cache['last_process_time'] = None
+        self._cache['data_hash'] = None
     
     def reload_data(self, load_bpod = False):
         """
         Force reload session data
         """
-        return self.data_loader.load(load_bpod = load_bpod)
+        data = self.data_loader.load(load_bpod = load_bpod)
+        
+        # Update cache and invalidate derived caches
+        self._cache['raw_data'] = data
+        self._invalidate_derived_caches()
+        
+        return data
     
-    def initialize_reference_processor(self, features_config, window_days = 49, min_sessions = 5, min_days = 7):
+    def initialize_reference_processor(self, features_config, min_sessions = 5, min_days = 7):
         """
         Initialize reference processor
 
         Parameters:
             features_config (Dict[str, bool]): Configuration of features (feature_name: higher or lower better)
-            window_days (int): Number of days to include in sliding window
             min_sessions (int): Minimum number of sessions required for eligibility
             min_days (int): Minimum number of days required for eligibility
 
@@ -50,16 +96,29 @@ class AppUtils:
         """
         self.reference_processor = ReferenceProcessor(
             features_config = features_config,
-            window_days = window_days,
             min_sessions = min_sessions,
             min_days = min_days
         )
         return self.reference_processor
     
-    def process_reference_data(self, df, reference_date = None, remove_outliers = False):
+    def process_reference_data(self, df, reference_date = None, remove_outliers = False, use_cache = True):
         """
         Process data through reference pipeline with enhanced historical data handling
+        
+        Parameters:
+            df (pd.DataFrame): Data to process
+            reference_date (datetime, optional): Reference date for sliding window
+            remove_outliers (bool): Whether to remove outliers
+            use_cache (bool): Whether to use cached data if available
+            
+        Returns:
+            Dict[str, pd.DataFrame]: Dictionary of stratified data
         """
+        # Check if we have cached results
+        if use_cache and self._cache['stratified_data'] is not None:
+            print(f"Using cached stratified data")
+            return self._cache['stratified_data']
+            
         if self.reference_processor is None:
             raise ValueError("Reference processor not initialized. Call initialize_reference_processor first.")
         
@@ -99,13 +158,9 @@ class AppUtils:
         print(f"Filtered out {off_curriculum_count} off-curriculum sessions ({off_curriculum_count/original_count:.1%} of total)")
         print(f"Identified {len(self.off_curriculum_subjects)} subjects with off-curriculum sessions")
         
-        # Continue with the rest of the method using ONLY filtered data
-        window_df = self.reference_processor.apply_sliding_window(df_filtered, reference_date)
-        print(f"Applied sliding window: {len(window_df)} sessions")
-
-        # Get eligible subjects
-        eligible_subjects = self.reference_processor.get_eligible_subjects(window_df)
-        eligible_df = window_df[window_df['subject_id'].isin(eligible_subjects)]
+        # Get eligible subjects - no longer using sliding window
+        eligible_subjects = self.reference_processor.get_eligible_subjects(df_filtered)
+        eligible_df = df_filtered[df_filtered['subject_id'].isin(eligible_subjects)]
         print(f"Got {len(eligible_subjects)} eligible subjects")
 
         # Preprocess data
@@ -122,6 +177,11 @@ class AppUtils:
         # Store historical data for later use
         self.historical_data = self.reference_processor.subject_history
         print(f"Stored historical data for {len(self.historical_data) if self.historical_data is not None else 0} subject-strata combinations")
+
+        # Cache the results
+        self._cache['processed_data'] = processed_df
+        self._cache['stratified_data'] = stratified_data
+        self._cache['last_process_time'] = datetime.now()
 
         return stratified_data
     
@@ -156,24 +216,34 @@ class AppUtils:
         
         return self.quantile_analyzer.get_subject_history(subject_id)
     
-    def calculate_overall_percentile(self, subject_ids = None, feature_weights = None):
+    def calculate_overall_percentile(self, subject_ids = None, use_cache = True):
         """
-        Calculate overall percentile scores for subjects
+        Calculate overall percentile scores for subjects using a simple average of feature percentiles
 
         Parameters:
             subject_ids (List[str], optional): List of specific subjects to calculate for
-            feature_weights (Dict[str, float], optional): Weights for different features in calculation
+            use_cache (bool): Whether to use cached results if available
 
         Returns:
             pd.DataFrame: Dataframe with overall percentile scores
         """
+        # Return cached results if available and no specific subjects requested
+        if use_cache and subject_ids is None and self._cache['overall_percentiles'] is not None:
+            print("Using cached overall percentiles")
+            return self._cache['overall_percentiles']
+            
         if self.quantile_analyzer is None:
             raise ValueError("Quantile analyzer not initialized. Process data first.")
         
-        return self.quantile_analyzer.calculate_overall_percentile(
-            subject_ids = subject_ids,
-            feature_weights = feature_weights
+        percentiles = self.quantile_analyzer.calculate_overall_percentile(
+            subject_ids = subject_ids
         )
+        
+        # Cache results if calculating for all subjects
+        if subject_ids is None:
+            self._cache['overall_percentiles'] = percentiles
+            
+        return percentiles
     
     def initialize_alert_service(self, config: Optional[Dict[str, Any]] = None) -> AlertService:
         """
@@ -234,9 +304,123 @@ class AppUtils:
         self.threshold_analyzer = ThresholdAnalyzer(threshold_config)
         return self.threshold_analyzer
 
-    def get_unified_alerts(self, subject_ids = None):
-        """ Get unified alerts """
+    def get_unified_alerts(self, subject_ids = None, use_cache = True):
+        """ 
+        Get unified alerts
+        
+        Parameters:
+            subject_ids (List[str], optional): List of subject IDs to get alerts for
+            use_cache (bool): Whether to use cached alerts if available
+            
+        Returns:
+            Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their unified alerts
+        """
+        # Return cached alerts if available and not requesting specific subjects
+        if use_cache and subject_ids is None and self._cache['unified_alerts'] is not None:
+            print("Using cached unified alerts")
+            return self._cache['unified_alerts']
+            
         if self.alert_service is None:
             self.initialize_alert_service()
 
-        return self.alert_service.get_unified_alerts(subject_ids)
+        alerts = self.alert_service.get_unified_alerts(subject_ids)
+        
+        # Cache results if getting alerts for all subjects
+        if subject_ids is None:
+            self._cache['unified_alerts'] = alerts
+            
+        return alerts
+        
+    def get_formatted_data(self, window_days=30, reference_date=None, use_cache=True):
+        """
+        Get formatted data for display, using cache if available
+        
+        Parameters:
+            window_days (int): Number of days to include in sliding window
+            reference_date (datetime, optional): Reference date for sliding window
+            use_cache (bool): Whether to use cached data if available
+            
+        Returns:
+            pd.DataFrame: Formatted data for display
+        """
+        # Check if we have cached formatted data
+        if use_cache and self._cache['formatted_data'] is not None:
+            print(f"Using cached formatted data")
+            # Apply time window filter directly to cached data
+            formatted_df = self._cache['formatted_data'].copy()
+            
+            # Apply time window filter directly to the session_date column
+            if reference_date is None:
+                reference_date = formatted_df['session_date'].max()
+            
+            start_date = reference_date - timedelta(days=window_days)
+            time_filtered_df = formatted_df[formatted_df['session_date'] >= start_date]
+            
+            # Get most recent session for each subject in the window
+            time_filtered_df = time_filtered_df.sort_values('session_date', ascending=False)
+            result_df = time_filtered_df.drop_duplicates(subset=['subject_id'], keep='first')
+            
+            print(f"Applied {window_days} day window filter: {len(result_df)} subjects")
+            return result_df
+            
+        # If not cached, we need to format the data
+        from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
+        
+        # Get raw data
+        df = self.get_session_data(use_cache=use_cache)
+        
+        # Create formatter
+        formatter = AppDataFrame()
+        
+        # Format data
+        formatted_df = formatter.format_dataframe(df, reference_date=reference_date)
+        
+        # Cache the full formatted data
+        self._cache['formatted_data'] = formatted_df
+        
+        # Apply time window filter
+        if reference_date is None:
+            reference_date = formatted_df['session_date'].max()
+        
+        start_date = reference_date - timedelta(days=window_days)
+        time_filtered_df = formatted_df[formatted_df['session_date'] >= start_date]
+        
+        # Get most recent session for each subject in the window
+        time_filtered_df = time_filtered_df.sort_values('session_date', ascending=False)
+        result_df = time_filtered_df.drop_duplicates(subset=['subject_id'], keep='first')
+        
+        print(f"Applied {window_days} day window filter: {len(result_df)} subjects")
+        return result_df
+    
+    def get_subject_sessions(self, subject_id):
+        """
+        Get all sessions for a specific subject
+        
+        Parameters:
+        -----------
+        subject_id : str
+            The subject ID to retrieve sessions for
+            
+        Returns:
+        --------
+        pd.DataFrame
+            DataFrame containing all sessions for the subject
+        """
+        try:
+            # Get all data
+            all_data = self.data_loader.get_data()
+            
+            # Filter for specific subject
+            subject_data = all_data[all_data['subject_id'] == subject_id].copy()
+            
+            if subject_data.empty:
+                print(f"No sessions found for subject {subject_id}")
+                return None
+                
+            # Sort by session date (most recent first)
+            subject_data = subject_data.sort_values('session_date', ascending=False)
+            
+            return subject_data
+        except Exception as e:
+            print(f"Error getting sessions for subject {subject_id}: {str(e)}")
+            return None

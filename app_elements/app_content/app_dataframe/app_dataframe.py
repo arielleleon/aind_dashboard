@@ -47,7 +47,6 @@ class AppDataFrame:
         # Create reference processor with minimal default settings for filtering purposes
         self.reference_processor = ReferenceProcessor(
             features_config={},  # Empty dict since we're not using features
-            window_days=30,     # Default window of 30 days
             min_sessions=1,     # Minimal requirements since we just want the window
             min_days=1
         )
@@ -102,15 +101,14 @@ class AppDataFrame:
         else:
             return strata_name.replace(" ", "")
 
-    def format_dataframe(self, df: pd.DataFrame, window_days: int = 30, reference_date: datetime = None) -> pd.DataFrame:
+    def format_dataframe(self, df: pd.DataFrame, reference_date: datetime = None) -> pd.DataFrame:
         """
         Format the dataframe for display in the table with enhanced feature-specific data
         
         1. Pre-compute all-time percentiles once
-        2. Filter data for display based on window_days
-        3. Get most recent sessions for each subject in the display window
-        4. Apply unified alerts (percentile and threshold)
-        5. Add feature-specific percentiles and alert categories
+        2. Get most recent sessions for each subject
+        3. Apply unified alerts (percentile and threshold)
+        4. Add feature-specific percentiles and alert categories
         """
         # Copy input data to avoid modifying the original
         original_df = df.copy() if df is not None else pd.DataFrame()
@@ -126,7 +124,7 @@ class AppDataFrame:
             return pd.DataFrame(columns=['subject_id', 'combined_alert', 'percentile_category', 
                                         'overall_percentile', 'session_date', 'session'])
         
-        print(f" Starting data formatting with {len(original_df)} sessions, {window_days} day window")
+        print(f" Starting data formatting with {len(original_df)} sessions")
         
         # Create a boolean mask for off-curriculum sessions
         off_curriculum_mask = (
@@ -153,31 +151,29 @@ class AppDataFrame:
             }
         print(f"Display: Identified {len(off_curriculum_subjects)} subjects with off-curriculum sessions")
         
-        # Step 1: Compute all-time percentiles if not already done
-        if not hasattr(self, 'overall_percentiles'):
+        # Step 1: Use cached percentiles if available from app_utils
+        app_utils = self.app_utils
+        
+        # Check if app_utils has cached overall percentiles
+        if hasattr(app_utils, '_cache') and app_utils._cache['overall_percentiles'] is not None:
+            print("Using cached overall percentiles from app_utils")
+            self.overall_percentiles = app_utils._cache['overall_percentiles']
+            self.alert_service = app_utils.alert_service
+            self.threshold_analyzer = app_utils.threshold_analyzer
+        # If not cached in app_utils, compute them if not already done locally
+        elif not hasattr(self, 'overall_percentiles'):
             print("Computing all-time percentiles...")
-            
-            # Use a very large window for all-time computation (365 days * 10 years)
-            all_time_window = 365 * 10
-            
-            # Initialize app_utils
-            app_utils = AppUtils()
             
             # Initialize reference processor for all-time percentile calculation
             reference_processor = app_utils.initialize_reference_processor(
                 features_config=self.features_config,
-                window_days=all_time_window,
                 min_sessions=1,  # Minimum sessions requirement for eligibility
                 min_days=1       # Minimum days requirement for eligibility
             )
             
-            # Apply sliding window for all-time data
-            all_time_df = reference_processor.apply_sliding_window(original_df, reference_date)
-            print(f"Applied all-time window: {len(all_time_df)} sessions")
-            
             # Process data through reference pipeline to create strata
             stratified_data = app_utils.process_reference_data(
-                df=all_time_df, 
+                df=original_df, 
                 reference_date=reference_date,
                 remove_outliers=False
             )
@@ -198,7 +194,7 @@ class AppDataFrame:
             threshold_analyzer.set_threshold_config(self.threshold_config)
             print(f"Initialized threshold analyzer")
             
-            # Calculate overall percentiles for all subjects (one-time calculation)
+            # Calculate overall percentiles for all subjects (one-time calculation using simple average)
             self.overall_percentiles = quantile_analyzer.calculate_overall_percentile()
             self.alert_service = alert_service
             self.threshold_analyzer = threshold_analyzer
@@ -207,23 +203,9 @@ class AppDataFrame:
             ns_count = sum(1 for _, row in self.overall_percentiles.iterrows() if pd.isna(row.get('overall_percentile')))
             print(f"  Not Scored subjects: {ns_count} ({ns_count/len(self.overall_percentiles)*100:.1f}%)")
         
-        # Step 2: Apply sliding window filter for DISPLAY only
-        if not hasattr(self, 'display_processor'):
-            self.display_processor = ReferenceProcessor(
-                features_config={},  # Empty dict since we're only using it for filtering
-                window_days=window_days,
-                min_sessions=1,
-                min_days=1
-            )
-        else:
-            self.display_processor.window_days = window_days
-        
-        window_df = self.display_processor.apply_sliding_window(original_df, reference_date)
-        print(f"Applied display window: {len(window_df)} sessions")
-
-        # Step 3: Get most current session for each subject in the window
-        window_df = window_df.sort_values('session_date', ascending=False)
-        current_sessions_df = window_df.drop_duplicates(subset=['subject_id'], keep='first')
+        # Step 2: Get most current session for each subject
+        original_df = original_df.sort_values('session_date', ascending=False)
+        current_sessions_df = original_df.drop_duplicates(subset=['subject_id'], keep='first').copy()
         print(f"Got current sessions for {len(current_sessions_df)} subjects")
 
         # Before proceeding, mark subjects with off-curriculum sessions for special handling
@@ -247,39 +229,38 @@ class AppDataFrame:
         # Initialize columns with default values
         feature_list = list(self.features_config.keys())
 
-        # Base alert columns
-        current_sessions_df['percentile_category'] = 'NS'  # Default to Not Scored
-        current_sessions_df['overall_percentile'] = float('nan')
-        current_sessions_df['threshold_alert'] = 'N'  # Default to Normal
-        current_sessions_df['combined_alert'] = 'NS'  # Default to Not Scored
-        current_sessions_df['strata_abbr'] = ''  # Default to empty string
-        current_sessions_df['ns_reason'] = ''  # Initialize NS reason column
+        # Base alert columns - using .loc to avoid SettingWithCopyWarning
+        current_sessions_df.loc[:, 'percentile_category'] = 'NS'  # Default to Not Scored
+        current_sessions_df.loc[:, 'overall_percentile'] = float('nan')
+        current_sessions_df.loc[:, 'threshold_alert'] = 'N'  # Default to Normal
+        current_sessions_df.loc[:, 'combined_alert'] = 'NS'  # Default to Not Scored
+        current_sessions_df.loc[:, 'strata_abbr'] = ''  # Default to empty string
+        current_sessions_df.loc[:, 'ns_reason'] = ''  # Initialize NS reason column
         
         # Set NS reason for off-curriculum subjects immediately
-        for i, row in current_sessions_df.iterrows():
-            subject_id = row['subject_id']
-            if subject_id in off_curriculum_subjects:
+        for subject_id in off_curriculum_subjects:
+            mask = current_sessions_df['subject_id'] == subject_id
+            if mask.any():
                 info = self.app_utils.off_curriculum_subjects[subject_id]
                 percent = (info['count'] / info['total_sessions']) * 100
-                current_sessions_df.at[i, 'ns_reason'] = f"Off-curriculum sessions ({info['count']}, {percent:.0f}% of total)"
+                current_sessions_df.loc[mask, 'ns_reason'] = f"Off-curriculum sessions ({info['count']}, {percent:.0f}% of total)"
         
         # Threshold alert columns
-        current_sessions_df['total_sessions_alert'] = 'N'
-        current_sessions_df['stage_sessions_alert'] = 'N'
-        current_sessions_df['water_day_total_alert'] = 'N'
+        current_sessions_df.loc[:, 'total_sessions_alert'] = 'N'
+        current_sessions_df.loc[:, 'stage_sessions_alert'] = 'N'
+        current_sessions_df.loc[:, 'water_day_total_alert'] = 'N'
         
         # Feature-specific columns
         for feature in feature_list:
-            current_sessions_df[f'{feature}_percentile'] = float('nan')
-            current_sessions_df[f'{feature}_category'] = 'NS'
+            current_sessions_df.loc[:, f'{feature}_percentile'] = float('nan')
+            current_sessions_df.loc[:, f'{feature}_category'] = 'NS'
         
-        # Step 3.5: Add strata information from the most recent sessions
+        # Step 3: Add strata information from the most recent sessions
         print(f"Adding strata information to current sessions")
 
         # Create a reference processor just for strata assignment
         temp_processor = ReferenceProcessor(
             features_config={},  # Empty dict since we're just using it for strata
-            window_days=window_days,
             min_sessions=1,
             min_days=1
         )
@@ -288,6 +269,7 @@ class AppDataFrame:
         if not current_sessions_df.empty:
             # Pre-process to get curriculum_version_group
             preprocessed_df = temp_processor.preprocess_data(current_sessions_df, remove_outliers=False)
+            print(f"Reference processor preprocess: Removing {len(current_sessions_df) - len(preprocessed_df)} off-curriculum sessions")
             
             # Assign strata 
             with_strata = temp_processor.assign_subject_strata(preprocessed_df)
@@ -296,24 +278,19 @@ class AppDataFrame:
             if 'strata' in with_strata.columns:
                 subjects_with_strata = 0
                 
-                for i, row in with_strata.iterrows():
-                    subject_id = row['subject_id']
-                    # Find matching row in current_sessions_df
-                    idx = current_sessions_df[current_sessions_df['subject_id'] == subject_id].index
-                    if not idx.empty:
+                # Create a mapping from subject_id to strata
+                strata_map = with_strata.set_index('subject_id')['strata'].to_dict()
+                
+                # Apply strata to current_sessions_df using loc
+                for subject_id, strata in strata_map.items():
+                    mask = current_sessions_df['subject_id'] == subject_id
+                    if mask.any():
                         # Add the strata
-                        strata = row['strata']
-                        current_sessions_df.at[idx[0], 'strata'] = strata
+                        current_sessions_df.loc[mask, 'strata'] = strata
                         
-                        # Generate and add the abbreviated strata directly
+                        # Add abbreviated strata using our local method
                         strata_abbr = self.get_abbreviated_strata(strata)
-                        current_sessions_df.at[idx[0], 'strata_abbr'] = strata_abbr
-                        
-                        # Debug specific subjects
-                        if subject_id == '779531':  # Add your problem subject ID here
-                            print(f"DEBUG - Subject {subject_id}:")
-                            print(f"  Strata: {strata}")
-                            print(f"  Abbreviated strata: {strata_abbr}")
+                        current_sessions_df.loc[mask, 'strata_abbr'] = strata_abbr
                         
                         subjects_with_strata += 1
                 
@@ -334,48 +311,43 @@ class AppDataFrame:
         
         # Step 5: Apply unified alerts to the display data
         alert_count = 0
-        for i, row in current_sessions_df.iterrows():
-            subject_id = row['subject_id']
-            
-            # Skip if subject has no alerts or is an off-curriculum subject
-            if subject_id not in unified_alerts or subject_id in off_curriculum_subjects:
-                # For off-curriculum subjects, ensure they are marked as "NS"
-                if subject_id in off_curriculum_subjects:
-                    current_sessions_df.at[i, 'percentile_category'] = 'NS'
-                    current_sessions_df.at[i, 'combined_alert'] = 'NS'
-                    # NS reason is already set above
+        
+        # Process alerts in batch where possible
+        for subject_id, alerts in unified_alerts.items():
+            # Skip if subject is an off-curriculum subject
+            if subject_id in off_curriculum_subjects:
                 continue
-            
+                
+            # Create mask for this subject
+            mask = current_sessions_df['subject_id'] == subject_id
+            if not mask.any():
+                continue
+                
             # Get alerts for this subject
-            alerts = unified_alerts[subject_id]
             
             # Add overall percentile directly from unified alerts
             overall_percentile = alerts.get('overall_percentile')
             if overall_percentile is not None:
-                current_sessions_df.loc[i, 'overall_percentile'] = overall_percentile
+                current_sessions_df.loc[mask, 'overall_percentile'] = overall_percentile
             
             # Add alert category directly from unified alerts
             alert_category = alerts.get('alert_category', 'NS')
-            current_sessions_df.at[i, 'percentile_category'] = alert_category
+            current_sessions_df.loc[mask, 'percentile_category'] = alert_category
             
             # Add NS reason if applicable
             if alert_category == 'NS' and 'ns_reason' in alerts:
-                current_sessions_df.at[i, 'ns_reason'] = alerts['ns_reason']
+                current_sessions_df.loc[mask, 'ns_reason'] = alerts['ns_reason']
             
             # Add strata information if available and not already set
-            if 'strata' in alerts and ('strata' not in current_sessions_df.columns or pd.isna(current_sessions_df.at[i, 'strata'])):
-                alert_strata = alerts['strata']
-                current_sessions_df.at[i, 'strata'] = alert_strata
-                
-                # Add abbreviated strata using our local method
-                strata_abbr = self.get_abbreviated_strata(alert_strata)
-                current_sessions_df.at[i, 'strata_abbr'] = strata_abbr
-                
-                # Debug for specific subjects
-                if subject_id == '779531':  # Add your problem subject ID here
-                    print(f"DEBUG - Set from alerts - Subject {subject_id}:")
-                    print(f"  Alert strata: {alert_strata}")
-                    print(f"  Generated abbr: {strata_abbr}")
+            if 'strata' in alerts:
+                strata_mask = mask & (current_sessions_df['strata'].isna() | (current_sessions_df['strata'] == ''))
+                if strata_mask.any():
+                    alert_strata = alerts['strata']
+                    current_sessions_df.loc[strata_mask, 'strata'] = alert_strata
+                    
+                    # Add abbreviated strata using our local method
+                    strata_abbr = self.get_abbreviated_strata(alert_strata)
+                    current_sessions_df.loc[strata_mask, 'strata_abbr'] = strata_abbr
             
             # Apply threshold alerts
             threshold_data = alerts.get('threshold', {})
@@ -386,18 +358,14 @@ class AppDataFrame:
             total_sessions_alert = total_sessions_alert_info.get('alert', 'N')
             if total_sessions_alert == 'T':
                 total_sessions_value = total_sessions_alert_info.get('value', '')
-                current_sessions_df.at[i, 'total_sessions_alert'] = f"T | {total_sessions_value}"
-            else:
-                current_sessions_df.at[i, 'total_sessions_alert'] = 'N'
+                current_sessions_df.loc[mask, 'total_sessions_alert'] = f"T | {total_sessions_value}"
             
             # Stage sessions threshold
             stage_alert_info = specific_alerts.get('stage_sessions', {})
             if stage_alert_info.get('alert') == 'T':
-                stage_name = stage_alert_info.get('stage', row.get('current_stage_actual', ''))
+                stage_name = stage_alert_info.get('stage', current_sessions_df.loc[mask, 'current_stage_actual'].iloc[0])
                 stage_value = stage_alert_info.get('value', '')
-                current_sessions_df.at[i, 'stage_sessions_alert'] = f"T | {stage_name} | {stage_value}"
-            else:
-                current_sessions_df.at[i, 'stage_sessions_alert'] = 'N'
+                current_sessions_df.loc[mask, 'stage_sessions_alert'] = f"T | {stage_name} | {stage_value}"
             
             # Water day total threshold
             water_alert_info = specific_alerts.get('water_day_total', {})
@@ -406,30 +374,28 @@ class AppDataFrame:
             water_day_total_alert = water_alert_info.get('alert', 'N')
             if water_day_total_alert == 'T':
                 water_value = water_alert_info.get('value', '')
-                current_sessions_df.at[i, 'water_day_total_alert'] = f"T | {water_value:.1f}"
-            else:
-                current_sessions_df.at[i, 'water_day_total_alert'] = 'N'
+                current_sessions_df.loc[mask, 'water_day_total_alert'] = f"T | {water_value:.1f}"
             
             # Process feature-specific percentiles and categories
             feature_percentiles = alerts.get('feature_percentiles', {})
             for feature, details in feature_percentiles.items():
                 if feature in feature_list:
                     # Add percentile
-                    current_sessions_df.at[i, f'{feature}_percentile'] = details.get('percentile')
+                    current_sessions_df.loc[mask, f'{feature}_percentile'] = details.get('percentile')
                     # Add category
-                    current_sessions_df.at[i, f'{feature}_category'] = details.get('category', 'NS')
+                    current_sessions_df.loc[mask, f'{feature}_category'] = details.get('category', 'NS')
             
             # Combine alerts - simplify logic
             if threshold_data.get('threshold_alert', 'N') == 'T':
                 if alert_category != 'NS':
-                    current_sessions_df.at[i, 'combined_alert'] = f"{alert_category}, T"
+                    current_sessions_df.loc[mask, 'combined_alert'] = f"{alert_category}, T"
                 else:
-                    current_sessions_df.at[i, 'combined_alert'] = 'T'
+                    current_sessions_df.loc[mask, 'combined_alert'] = 'T'
             else:
-                current_sessions_df.at[i, 'combined_alert'] = alert_category
+                current_sessions_df.loc[mask, 'combined_alert'] = alert_category
             
             # Count non-normal alerts
-            if current_sessions_df.at[i, 'combined_alert'] not in ['N', 'NS']:
+            if current_sessions_df.loc[mask, 'combined_alert'].iloc[0] not in ['N', 'NS']:
                 alert_count += 1
 
         print(f"Total alerts found: {alert_count} out of {len(current_sessions_df)} subjects")
@@ -504,33 +470,14 @@ class AppDataFrame:
 
         print(f" Formatted dataframe with {len(formatted_df)} rows and {len(formatted_df.columns)} columns")
 
-        # Before returning the formatted dataframe, add this:
-        # Check if strata_abbr has values
-        if 'strata_abbr' in formatted_df.columns:
-            non_empty = sum(1 for x in formatted_df['strata_abbr'] if x and not pd.isna(x))
-            print(f"Final check: strata_abbr column has {non_empty} non-empty values out of {len(formatted_df)} rows")
-            
-            # Check a few specific rows
-            print("Final strata values for first 5 rows:")
-            for i, row in formatted_df.head().iterrows():
-                print(f"  Subject {row['subject_id']}: Strata={row.get('strata', 'N/A')}, Abbr={row.get('strata_abbr', 'N/A')}")
-
         return formatted_df
     
     def build(self):
         """
         Build data table component with enhanced feature-specific columns
         """
-        # Add debugging to check data loading
-        print("Starting build() method in AppDataFrame")
-        
         # Get the data and apply formatting
         raw_data = self.data_loader.get_data()
-        
-        # Debug raw data
-        print(f"Raw data from data_loader has shape: {raw_data.shape}")
-        print(f"Raw data columns include 'session_date'? {'session_date' in raw_data.columns}")
-        
         formatted_data = self.format_dataframe(raw_data)
         
         # Identify float columns for formatting
@@ -602,106 +549,6 @@ class AppDataFrame:
             
             columns.append(column_def)
 
-        # Define conditional styles for alerts
-        conditional_styles = [
-            # Default row styling
-            {
-                'if': {'row_index': 'odd'},
-                'backgroundColor': '#f9f9f9'
-            },
-            {
-                'if': {'column_id': 'subject_id'},
-                'fontWeight': 'bold'
-            },
-            # Row-level highlighting with lighter colors - update to use combined_alert
-            {
-                'if': {'filter_query': '{combined_alert} contains "SB" || {combined_alert} eq "T"'},
-                'backgroundColor': '#FFC380',  # Light orange
-                'className': 'alert-sb-row'
-            },
-            {
-                'if': {'filter_query': '{combined_alert} contains "B" && !({combined_alert} contains "SB")'},
-                'backgroundColor': '#FFC380',  # Very light orange
-                'className': 'alert-b-row'
-            },
-            {
-                'if': {'filter_query': '{combined_alert} contains "G" && !({combined_alert} contains "SG")'},
-                'backgroundColor': '#9FC5E8',  # Light blue
-                'className': 'alert-g-row'
-            },
-            {
-                'if': {'filter_query': '{combined_alert} contains "SG"'},
-                'backgroundColor': '#9FC5E8',  # Slightly darker blue
-                'className': 'alert-sg-row'
-            }
-        ]
-
-        # Add styling for specific threshold alert columns
-        conditional_styles.extend([
-            {
-                'if': {'column_id': 'total_sessions_alert', 'filter_query': '{total_sessions_alert} eq "T"'},
-                'backgroundColor': '#FF8C40',  # Orange for alert
-                'color': 'white',
-                'fontWeight': 'bold'
-            },
-            {
-                'if': {'column_id': 'water_day_total_alert', 'filter_query': '{water_day_total_alert} eq "T"'},
-                'backgroundColor': '#FF8C40',  # Orange for alert
-                'color': 'white',
-                'fontWeight': 'bold'
-            },
-            # Updated style for stage sessions alert that checks if it contains "T |"
-            {
-                'if': {'column_id': 'stage_sessions_alert', 'filter_query': '{stage_sessions_alert} contains "T |"'},
-                'backgroundColor': '#FF8C40',  # Orange for alert
-                'color': 'white',
-                'fontWeight': 'bold'
-            }
-        ])
-
-        # Add feature-specific cell styling for alert categories
-        for feature in self.features_config.keys():
-            cat_col = f'{feature}_category'
-            
-            # Add styling for different alert categories
-            conditional_styles.extend([
-                {
-                    'if': {'column_id': cat_col, 'filter_query': f'{{{cat_col}}} eq "SB"'},
-                    'backgroundColor': '#FF8C40',  # Darker orange for SB
-                    'color': 'white'
-                },
-                {
-                    'if': {'column_id': cat_col, 'filter_query': f'{{{cat_col}}} eq "B"'},
-                    'backgroundColor': '#FFCCA0',  # Light orange for B
-                    'color': 'black'
-                },
-                {
-                    'if': {'column_id': cat_col, 'filter_query': f'{{{cat_col}}} eq "G"'},
-                    'backgroundColor': '#A0C5E8',  # Light blue for G
-                    'color': 'black'
-                },
-                {
-                    'if': {'column_id': cat_col, 'filter_query': f'{{{cat_col}}} eq "SG"'},
-                    'backgroundColor': '#4D94DA',  # Darker blue for SG
-                    'color': 'white'
-                }
-            ])
-            
-            # Add highlight for percentile columns
-            percentile_col = f'{feature}_percentile'
-            conditional_styles.append({
-                'if': {'column_id': percentile_col},
-                'border': '1px solid #5D9FD3',
-                'borderRadius': '2px'
-            })
-
-        # Also highlight overall percentile column
-        conditional_styles.append({
-            'if': {'column_id': 'overall_percentile'},
-            'border': '2px solid #5D9FD3',
-            'borderRadius': '2px'
-        })
-
         # Build the table with updated styling
         return html.Div([
 
@@ -711,7 +558,7 @@ class AppDataFrame:
                 columns=columns,
                 page_size=20,
                 fixed_rows={'headers': True},
-                style_data_conditional=conditional_styles + [
+                style_data_conditional=[
                     {
                         'if': {'column_id': 'subject_id'},
                         'cursor': 'pointer'

@@ -3,25 +3,22 @@ from dash import html
 from dash import dcc
 import dash_bootstrap_components as dbc
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from app_utils import AppUtils
 from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
 from app_elements.app_filter.app_filter import AppFilter
 from app_elements.app_subject_detail.app_feature_chart import AppFeatureChart
+from app_elements.app_subject_detail.app_session_card import AppSessionCard
+from app_elements.app_subject_detail.app_subject_image_loader import AppSubjectImageLoader
 import plotly.graph_objects as go
 import json
 
-# Initialize app utilities
 app_utils = AppUtils()
-
-# Initialize dataframe formatter
 app_dataframe = AppDataFrame()
-
-# Initialize AppFilter to access time_window_options
 app_filter = AppFilter()
-
-# Initialize feature chart
 feature_chart = AppFeatureChart()
+session_card = AppSessionCard()
+image_loader = AppSubjectImageLoader()
 
 # Callback to update active filters display and count
 @callback(
@@ -200,26 +197,26 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
                      alert_category, clear_clicks):
     print(f"Updating table with time window: {time_window_value} days")
     
-    # Get the full dataset
-    df = app_utils.get_session_data()
+    # Get the cached formatted data (all subjects, all time)
+    if app_utils._cache['formatted_data'] is None:
+        # If not cached, format the data once
+        df = app_utils.get_session_data(use_cache=True)
+        formatter = AppDataFrame()
+        formatted_df = formatter.format_dataframe(df)
+        app_utils._cache['formatted_data'] = formatted_df
+    else:
+        formatted_df = app_utils._cache['formatted_data'].copy()
     
-    # Investigate data type of key columns for debugging
-    print(f"Data types: curriculum_name={df['curriculum_name'].dtype}, current_stage_actual={df['current_stage_actual'].dtype}")
-    
-    # Look for string 'None' values vs actual None values
-    none_curriculum = df[df['curriculum_name'] == 'None'].shape[0]
-    none_stage = df[df['current_stage_actual'] == 'None'].shape[0]
-    null_curriculum = df['curriculum_name'].isna().sum()
-    null_stage = df['current_stage_actual'].isna().sum()
-    
-    print(f"String 'None' values: curriculum={none_curriculum}, stage={none_stage}")
-    print(f"Actual null values: curriculum={null_curriculum}, stage={null_stage}")
-    
-    # Create a fresh dataframe formatter to avoid state issues
-    app_dataframe = AppDataFrame()
-    
-    # Apply formatting with window_days for display only
-    formatted_df = app_dataframe.format_dataframe(df, window_days=time_window_value)
+    # Apply time window filter directly to the session_date column
+    if time_window_value:
+        reference_date = formatted_df['session_date'].max()
+        start_date = reference_date - timedelta(days=time_window_value)
+        # Filter to sessions within time window
+        time_filtered = formatted_df[formatted_df['session_date'] >= start_date]
+        # Get most recent session for each subject in the window
+        time_filtered = time_filtered.sort_values('session_date', ascending=False)
+        formatted_df = time_filtered.drop_duplicates(subset=['subject_id'], keep='first')
+        print(f"Applied {time_window_value} day window filter: {len(formatted_df)} subjects")
     
     # Apply each filter if it has a value
     if stage_value:
@@ -248,42 +245,37 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
                 (formatted_df["stage_sessions_alert"].str.contains("T |", na=False)) | 
                 (formatted_df["water_day_total_alert"] == "T")
             ]
+        elif alert_category == "NS":
+            # Filter for Not Scored subjects
+            formatted_df = formatted_df[formatted_df["percentile_category"] == "NS"]
         else:
-            # For other alert categories, use combined_alert field
-            formatted_df = formatted_df[formatted_df["combined_alert"].str.contains(alert_category)]
+            # Filter for specific percentile category (B, G, SB, SG)
+            formatted_df = formatted_df[formatted_df["percentile_category"] == alert_category]
     
-    # Apply sorting based on selected option
+    # Apply sorting if specified
     if sort_option != "none":
-        if sort_option == "percentile_asc":
+        if sort_option == "session_date":
+            # Sort by session date (descending)
+            formatted_df = formatted_df.sort_values("session_date", ascending=False)
+        elif sort_option == "overall_percentile":
             # Sort by overall percentile (ascending)
-            formatted_df = formatted_df.sort_values(by="overall_percentile", ascending=True)
-        elif sort_option == "percentile_desc":
-            # Sort by overall percentile (descending)
-            formatted_df = formatted_df.sort_values(by="overall_percentile", ascending=False)
-        elif sort_option == "alert_worst":
-            # Define alert category order from worst to best
+            formatted_df = formatted_df.sort_values("overall_percentile", ascending=True)
+        elif sort_option == "alert":
+            # Custom sort order for alerts: SB, B, N, G, SG, NS
             alert_order = {"SB": 0, "B": 1, "N": 2, "G": 3, "SG": 4, "NS": 5}
-            # Create a temporary column for sorting
             formatted_df["alert_sort"] = formatted_df["percentile_category"].map(alert_order)
-            # Sort by alert category (worst first)
-            formatted_df = formatted_df.sort_values(by="alert_sort", ascending=True)
-            # Remove temporary sort column
+            formatted_df = formatted_df.sort_values("alert_sort", ascending=True)
             formatted_df = formatted_df.drop(columns=["alert_sort"])
-        elif sort_option == "alert_best":
-            # Define alert category order from best to worst
-            alert_order = {"SG": 0, "G": 1, "N": 2, "B": 3, "SB": 4, "NS": 5}
-            # Create a temporary column for sorting
-            formatted_df["alert_sort"] = formatted_df["percentile_category"].map(alert_order)
-            # Sort by alert category (best first)
-            formatted_df = formatted_df.sort_values(by="alert_sort", ascending=True)
-            # Remove temporary sort column
-            formatted_df = formatted_df.drop(columns=["alert_sort"])
+        elif sort_option == "session_count":
+            # Sort by session count (descending)
+            formatted_df = formatted_df.sort_values("session", ascending=False)
     
-    # Count and print alert statistics
-    percentile_categories = formatted_df['percentile_category'].value_counts().to_dict()
-    print(f"Percentile categories: {percentile_categories}")
+    # Count percentile categories for debugging
+    percentile_counts = formatted_df["percentile_category"].value_counts().to_dict()
+    print(f"Percentile categories: {percentile_counts}")
     
-    return formatted_df.to_dict('records')
+    # Convert to records for datatable
+    return formatted_df.to_dict("records")
 
 # Subject selection from table
 @callback(
@@ -451,3 +443,99 @@ def show_subject_detail_page(n_clicks):
         "Subject Details Loaded ", 
         html.I(className="fas fa-check ml-1", style={"color": "white"})
     ]
+# Callback to populate the session list when a subject is selected
+@callback(
+    [Output("session-list-container", "children"),
+     Output("session-list-state", "data"),
+     Output("session-count", "children")],
+    [Input("detail-subject-id", "children"),
+     Input("load-more-sessions-btn", "n_clicks")],
+    [State("session-list-state", "data")]
+)
+def update_session_list(subject_id, load_more_clicks, session_list_state):
+    # Default return values
+    empty_list = []
+    updated_state = {"subject_id": None, "sessions_loaded": 0, "total_sessions": 0}
+    session_count = "0"
+    
+    # Check if triggered by a subject change or load more button
+    is_load_more = ctx.triggered_id == "load-more-sessions-btn"
+    
+    # If no subject selected or empty, return defaults
+    if not subject_id:
+        return empty_list, updated_state, session_count
+    
+    # Initialize with current state for load more
+    current_subject = session_list_state.get("subject_id", None)
+    sessions_loaded = session_list_state.get("sessions_loaded", 0)
+    
+    # If subject changed, reset state
+    if subject_id != current_subject:
+        sessions_loaded = 0
+        is_load_more = False
+    
+    # Define how many sessions to load
+    initial_session_count = 5
+    load_more_count = 5
+    
+    # Calculate how many sessions to fetch
+    if is_load_more:
+        session_limit = sessions_loaded + load_more_count
+    else:
+        session_limit = initial_session_count
+    
+    # Get all sessions for this subject
+    all_sessions = app_utils.get_subject_sessions(subject_id)
+    
+    if all_sessions is None or all_sessions.empty:
+        return empty_list, updated_state, session_count
+    
+    # Sort by session date (descending)
+    all_sessions = all_sessions.sort_values('session_date', ascending=False)
+    
+    # Limit to the requested number
+    sessions_to_display = all_sessions.head(session_limit)
+    
+    # Build session cards
+    session_cards = []
+    for idx, session_row in sessions_to_display.iterrows():
+        # First card is active by default
+        is_active = idx == 0 and not is_load_more
+        
+        # Create session card
+        card = session_card.build(session_row.to_dict(), is_active=is_active)
+        session_cards.append(card)
+    
+    # Update state
+    updated_state = {
+        "subject_id": subject_id,
+        "sessions_loaded": len(sessions_to_display),
+        "total_sessions": len(all_sessions)
+    }
+    
+    # Update session count
+    session_count = str(len(sessions_to_display))
+    
+    return session_cards, updated_state, session_count
+
+# Callback to handle session card selection
+@callback(
+    Output({"type": "session-card", "index": ALL}, "className"),
+    [Input({"type": "session-card", "index": ALL}, "n_clicks")],
+    [State({"type": "session-card", "index": ALL}, "id")]
+)
+def handle_session_selection(n_clicks_list, card_ids):
+    # Find which card was clicked
+    clicked_idx = None
+    for i, clicks in enumerate(n_clicks_list):
+        if clicks and clicks > 0:
+            clicked_idx = i
+            break
+    
+    # If no card was clicked, return unchanged
+    if clicked_idx is None:
+        return ["session-card" for _ in card_ids]
+    
+    # Update card classes - only the clicked one is active
+    return ["session-card active" if i == clicked_idx else "session-card" 
+            for i in range(len(card_ids))]

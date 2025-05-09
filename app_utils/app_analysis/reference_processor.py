@@ -9,7 +9,6 @@ from scipy import stats
 class ReferenceProcessor:
     """
     Processor for subject performance data that provides:
-    - Data windowing
     - Subject eligibility filtering
     - Data preprocessing
     - Data stratification
@@ -19,12 +18,10 @@ class ReferenceProcessor:
     def __init__(
             self,
             features_config: Dict[str, bool],
-            window_days: int = 90,
             min_sessions: int = 1,
             min_days: int = 1
     ):
         self.features_config = features_config
-        self.window_days = window_days
         self.min_sessions = min_sessions
         self.min_days = min_days
 
@@ -39,52 +36,6 @@ class ReferenceProcessor:
             "GRADUATED",
         ]
 
-    def apply_sliding_window(self, df: pd.DataFrame, reference_date: Optional[datetime] = None) -> pd.DataFrame:
-        """
-        Apply a sliding window to the data to calculate performance metrics over time
-
-        Parameters:
-            df: pd.DataFrame
-                Input dataframe with raw performance data
-            reference_date: Optional[datetime]
-                Reference date for the sliding window (default: max date in data)
-
-        Returns:
-            pd.DataFrame
-                Dataframe filtered to the sliding window
-        """
-        # Add defensive check for debugging
-        if df is None:
-            raise ValueError("Input dataframe is None")
-        
-        # Add debugging information
-        print(f"DataFrame in apply_sliding_window has shape: {df.shape}")
-        print(f"DataFrame columns: {df.columns.tolist()[:5]}...")  # Print first 5 columns
-        
-        # Check specifically for session_date column
-        if 'session_date' not in df.columns:
-            raise KeyError(f"'session_date' column not found in DataFrame with columns: {df.columns.tolist()}")
-        
-        df = df.copy()
-
-        # Get reference date (max is default)
-        if reference_date is None:
-            reference_date = df['session_date'].max()
-
-        # Filter data to only include sessions in window
-        window_start = reference_date - timedelta(days=self.window_days)
-
-        # Use ALL sessions of subject if subject in window at any point
-        window_df = df[df['session_date'] >= window_start].copy()
-
-        # Get unique subjects before filtering
-        subjects_before = set(df['subject_id'].unique())
-        
-        # Get unique subjects after filtering
-        subjects_after = set(window_df['subject_id'].unique())
-
-        return window_df
-    
     def get_eligible_subjects(self, df: pd.DataFrame) -> List[str]:
         """
         Get list of subjects that meet the eligibility criteria

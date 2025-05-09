@@ -16,7 +16,7 @@ class AppContent:
         Build app content with filter at top, data table in middle, and subject details at bottom
         """
         return html.Div([
-            # Filter row - spans full width
+            # Filter row
             dbc.Row([
                 dbc.Col([
                     self.app_filter.build()
@@ -29,8 +29,8 @@ class AppContent:
                     self.app_dataframe.build()
                 ], width=12, className="data-table-column")
             ], className="g-0 data-row"),
-
-            # Subject details row - no margins
+            
+            # Subject details row
             dbc.Row([
                 dbc.Col([
                     self.app_subject_detail.build()

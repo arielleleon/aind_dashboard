@@ -1,10 +1,14 @@
 from dash import html, dcc
 import dash_bootstrap_components as dbc
 from .app_feature_chart import AppFeatureChart
+from .app_session_list import AppSessionList
+from .app_subject_timeseries import AppSubjectTimeseries
 
 class AppSubjectDetail:
     def __init__(self):
         self.feature_chart = AppFeatureChart()
+        self.session_list = AppSessionList()
+        self.subject_timeseries = AppSubjectTimeseries()
         
     def build(self):
         """
@@ -97,8 +101,21 @@ class AppSubjectDetail:
                 
                 # Detailed subject page content
                 html.Div([
-                    html.H3("Detailed subject information", className="mb-4"),
-                    html.P("This is a placeholder for detailed subject information", className="placeholder-text")
+                    html.H3("Subject History", className="mb-4"),
+                    
+                    # Main two-column layout
+                    dbc.Row([
+                        # Left column: Session list
+                        dbc.Col([
+                            self.session_list.build()
+                        ], width=6, className="session-list-column"),
+                        
+                        # Right column: Timeseries graph
+                        dbc.Col([
+                            self.subject_timeseries.build()
+                        ], width=6, className="timeseries-column"),
+                    ], className="subject-detail-main-row")
+                    
                 ], id="subject-detail-page-content", className="detail-page-content")
             ], id="subject-detail-page", className="subject-detail-page-container", style={"display": "none"})
         ], id="subject-detail-container", className="subject-detail-container")
