@@ -37,7 +37,7 @@ class OverallPercentileCalculator:
             pd.DataFrame
                 DataFrame containing overall percentile scores for each subject in each strata
         """
-        # Create a copy of the input dataframe to avoid modifying it
+
         all_data = comprehensive_df.copy()
 
         # Filter for specific subject if provided

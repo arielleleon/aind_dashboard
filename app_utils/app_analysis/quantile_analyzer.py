@@ -277,8 +277,6 @@ class QuantileAnalyzer:
                     if pd.isna(rolling_value):
                         continue
                     
-                    # MODIFIED: Use the same ranking approach as in calculate_percentiles
-                    # Create a temporary series with reference values and the current value
                     temp_values = pd.Series(list(reference_values) + [rolling_value])
                     temp_values = temp_values[~temp_values.isna()]  # Remove NaN values
                     
