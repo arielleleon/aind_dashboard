@@ -32,12 +32,15 @@ class AppSessionList:
                         className="load-more-btn"
                     )
                 ], className="load-more-container")
-            ], className="session-list-scroll-container"),
+            ], id="session-list-scroll-container", className="session-list-scroll-container"),
             
             # Store component to track session loading state
             dcc.Store(id="session-list-state", data={
                 "subject_id": None,
                 "sessions_loaded": 0,
                 "total_sessions": 0
-            })
+            }),
+            
+            # Store component to track visible session during scrolling
+            dcc.Store(id="session-scroll-state", data={"visible_session": None})
         ], id="session-list-wrapper", className="session-list-wrapper")

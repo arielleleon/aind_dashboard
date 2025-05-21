@@ -3,6 +3,7 @@ import dash_bootstrap_components as dbc
 from .app_feature_chart import AppFeatureChart
 from .app_session_list import AppSessionList
 from .app_subject_timeseries import AppSubjectTimeseries
+from callbacks.callbacks import create_hidden_div
 
 class AppSubjectDetail:
     def __init__(self):
@@ -15,21 +16,31 @@ class AppSubjectDetail:
         Build subject detail component
         """
         return html.Div([
+            # Hidden div for callback targets
+            create_hidden_div(),
+            
+            # Store component to track selected session card
+            dcc.Store(id="session-card-selected", data={"selected_card_id": None}),
+            
+            # Interval component to check for scroll updates (100ms interval)
+            dcc.Interval(id="scroll-tracker-interval", interval=100, n_intervals=0),
+            
             # Footer content (initially hidden)
             html.Div([
                 dbc.Row([
                     # Left column: subject info
                     dbc.Col([
+                        # Subject ID 
                         html.Div([
-                            html.H2(id='detail-strata', className="subject-strata mb-3")
-                        ], className="strata-container"),
+                            html.H2(id='detail-subject-id', className="subject-strata mb-3")
+                        ], className="subject-id-container"),
 
                         dbc.Row([
-                            # Subject info
+                            # Subject info 
                             dbc.Col([
                                 html.Div([
-                                    html.Div("Subject ID: ", className="detail-label"),
-                                    html.Div(id="detail-subject-id", className="detail-value")
+                                    html.Div("Strata: ", className="detail-label"),
+                                    html.Div(id="detail-strata", className="detail-value")
                                 ], className="detail-item"),
 
                                 html.Div([
@@ -62,11 +73,11 @@ class AppSubjectDetail:
                             ], width=6),
                         ], className="mb-3"),
 
-                        # Threshold alerts
+                        # Threshold alerts - removed the border container
                         html.Div([
                             html.Div("Threshold Alerts:", className="detail-label mb-2"),
-                            html.Div(id="detail-threshold-alerts", className="detail-threshold")
-                        ], className="detail-item threshold-container mb-3"),
+                            html.Div(id="detail-threshold-alerts", className="detail-value")
+                        ], className="detail-item mb-3"),
 
                         # NS reason if applicable
                         html.Div(id="detail-ns-reason-container", className="ns-reason-container mb-3",
@@ -75,47 +86,29 @@ class AppSubjectDetail:
                             html.Div(id="detail-ns-reason", className="detail-ns-reason")
                         ]),
 
-                        # View details button
-                        dbc.Button(
-                            "Show Subject Details Section",
-                            id="view-details-button",
-                            color="primary",
-                            className="mt-2"
-                        )
+                        # View details button removed
                     ], width=6),
 
                     # Right column: Feature chart
                     dbc.Col([
-                        html.Div(id="feature-chart-container", className="chart-container"),
+                        html.Div(id="feature-chart-container", className="feature-chart-no-border"),
                     ], width=6),
                 ], className="subject-detail-content")
             ], id="subject-detail-footer", className="subject-detail-section", style={"display": "none"}),
 
-            # Subject detail page (initially hidden)
+            # Subject detail page (initially shown when subject is selected)
             html.Div([
-                # Visual indicator to help users see that content is below
-                html.Div([
-                    html.I(className="fas fa-arrow-down mr-2"),
-                    "Scroll down to view detailed subject information",
-                ], className="text-center p-3 mb-3 bg-light rounded"),
-                
-                # Detailed subject page content
-                html.Div([
-                    html.H3("Subject History", className="mb-4"),
+                # Main two-column layout - directly showing session list and timeseries
+                dbc.Row([
+                    # Left column: Session list
+                    dbc.Col([
+                        self.session_list.build()
+                    ], width=6, className="session-list-column"),
                     
-                    # Main two-column layout
-                    dbc.Row([
-                        # Left column: Session list
-                        dbc.Col([
-                            self.session_list.build()
-                        ], width=6, className="session-list-column"),
-                        
-                        # Right column: Timeseries graph
-                        dbc.Col([
-                            self.subject_timeseries.build()
-                        ], width=6, className="timeseries-column"),
-                    ], className="subject-detail-main-row")
-                    
-                ], id="subject-detail-page-content", className="detail-page-content")
+                    # Right column: Timeseries graph
+                    dbc.Col([
+                        self.subject_timeseries.build()
+                    ], width=6, className="timeseries-column"),
+                ], className="subject-detail-main-row")
             ], id="subject-detail-page", className="subject-detail-page-container", style={"display": "none"})
         ], id="subject-detail-container", className="subject-detail-container")

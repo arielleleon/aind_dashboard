@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Union, Any, Tuple
+from ..app_analysis.overall_percentile_calculator import OverallPercentileCalculator
 
 class AlertService:
     """
@@ -121,10 +122,11 @@ class AlertService:
         if self.app_utils is None:
             return False
         
-        # Check quantile analyzer
+        # Check quantile analyzer and percentile calculator
         has_quantile = hasattr(self.app_utils, 'quantile_analyzer') and self.app_utils.quantile_analyzer is not None
+        has_calculator = hasattr(self.app_utils, 'percentile_calculator') and self.app_utils.percentile_calculator is not None
 
-        return has_quantile
+        return has_quantile and has_calculator
 
     def calculate_quantile_alerts(self, subject_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         """
@@ -141,11 +143,8 @@ class AlertService:
         if not self._validate_analyzer():
             return {}
         
-        # Get analyzer reference from app utils
-        analyzer = self.app_utils.quantile_analyzer
-        
-        # Calculate overall percentiles for all subjects using the simple average method
-        overall_percentiles = analyzer.calculate_overall_percentile(subject_ids=subject_ids)
+        # Calculate overall percentiles using the app_utils wrapper to the dedicated calculator
+        overall_percentiles = self.app_utils.calculate_overall_percentile(subject_ids=subject_ids)
         
         # Get raw data to determine the most recent strata for each subject
         raw_data = None

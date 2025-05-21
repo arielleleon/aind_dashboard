@@ -36,59 +36,75 @@ class AppFeatureChart:
             'abs(bias_naive)': True,
             'foraging_performance': False
         }
+        
+        # Color mapping for different alert categories
+        color_map = {
+            'B': '#FF8C40',   # Orange - Bad
+            'SB': '#FF8C40',  # Orange - Severely Bad
+            'G': '#4D94DA',   # Blue - Good
+            'SG': '#4D94DA',  # Blue - Severely Good
+            'N': '#CCCCCC',   # Grey - Normal
+            'NS': '#CCCCCC'   # Grey - Not Scored
+        }
 
         # Iterate through features and get percentiles
         for feature, is_lower_better in features_config.items():
             percentile_key = f"{feature}_percentile"
+            category_key = f"{feature}_category"  # Correct key for alert category
+            
             if percentile_key in subject_data and not pd.isna(subject_data[percentile_key]):
                 features.append(feature.replace('_', '').replace('(', '').replace(')', ''))
-
                 percentile = subject_data[percentile_key]
                 percentiles.append(percentile)
 
-                # Determine color based on percentile -- CHANGE BASED ON ALERT CATEGORY
-                if percentile > 50:
-                    colors.append('#4D94DA')
+                # Determine color based on alert category 
+                if category_key in subject_data:
+                    category = subject_data[category_key]
+                    colors.append(color_map.get(category, '#CCCCCC'))  # Default to grey if unknown
                 else:
-                    colors.append('#FF8C40')
+                    # Fallback in case category isn't available
+                    colors.append('#CCCCCC')
 
-        # Calculate difference from 50th percentile 
-        differences = [p - 50 for p in percentiles]
+        # Calculate max percentile for y-axis
+        max_percentile = max(percentiles) if percentiles else 100
+        # Round up to nearest 10
+        max_y = min(100, ((max_percentile // 10) + 1) * 10)
 
-        # Create figure
+        # Create figure with vertical bars showing actual percentiles
         fig = go.Figure()
 
         fig.add_trace(go.Bar(
-            x=differences,
-            y=features,
-            orientation='h',
+            y=percentiles,
+            x=features,
+            orientation='v',
             marker_color=colors,
+            marker_opacity=0.7,  # Reduced opacity as requested
             text=[f"{p:.1f}%" for p in percentiles],
             textposition='auto',
             hoverinfo='text',
-            hovertext=[f"{f}: {p:.1f}%" for f, p in zip(features, percentiles)]
+            hovertext=[f"{f}: {p:.1f}%" for f, p in zip(features, percentiles)],
+            width=0.6
         ))
 
         fig.update_layout(
             title=None,
-            margin=dict(l=0, r=0, t=0, b=0),
-            xaxis = dict(
-                title='Difference from 50th Percentile',
-                zeroline=True,
-                zerolinewidth=1,
-                zerolinecolor='#CCCCCC',
-                range=[-50, 50],
-                tickvals=[-50, -25, 0, 25, 50],
+            margin=dict(l=0, r=0, t=10, b=10),
+            yaxis = dict(
+                title='Percentile',
+                range=[0, max_y],
+                tickvals=[0, 25, 50, 75, 100][:int(max_y/25)+1],
                 gridcolor='#EEEEEE',
                 showgrid=True
             ),
-            yaxis = dict(
+            xaxis = dict(
                 title=None,
-                automargin=True
+                automargin=True,
+                tickangle=-45
             ),
             plot_bgcolor='white',
-            height=200,
-            width=None
+            height=250,
+            width=None,
+            bargap=0.15
         )
 
         return dcc.Graph(

@@ -1,6 +1,7 @@
 from dash import html, dcc
 import dash_bootstrap_components as dbc
 from .app_subject_image_loader import AppSubjectImageLoader
+import sys
 
 class AppSessionCard:
     def __init__(self):
@@ -23,6 +24,10 @@ class AppSessionCard:
         dash component
             The session card component
         """
+        # Debug session data
+        print(f"\n=== SESSION CARD DEBUG ===")
+        print(f"Building card for session data: {session_data.get('subject_id')}, session: {session_data.get('session')}")
+        
         # Extract session data
         session_num = session_data.get('session', 'N/A')
         subject_id = session_data.get('subject_id', 'Unknown')
@@ -38,77 +43,105 @@ class AppSessionCard:
         # Get nwb_suffix - default to 0 if not present
         nwb_suffix = session_data.get('nwb_suffix', 0)
         
-        # Generate image URLs directly
-        choice_url = self.image_loader.get_s3_public_url(
-            subject_id=subject_id,
-            session_date=session_date,
-            nwb_suffix=nwb_suffix,
-            figure_suffix="choice_history.png"
-        )
+        # Generate image URL directly - only for choice history
+        try:
+            choice_url = self.image_loader.get_s3_public_url(
+                subject_id=subject_id,
+                session_date=session_date,
+                nwb_suffix=nwb_suffix,
+                figure_suffix="choice_history.png"
+            )
+            print(f"Generated image URL: {choice_url}")
+        except Exception as e:
+            print(f"ERROR generating image URL: {str(e)}", file=sys.stderr)
+            choice_url = ""  # Fallback empty URL
         
-        lick_url = self.image_loader.get_s3_public_url(
-            subject_id=subject_id,
-            session_date=session_date,
-            nwb_suffix=nwb_suffix,
-            figure_suffix="lick_analysis.png"
-        )
+        # Extract water total
+        water_total = session_data.get('water_day_total', 'N/A')
         
+        # Format water total if it's a number
+        if isinstance(water_total, (int, float)):
+            water_total = f"{water_total:.2f} ml"
+            
         # Prepare card class based on active status
         card_class = "session-card active" if is_active else "session-card"
         
-        # Build the card
-        return html.Div([
-            # Session header with session number and metadata
-            html.Div([
+        # Add debug wrapper to track click events
+        debug_wrapper = {
+            'data-debug': f"session-card-{subject_id}-{session_num}",
+            'data-active': str(is_active).lower(),
+            'data-session-num': str(session_num),
+            'data-subject-id': subject_id
+        }
+        
+        # Build the card with a two-column layout
+        try:
+            card = html.Div([
+                # Two-column container 
                 html.Div([
-                    html.Span("Session ", className="session-label"),
-                    html.Span(session_num, className="session-number")
-                ], className="session-header"),
-                
-                # Session metadata in a grid
-                html.Div([
+                    # Left column - metadata
                     html.Div([
-                        html.Span("Date: ", className="metadata-label"),
-                        html.Span(session_date, className="metadata-value")
-                    ], className="metadata-item"),
+                        # Session header
+                        html.Div([
+                            html.Div([
+                                html.Span("Session ", className="session-label"),
+                                html.Span(session_num, className="session-number")
+                            ], className="session-header"),
+                            
+                            html.Div(session_date, className="session-date")
+                        ], className="session-header-row"),
+                        
+                        # Metadata items
+                        html.Div([
+                            html.Div([
+                                html.Span("Rig: ", className="metadata-label"),
+                                html.Span(rig, className="metadata-value")
+                            ], className="metadata-item"),
+                            
+                            html.Div([
+                                html.Span("Trainer: ", className="metadata-label"),
+                                html.Span(trainer, className="metadata-value")
+                            ], className="metadata-item"),
+                            
+                            html.Div([
+                                html.Span("Water: ", className="metadata-label"),
+                                html.Span(water_total, className="metadata-value")
+                            ], className="metadata-item")
+                        ], className="metadata-section"),
+                        
+                        # Notes section
+                        html.Div([
+                            html.Div("Notes: ", className="notes-label"),
+                            html.Div(notes, className="notes-content")
+                        ], className="notes-section", style={'display': 'block' if notes else 'none'})
+                        
+                    ], className="session-metadata-column"),
                     
+                    # Right column - simple image without expansion
                     html.Div([
-                        html.Span("Trainer: ", className="metadata-label"),
-                        html.Span(trainer, className="metadata-value")
-                    ], className="metadata-item"),
-                    
-                    html.Div([
-                        html.Span("Rig: ", className="metadata-label"),
-                        html.Span(rig, className="metadata-value")
-                    ], className="metadata-item")
-                ], className="session-metadata-grid"),
+                        html.Img(
+                            src=choice_url, 
+                            className="session-image-large",
+                            id={"type": "session-image", "index": f"{subject_id}-{session_num}"}
+                        )
+                    ], className="session-image-column")
+                ], className="session-card-row")
                 
-                # Notes (if any)
-                html.Div([
-                    html.Div("Notes:", className="notes-label"),
-                    html.Div(notes, className="notes-content")
-                ], className="session-notes", style={'display': 'block' if notes else 'none'})
-            ], className="session-info-container"),
+            ], id={"type": "session-card", "index": f"{subject_id}-{session_num}"}, 
+               className=card_class,
+               n_clicks=0,
+               style={"cursor": "pointer"},
+               **debug_wrapper)
             
-            # Image container with session plots from S3 - direct URLs
-            html.Div([
-                # Container for choice history plot
-                html.Div([
-                    html.Div("Choice History", className="image-title"),
-                    html.Div(className="session-image-container", children=[
-                        html.Img(src=choice_url, className="session-image")
-                    ])
-                ], className="image-section"),
-                
-                # Container for lick analysis plot
-                html.Div([
-                    html.Div("Lick Analysis", className="image-title"),
-                    html.Div(className="session-image-container", children=[
-                        html.Img(src=lick_url, className="session-image")
-                    ])
-                ], className="image-section")
-            ], className="session-images-container"),
+            print(f"Successfully created session card component")
+            return card
             
-        ], id={"type": "session-card", "index": f"{subject_id}-{session_num}"}, 
-           className=card_class,
-           n_clicks=0)  # Make clickable for selection
+        except Exception as e:
+            print(f"ERROR building session card: {str(e)}", file=sys.stderr)
+            import traceback
+            print(traceback.format_exc(), file=sys.stderr)
+            
+            # Return a simple error card as fallback
+            return html.Div(f"Error rendering session card: {str(e)}", 
+                           className="session-card-error",
+                           style={"color": "red", "padding": "10px"})

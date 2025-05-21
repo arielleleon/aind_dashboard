@@ -388,6 +388,71 @@ class ReferenceProcessor:
             current_averages_df = pd.DataFrame(columns=columns)
         
         return current_averages_df, subject_history
+    
+    def calculate_session_level_rolling_averages(self, df: pd.DataFrame, decay_factor: float = 0.9) -> pd.DataFrame:
+        """
+        Calculate rolling averages for features for each session
+
+        Parameters:
+            df: pd.DataFrame
+                Input dataframe with preprocessed and stratified data
+            decay_factor: float
+                Factor for exponential decacy weighting (0-1) (higher == more weight on recent sessions)
+
+        Returns:
+            pd.DataFrame
+                Dataframe with rolling averages for each session
+        """
+        # Get list of processed features
+        processed_features = [col for col in df.columns if col.endswith('_processed')]
+
+        if not processed_features:
+            print("No processed features found in data")
+            return df.copy()
+        
+        result_df = df.copy()
+
+        # Debug information
+        print(f"Calculating rolling averages for {len(processed_features)} features")
+        print(f"Feature examples: {processed_features[:3]}")
+
+        for subject_id, subject_data in df.groupby('subject_id'):
+            for strata, strata_sessions in subject_data.groupby('strata'):
+                # Sort sessions by date (earliest first)
+                strata_sessions = strata_sessions.sort_values('session_date')
+                
+                # Get indices of these sessions in original dataframe
+                indices = strata_sessions.index
+                
+                # Calculate rolling weighted average for each session
+                for i, session_idx in enumerate(indices):
+                    # Get all sessions up to and including current one
+                    included_sessions = strata_sessions.iloc[:i+1]
+                    
+                    # Skip if only one session (no need for rolling average)
+                    if len(included_sessions) == 1:
+                        # Use the raw values for the first session
+                        for feature in processed_features:
+                            result_df.loc[session_idx, f"{feature}_rolling_avg"] = included_sessions[feature].iloc[0]
+                        continue
+                    
+                    # Calculate weighted averages
+                    averages = self._calculate_weighted_average(
+                        included_sessions,
+                        processed_features,
+                        use_weighted_avg=True,
+                        decay_factor=decay_factor
+                    )
+                    
+                    # Add rolling averages to result
+                    for feature, avg_value in averages.items():
+                        result_df.loc[session_idx, f"{feature}_rolling_avg"] = avg_value
+        
+        # Verify column creation
+        rolling_avg_cols = [col for col in result_df.columns if col.endswith('_rolling_avg')]
+        print(f"Created {len(rolling_avg_cols)} rolling average columns")
+        
+        return result_df
 
     def prepare_for_quantile_analysis(self, df: pd.DataFrame, include_history: bool = True) -> Dict[str, pd.DataFrame]:
         """
@@ -447,3 +512,28 @@ class ReferenceProcessor:
                 strata_dfs[strata] = subject_averages[subject_averages['strata'] == strata].copy()
         
         return strata_dfs
+    
+    def prepare_session_level_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Prepare session-level data for percentile calculation:
+        1. Assign strata to each session
+        2. Calculate rolling weighted averages for each session
+        
+        Parameters:
+            df: pd.DataFrame
+                Input dataframe with preprocessed data
+                
+        Returns:
+            pd.DataFrame
+                DataFrame with session-level rolling averages, ready for percentile calculation
+        """
+        # Assign strata to each session
+        stratified_df = self.assign_subject_strata(df)
+        
+        # Calculate rolling weighted averages for each session
+        session_level_data = self.calculate_session_level_rolling_averages(stratified_df)
+        
+        # Add session_index (sequential number for each subject-strata combination)
+        session_level_data['session_index'] = session_level_data.groupby(['subject_id', 'strata']).cumcount() + 1
+        
+        return session_level_data

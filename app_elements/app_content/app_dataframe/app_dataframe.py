@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import traceback
 from app_utils import AppUtils
 from app_utils.app_analysis.reference_processor import ReferenceProcessor
+from app_utils.app_analysis.overall_percentile_calculator import OverallPercentileCalculator
 from dash import callback_context, Input, Output, clientside_callback
 
 class AppDataFrame:
@@ -50,6 +51,9 @@ class AppDataFrame:
             min_sessions=1,     # Minimal requirements since we just want the window
             min_days=1
         )
+        
+        # Create percentile calculator
+        self.percentile_calculator = OverallPercentileCalculator()
 
     def get_abbreviated_strata(self, strata_name):
         """
@@ -104,11 +108,13 @@ class AppDataFrame:
     def format_dataframe(self, df: pd.DataFrame, reference_date: datetime = None) -> pd.DataFrame:
         """
         Format the dataframe for display in the table with enhanced feature-specific data
+        and session-level metrics
         
         1. Pre-compute all-time percentiles once
-        2. Get most recent sessions for each subject
-        3. Apply unified alerts (percentile and threshold)
-        4. Add feature-specific percentiles and alert categories
+        2. Calculate session-level percentiles and metrics
+        3. Get most recent sessions for each subject
+        4. Apply unified alerts (percentile and threshold)
+        5. Add feature-specific percentiles, rolling averages, and alert categories
         """
         # Copy input data to avoid modifying the original
         original_df = df.copy() if df is not None else pd.DataFrame()
@@ -122,7 +128,8 @@ class AppDataFrame:
             
             # Return empty dataframe with required columns to avoid breaking the UI
             return pd.DataFrame(columns=['subject_id', 'combined_alert', 'percentile_category', 
-                                        'overall_percentile', 'session_date', 'session'])
+                                        'overall_percentile', 'session_overall_percentile',
+                                        'session_date', 'session'])
         
         print(f" Starting data formatting with {len(original_df)} sessions")
         
@@ -154,14 +161,25 @@ class AppDataFrame:
         # Step 1: Use cached percentiles if available from app_utils
         app_utils = self.app_utils
         
-        # Check if app_utils has cached overall percentiles
-        if hasattr(app_utils, '_cache') and app_utils._cache['overall_percentiles'] is not None:
-            print("Using cached overall percentiles from app_utils")
+        # Check if app_utils has cached overall percentiles via the percentile calculator
+        has_cached_percentiles = False
+        if hasattr(app_utils, 'percentile_calculator'):
+            cached_percentiles = app_utils.percentile_calculator.get_cached_percentiles()
+            if cached_percentiles is not None:
+                print("Using cached overall percentiles from percentile calculator")
+                self.overall_percentiles = cached_percentiles
+                self.alert_service = app_utils.alert_service
+                self.threshold_analyzer = app_utils.threshold_analyzer
+                has_cached_percentiles = True
+        
+        # Fall back to app_utils cache if percentile calculator cache is empty
+        if not has_cached_percentiles and hasattr(app_utils, '_cache') and app_utils._cache['overall_percentiles'] is not None:
+            print("Using cached overall percentiles from app_utils cache")
             self.overall_percentiles = app_utils._cache['overall_percentiles']
             self.alert_service = app_utils.alert_service
             self.threshold_analyzer = app_utils.threshold_analyzer
         # If not cached in app_utils, compute them if not already done locally
-        elif not hasattr(self, 'overall_percentiles'):
+        elif not has_cached_percentiles and not hasattr(self, 'overall_percentiles'):
             print("Computing all-time percentiles...")
             
             # Initialize reference processor for all-time percentile calculation
@@ -185,6 +203,14 @@ class AppDataFrame:
             for strata, df in stratified_data.items():
                 print(f"  Strata '{strata}': {len(df)} subjects (combined current + historical)")
             
+            # Get comprehensive dataframe from quantile analyzer
+            comprehensive_df = quantile_analyzer.create_comprehensive_dataframe(include_history=False)
+            
+            # Use the percentile calculator for overall percentile calculation
+            self.overall_percentiles = app_utils.percentile_calculator.calculate_overall_percentile(
+                comprehensive_df=comprehensive_df
+            )
+            
             # Initialize alert service
             alert_service = app_utils.initialize_alert_service()
             print(f"Initialized alert service")
@@ -194,14 +220,37 @@ class AppDataFrame:
             threshold_analyzer.set_threshold_config(self.threshold_config)
             print(f"Initialized threshold analyzer")
             
-            # Calculate overall percentiles for all subjects (one-time calculation using simple average)
-            self.overall_percentiles = quantile_analyzer.calculate_overall_percentile()
             self.alert_service = alert_service
             self.threshold_analyzer = threshold_analyzer
             self.app_utils = app_utils  # Store for later use
             print(f"Calculated overall percentiles for {len(self.overall_percentiles)} subjects")
             ns_count = sum(1 for _, row in self.overall_percentiles.iterrows() if pd.isna(row.get('overall_percentile')))
             print(f"  Not Scored subjects: {ns_count} ({ns_count/len(self.overall_percentiles)*100:.1f}%)")
+        
+        # Step 1.5: Calculate session-level percentiles if available
+        session_metrics_map = {}
+        if hasattr(app_utils, 'analyze_session_level_percentiles'):
+            print("Calculating session-level percentiles...")
+            session_level_data = app_utils.analyze_session_level_percentiles(use_cache=True)
+            has_session_metrics = True
+            print(f"Got session-level data for {len(session_level_data)} sessions")
+            
+            # Create a map of subject_id -> most recent session data
+            for subject_id in session_level_data['subject_id'].unique():
+                subject_sessions = session_level_data[session_level_data['subject_id'] == subject_id]
+                if not subject_sessions.empty:
+                    # Sort by date and strata to get most recent session
+                    if 'session_date' in subject_sessions.columns:
+                        subject_sessions = subject_sessions.sort_values('session_date', ascending=False)
+                    else:
+                        subject_sessions = subject_sessions.sort_values(['strata', 'session_index'], ascending=[True, False])
+                        
+                    # Get most recent session
+                    most_recent = subject_sessions.iloc[0]
+                    session_metrics_map[subject_id] = most_recent
+        else:
+            has_session_metrics = False
+            print("WARNING: Session-level percentile calculation not available")
         
         # Step 2: Get most current session for each subject
         original_df = original_df.sort_values('session_date', ascending=False)
@@ -232,6 +281,7 @@ class AppDataFrame:
         # Base alert columns - using .loc to avoid SettingWithCopyWarning
         current_sessions_df.loc[:, 'percentile_category'] = 'NS'  # Default to Not Scored
         current_sessions_df.loc[:, 'overall_percentile'] = float('nan')
+        current_sessions_df.loc[:, 'session_overall_percentile'] = float('nan')  # New column for session percentile
         current_sessions_df.loc[:, 'threshold_alert'] = 'N'  # Default to Normal
         current_sessions_df.loc[:, 'combined_alert'] = 'NS'  # Default to Not Scored
         current_sessions_df.loc[:, 'strata_abbr'] = ''  # Default to empty string
@@ -250,10 +300,16 @@ class AppDataFrame:
         current_sessions_df.loc[:, 'stage_sessions_alert'] = 'N'
         current_sessions_df.loc[:, 'water_day_total_alert'] = 'N'
         
-        # Feature-specific columns
+        # Feature-specific columns for both strata and session metrics
         for feature in feature_list:
+            # Strata-level metrics
             current_sessions_df.loc[:, f'{feature}_percentile'] = float('nan')
             current_sessions_df.loc[:, f'{feature}_category'] = 'NS'
+            current_sessions_df.loc[:, f'{feature}_processed'] = float('nan')
+            
+            # Session-level metrics
+            current_sessions_df.loc[:, f'{feature}_session_percentile'] = float('nan')
+            current_sessions_df.loc[:, f'{feature}_processed_rolling_avg'] = float('nan')
         
         # Step 3: Add strata information from the most recent sessions
         print(f"Adding strata information to current sessions")
@@ -384,6 +440,9 @@ class AppDataFrame:
                     current_sessions_df.loc[mask, f'{feature}_percentile'] = details.get('percentile')
                     # Add category
                     current_sessions_df.loc[mask, f'{feature}_category'] = details.get('category', 'NS')
+                    # Add processed value if available
+                    if 'processed_value' in details:
+                        current_sessions_df.loc[mask, f'{feature}_processed'] = details.get('processed_value')
             
             # Combine alerts - simplify logic
             if threshold_data.get('threshold_alert', 'N') == 'T':
@@ -398,9 +457,29 @@ class AppDataFrame:
             if current_sessions_df.loc[mask, 'combined_alert'].iloc[0] not in ['N', 'NS']:
                 alert_count += 1
 
+            # Add session-level metrics if available
+            if subject_id in session_metrics_map:
+                session_metrics = session_metrics_map[subject_id]
+                
+                # Add session overall percentile
+                if 'session_overall_percentile' in session_metrics:
+                    current_sessions_df.loc[mask, 'session_overall_percentile'] = session_metrics['session_overall_percentile']
+                
+                # Add feature-specific session metrics
+                for feature in feature_list:
+                    # Add session percentile
+                    session_percentile_col = f"{feature}_session_percentile"
+                    if session_percentile_col in session_metrics:
+                        current_sessions_df.loc[mask, session_percentile_col] = session_metrics[session_percentile_col]
+                    
+                    # Add rolling average
+                    rolling_avg_col = f"{feature}_processed_rolling_avg"
+                    if rolling_avg_col in session_metrics:
+                        current_sessions_df.loc[mask, rolling_avg_col] = session_metrics[rolling_avg_col]
+
         print(f"Total alerts found: {alert_count} out of {len(current_sessions_df)} subjects")
 
-        # Define column order with new feature-specific columns
+        # Define column order with session-level columns
         base_columns = [
             'subject_id',
             'combined_alert',
@@ -410,7 +489,8 @@ class AppDataFrame:
             'total_sessions_alert',
             'stage_sessions_alert',
             'water_day_total_alert',
-            'overall_percentile',
+            'overall_percentile',            # Strata overall percentile
+            'session_overall_percentile',    # New session overall percentile
             'strata',
             'strata_abbr',
             'current_stage_actual',
@@ -422,11 +502,19 @@ class AppDataFrame:
             'PI',
         ]
         
-        # Add feature-specific columns
+        # Add session-level and strata-level feature columns organized side-by-side
         feature_columns = []
         for feature in feature_list:
+            # Strata percentile
             feature_columns.append(f'{feature}_percentile')
+            # Session percentile
+            feature_columns.append(f'{feature}_session_percentile')
+            # Feature category
             feature_columns.append(f'{feature}_category')
+            # Processed value
+            feature_columns.append(f'{feature}_processed')
+            # Rolling average
+            feature_columns.append(f'{feature}_processed_rolling_avg')
         
         # Add remaining standard columns
         remaining_columns = [
@@ -475,6 +563,7 @@ class AppDataFrame:
     def build(self):
         """
         Build data table component with enhanced feature-specific columns
+        and session-level metrics
         """
         # Get the data and apply formatting
         raw_data = self.data_loader.get_data()
@@ -493,7 +582,8 @@ class AppDataFrame:
             'total_sessions_alert': 'Total Sessions Alert',
             'stage_sessions_alert': 'Stage Sessions Alert',
             'water_day_total_alert': 'Water Day Total Alert',
-            'overall_percentile': 'Percentile',
+            'overall_percentile': 'Strata\nPercentile',
+            'session_overall_percentile': 'Session\nPercentile',
             'strata': 'Strata',
             'strata_abbr': 'Strata (Abbr)',
             'current_stage_actual': 'Stage',
@@ -531,8 +621,13 @@ class AppDataFrame:
         # Add feature-specific column names
         for feature in self.features_config.keys():
             feature_display = feature.replace('_', ' ').replace('abs(', '|').replace(')', '|').title()
-            formatted_column_names[f'{feature}_percentile'] = f'{feature_display}\nPercentile'
+            # Strata metrics
+            formatted_column_names[f'{feature}_percentile'] = f'{feature_display}\nStrata %ile'
             formatted_column_names[f'{feature}_category'] = f'{feature_display}\nAlert'
+            formatted_column_names[f'{feature}_processed'] = f'{feature_display}\nProcessed'
+            # Session metrics
+            formatted_column_names[f'{feature}_session_percentile'] = f'{feature_display}\nSession %ile'
+            formatted_column_names[f'{feature}_processed_rolling_avg'] = f'{feature_display}\nRolling Avg'
 
         # Create columns with formatted names and custom numeric formatting
         columns = []

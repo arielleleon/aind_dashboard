@@ -1,5 +1,6 @@
 from .app_data_load import AppLoadData
 from .app_analysis import ReferenceProcessor, QuantileAnalyzer, ThresholdAnalyzer
+from .app_analysis.overall_percentile_calculator import OverallPercentileCalculator
 from .app_alerts import AlertService
 from typing import Dict, List, Optional, Union, Any
 import pandas as pd
@@ -20,17 +21,19 @@ class AppUtils:
         self.quantile_analyzer = None
         self.alert_service = None
         self.threshold_analyzer = None
+        self.percentile_calculator = OverallPercentileCalculator()
         
         # Simplified cache for processed data
         self._cache = {
             'raw_data': None,
-            'processed_data': None,  # No longer keyed by window_days
-            'formatted_data': None,  # No longer keyed by window_days
-            'stratified_data': None,  # No longer keyed by window_days
+            'processed_data': None,  
+            'formatted_data': None,
+            'stratified_data': None,
             'overall_percentiles': None,
             'unified_alerts': None,
             'last_process_time': None,
-            'data_hash': None
+            'data_hash': None,
+            'session_level_data': None
         }
 
     def get_session_data(self, load_bpod = False, use_cache = True):
@@ -69,6 +72,11 @@ class AppUtils:
         self._cache['unified_alerts'] = None
         self._cache['last_process_time'] = None
         self._cache['data_hash'] = None
+        self._cache['session_level_data'] = None
+        
+        # Also clear percentile calculator cache
+        if hasattr(self, 'percentile_calculator'):
+            self.percentile_calculator.clear_cache()
     
     def reload_data(self, load_bpod = False):
         """
@@ -216,32 +224,47 @@ class AppUtils:
         
         return self.quantile_analyzer.get_subject_history(subject_id)
     
-    def calculate_overall_percentile(self, subject_ids = None, use_cache = True):
+    def calculate_overall_percentile(self, subject_ids = None, use_cache = True, feature_weights = None):
         """
-        Calculate overall percentile scores for subjects using a simple average of feature percentiles
+        Calculate overall percentile scores for subjects using the OverallPercentileCalculator
 
         Parameters:
             subject_ids (List[str], optional): List of specific subjects to calculate for
             use_cache (bool): Whether to use cached results if available
+            feature_weights (Dict[str, float], optional): Optional weights for features
 
         Returns:
             pd.DataFrame: Dataframe with overall percentile scores
         """
         # Return cached results if available and no specific subjects requested
-        if use_cache and subject_ids is None and self._cache['overall_percentiles'] is not None:
-            print("Using cached overall percentiles")
-            return self._cache['overall_percentiles']
+        if use_cache and subject_ids is None:
+            cached_percentiles = self.percentile_calculator.get_cached_percentiles()
+            if cached_percentiles is not None:
+                print("Using cached overall percentiles")
+                return cached_percentiles
+            
+            # Fall back to app_utils cache if calculator cache is empty
+            if self._cache['overall_percentiles'] is not None:
+                print("Using cached overall percentiles from app_utils")
+                return self._cache['overall_percentiles']
             
         if self.quantile_analyzer is None:
             raise ValueError("Quantile analyzer not initialized. Process data first.")
         
-        percentiles = self.quantile_analyzer.calculate_overall_percentile(
-            subject_ids = subject_ids
+        # Get comprehensive dataframe from quantile analyzer
+        comprehensive_df = self.quantile_analyzer.create_comprehensive_dataframe(include_history=False)
+        
+        # Use dedicated calculator to compute overall percentiles
+        percentiles = self.percentile_calculator.calculate_overall_percentile(
+            comprehensive_df=comprehensive_df,
+            subject_ids=subject_ids,
+            feature_weights=feature_weights
         )
         
         # Cache results if calculating for all subjects
         if subject_ids is None:
             self._cache['overall_percentiles'] = percentiles
+            self.percentile_calculator.set_cache(percentiles)
             
         return percentiles
     
@@ -424,3 +447,115 @@ class AppUtils:
         except Exception as e:
             print(f"Error getting sessions for subject {subject_id}: {str(e)}")
             return None
+    
+    def analyze_session_level_percentiles(self, 
+                                         subject_ids: Optional[List[str]] = None, 
+                                         feature_weights: Optional[Dict[str, float]] = None,
+                                         use_cache: bool = True) -> pd.DataFrame:
+        """
+        Analyze session-level percentiles for subjects.
+        
+        Parameters:
+            subject_ids: Optional[List[str]]
+                List of subject IDs to analyze. If None, all subjects will be analyzed.
+            feature_weights: Optional[Dict[str, float]]
+                Optional dictionary mapping feature names to their weights
+                If None: equal weights are used for all features
+            use_cache: bool
+                Whether to use cached results if available
+                
+        Returns:
+            pd.DataFrame
+                DataFrame containing session-level percentiles and metrics
+        """
+        # Check cache first
+        if use_cache and self._cache['session_level_data'] is not None and subject_ids is None:
+            print("Using cached session-level data")
+            return self._cache['session_level_data']
+            
+        # Check if required components are initialized
+        if self.reference_processor is None or self.quantile_analyzer is None:
+            print("Reference processor or quantile analyzer not initialized")
+            print("Initializing with default settings...")
+            
+            # Get raw data
+            raw_data = self.get_session_data(use_cache=True)
+            
+            # Initialize reference processor with current features config
+            # Get features_config from existing processor or use default
+            features_config = {}
+            if hasattr(self, 'reference_processor') and hasattr(self.reference_processor, 'features_config'):
+                features_config = self.reference_processor.features_config
+            else:
+                # Default features config
+                features_config = {
+                    'finished_trials': False,  # Higher is better
+                    'ignore_rate': True,     # Lower is better
+                    'total_trials': False,   # Higher is better
+                    'foraging_performance': False,   # Higher is better
+                    'abs(bias_naive)': True  # Lower is better 
+                }
+                
+            # Initialize processor and process data
+            self.initialize_reference_processor(features_config)
+            stratified_data = self.process_reference_data(raw_data)
+            self.initialize_quantile_analyzer(stratified_data)
+        
+        # Get raw session data
+        raw_data = self.get_session_data(use_cache=True)
+        
+        # Filter for specific subjects if requested
+        if subject_ids is not None:
+            raw_data = raw_data[raw_data['subject_id'].isin(subject_ids)]
+        
+        # Preprocess data
+        processed_data = self.reference_processor.preprocess_data(raw_data)
+        
+        # Prepare session-level data (assign strata and calculate rolling averages)
+        session_level_data = self.reference_processor.prepare_session_level_data(processed_data)
+        
+        # Analyze session-level percentiles
+        comprehensive_data = self.quantile_analyzer.analyze_session_level_percentiles(
+            session_data=session_level_data,
+            feature_weights=feature_weights
+        )
+        
+        # Validate consistency between session and strata-level metrics
+        validation_results = self.quantile_analyzer.validate_session_strata_consistency(comprehensive_data)
+        print(f"Validation results: {validation_results['match_percentage']:.2f}% of subjects have matching metrics")
+        
+        # Cache the results if analyzing all subjects
+        if subject_ids is None:
+            self._cache['session_level_data'] = comprehensive_data
+        
+        return comprehensive_data
+    
+    def get_subject_session_level_percentiles(self, subject_id: str) -> pd.DataFrame:
+        """
+        Get session-level percentiles for a specific subject
+        
+        Parameters:
+            subject_id: str
+                The subject ID to get session-level percentiles for
+                
+        Returns:
+            pd.DataFrame
+                DataFrame containing session-level percentiles for the subject
+        """
+        # Get session-level percentiles for this subject
+        session_level_data = self.analyze_session_level_percentiles(subject_ids=[subject_id])
+        
+        # Filter for the requested subject
+        subject_data = session_level_data[session_level_data['subject_id'] == subject_id]
+        
+        if subject_data.empty:
+            print(f"No session-level data found for subject {subject_id}")
+            return pd.DataFrame()
+        
+        # Sort by session date or index
+        if 'session_date' in subject_data.columns:
+            subject_data = subject_data.sort_values('session_date')
+        elif 'session_index' in subject_data.columns:
+            subject_data = subject_data.sort_values('session_index')
+        
+        return subject_data
