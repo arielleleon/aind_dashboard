@@ -27,10 +27,8 @@ class AppFilter:
         # Define sorting options 
         self.sort_options = [
             {"label": "Default", "value": "none"},
-            {"label": "Overall Percentile (Ascending)", "value": "percentile_asc"},
-            {"label": "Overall Percentile (Descending)", "value": "percentile_desc"},
-            {"label": "Alert Category (Worst First)", "value": "alert_worst"},
-            {"label": "Alert Category (Best First)", "value": "alert_best"},
+            {"label": "Overall Percentile (Ascending)", "value": "overall_percentile_asc"},
+            {"label": "Overall Percentile (Descending)", "value": "overall_percentile_desc"}
         ]
 
         self.alert_category_options = [
@@ -40,6 +38,7 @@ class AppFilter:
             {"label": "N", "value": "N"},
             {"label": "G", "value": "G"},
             {"label": "SG", "value": "SG"},
+            {"label": "NS", "value": "NS"},
             {"label": "Threshold", "value": "T"}
         ]
 
@@ -116,6 +115,7 @@ class AppFilter:
                                 options=[{"label": opt, "value": opt} for opt in self.trainer_options],
                                 placeholder="Trainer",
                                 clearable=True,
+                                multi=True,
                                 className="filter-dropdown-sm"
                             )
                         ], width=6, className="pe-1"),
@@ -125,6 +125,7 @@ class AppFilter:
                                 options=[{"label": opt, "value": opt} for opt in self.pi_options],
                                 placeholder="PI",
                                 clearable=True,
+                                multi=True,
                                 className="filter-dropdown-sm"
                             )
                         ], width=6, className="ps-1")
@@ -139,6 +140,7 @@ class AppFilter:
                         options=[{"label": opt, "value": opt} for opt in self.rig_options],
                         placeholder="Select rig",
                         clearable=True,
+                        multi=True,
                         className="filter-dropdown"
                     )
                 ], width=2, className="filter-column"),
@@ -153,6 +155,7 @@ class AppFilter:
                                 options=[{"label": opt, "value": opt} for opt in self.stage_options],
                                 placeholder="Stage",
                                 clearable=True,
+                                multi=True,
                                 className="filter-dropdown-sm"
                             )
                         ], width=6, className="pe-1"),
@@ -162,6 +165,7 @@ class AppFilter:
                                 options=[{"label": opt, "value": opt} for opt in self.curriculum_options],
                                 placeholder="Curriculum",
                                 clearable=True,
+                                multi=True,
                                 className="filter-dropdown-sm"
                             )
                         ], width=6, className="ps-1")

@@ -523,7 +523,7 @@ class AlertService:
                     return f"Insufficient sessions (< {min_sessions})"
                 
                 # Check overall percentiles
-                overall_df = analyzer.calculate_overall_percentile()
+                overall_df = analyzer.calculate_overall_percentile(subject_ids=None, feature_weights=None)
                 subject_row = overall_df[overall_df['subject_id'] == subject_id]
                 if subject_row.empty or pd.isna(subject_row['overall_percentile'].values[0]):
                     return "No percentile data (strata may be too small)"

@@ -154,21 +154,28 @@ class ReferenceProcessor:
         # First, separate curriculum name from the rest
         parts = strat_id.split('_')
         
-        # Handle curriculum name
-        if 'Without' in strat_id:
-            # Find the index where the stage info starts
+        # Handle curriculum name - find the index where the stage info starts
+        try:
             stage_start = next(i for i, part in enumerate(parts) if 'STAGE' in part or 'GRADUATED' in part)
             curriculum = '_'.join(parts[:stage_start])
             stage_parts = parts[stage_start:]  # Get all parts after curriculum name
-        else:
-            # Find the index where the stage info starts
-            stage_start = next(i for i, part in enumerate(parts) if 'STAGE' in part or 'GRADUATED' in part)
-            curriculum = '_'.join(parts[:stage_start])
-            stage_parts = parts[stage_start:]  # Get all parts after curriculum name
+        except StopIteration:
+            # No STAGE or GRADUATED found, return simplified format with UNKNOWN stage
+            print(f"Warning: No STAGE or GRADUATED found in strata_id: {strat_id}")
+            if len(parts) >= 2:
+                curriculum = '_'.join(parts[:-1])  # All but last part as curriculum
+                version = parts[-1]  # Last part as version
+                return f"{curriculum}_UNKNOWN_{version}"
+            else:
+                return f"{strat_id}_UNKNOWN_v1"  # Default fallback
         
         # Get the full stage name and version
-        stage = '_'.join(stage_parts[:-1])  # Join all parts except the last (version)
-        version = stage_parts[-1]  # Keep the original version (v1, v2, v3)
+        if len(stage_parts) >= 2:
+            stage = '_'.join(stage_parts[:-1])  # Join all parts except the last (version)
+            version = stage_parts[-1]  # Keep the original version (v1, v2, v3)
+        else:
+            stage = stage_parts[0] if stage_parts else 'UNKNOWN'
+            version = 'v1'  # Default version
 
         # Simplify stage
         if 'STAGE_FINAL' in stage or 'GRADUATED' in stage:
@@ -513,27 +520,90 @@ class ReferenceProcessor:
         
         return strata_dfs
     
-    def prepare_session_level_data(self, df: pd.DataFrame) -> pd.DataFrame:
+    def prepare_session_level_data(self, df: pd.DataFrame, decay_factor: float = 0.9) -> pd.DataFrame:
         """
-        Prepare session-level data for percentile calculation:
+        Enhanced session-level data preparation for unified percentile calculation:
         1. Assign strata to each session
         2. Calculate rolling weighted averages for each session
+        3. Add metadata for strata continuity tracking
         
         Parameters:
             df: pd.DataFrame
                 Input dataframe with preprocessed data
+            decay_factor: float
+                Factor for exponential decay weighting (0-1) (higher == more weight on recent sessions)
                 
         Returns:
             pd.DataFrame
-                DataFrame with session-level rolling averages, ready for percentile calculation
+                Enhanced DataFrame with session-level rolling averages and metadata
         """
         # Assign strata to each session
         stratified_df = self.assign_subject_strata(df)
         
         # Calculate rolling weighted averages for each session
-        session_level_data = self.calculate_session_level_rolling_averages(stratified_df)
+        session_level_data = self.calculate_session_level_rolling_averages(stratified_df, decay_factor)
         
         # Add session_index (sequential number for each subject-strata combination)
         session_level_data['session_index'] = session_level_data.groupby(['subject_id', 'strata']).cumcount() + 1
         
+        # Add metadata for strata transitions
+        session_level_data = self._add_strata_transition_metadata(session_level_data)
+        
+        # Add is_current_strata flag by identifying most recent strata for each subject
+        latest_strata = stratified_df.sort_values('session_date').groupby('subject_id')['strata'].last()
+        session_level_data['is_current_strata'] = session_level_data.apply(
+            lambda row: row['strata'] == latest_strata.get(row['subject_id'], ''), 
+            axis=1
+        )
+        
+        # Add is_last_session flag for last session in each subject-strata combination
+        # This will be useful for validation against strata-level calculations
+        max_indices = session_level_data.groupby(['subject_id', 'strata'])['session_index'].transform('max')
+        session_level_data['is_last_session'] = session_level_data['session_index'] == max_indices
+        
         return session_level_data
+
+    def _add_strata_transition_metadata(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add metadata about strata transitions to track when subjects move between strata
+        
+        Parameters:
+            df: pd.DataFrame
+                DataFrame with session-level data
+                
+        Returns:
+            pd.DataFrame
+                DataFrame with strata transition metadata
+        """
+        result_df = df.copy()
+        
+        # Sort by subject and date
+        result_df = result_df.sort_values(['subject_id', 'session_date'])
+        
+        # Initialize strata transition columns
+        result_df['strata_transition'] = False
+        result_df['previous_strata'] = None
+        
+        # Process each subject
+        for subject_id, subject_data in result_df.groupby('subject_id'):
+            # Skip if only one session
+            if len(subject_data) <= 1:
+                continue
+                
+            # Get indices in original dataframe
+            indices = subject_data.index
+            
+            # Track strata changes
+            previous_strata = None
+            
+            for i, idx in enumerate(indices):
+                current_strata = result_df.loc[idx, 'strata']
+                
+                if i > 0 and current_strata != previous_strata:
+                    # Mark strata transition
+                    result_df.loc[idx, 'strata_transition'] = True
+                    result_df.loc[idx, 'previous_strata'] = previous_strata
+                
+                previous_strata = current_strata
+        
+        return result_df

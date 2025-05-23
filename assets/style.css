@@ -44,7 +44,7 @@ html, body {
     padding: 0 15px;
 }
 
-/* Content wrapper positioning */
+/* Content wrapper positioning - seamless white */
 .content-wrapper {
     height: 100%;
     width: 100%;
@@ -53,14 +53,16 @@ html, body {
     display: flex;
     flex-direction: column;
     overflow: visible; /* Allow content to be visible */
+    background-color: white; /* Ensure white background */
 }
 
-/* Data table container - actual scroll container */
+/* Data table container - white background */
 .data-table-container {
     max-height: calc(100vh - 200px); /* Updated for new layout - less height for filter */
     overflow-y: auto;
     width: 100%;
     flex: 1;  /* Allow it to grow */
+    background-color: white; /* Ensure white background */
 }
 
 /* Filter component styles */
@@ -212,18 +214,18 @@ html, body {
     height: 700px;  /* Increased from 650px */
     display: flex;
     flex-direction: column;
-    border: 1px solid #eaeaea;
-    border-radius: 5px;
-    background-color: #f9f9f9;
+    border: none; /* Remove border */
+    border-radius: 0; /* Remove border radius */
+    background-color: white; /* Change from #f9f9f9 to white */
 }
 
 .session-list-header {
     padding: 12px 15px;
-    border-bottom: 1px solid #eaeaea;
+    border-bottom: 1px solid #f0f0f0; /* Lighter border */
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: #f0f4f8;
+    background-color: white; /* Change from #f0f4f8 to white */
 }
 
 .session-list-title {
@@ -253,34 +255,37 @@ html, body {
     gap: 15px;  /* Increased from 10px */
 }
 
+/* Load more container - white background */
 .load-more-container {
     text-align: center;
     padding: 10px 0;
-    border-top: 1px solid #eaeaea;
-    background-color: #f9f9f9;
+    border-top: 1px solid #f0f0f0; /* Lighter border */
+    background-color: white; /* Change from #f9f9f9 to white */
 }
 
-/* Updated Session Card Styles */
+/* Updated Session Card Styles - seamless appearance */
 .session-card {
     background-color: white;
-    border-radius: 5px;
+    border-radius: 0; /* Remove border radius */
     padding: 12px;  /* Increased padding */
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    border-left: 4px solid #95a5a6;
-    margin-bottom: 15px;  /* Increased margin */
+    box-shadow: none; /* Remove shadow */
+    border-left: none; /* Remove left border */
+    border: 1px solid #f0f0f0; /* Add subtle border for definition */
+    margin-bottom: 10px;  /* Reduce margin */
     transition: all 0.2s ease;
     height: 230px;  /* Set explicit height */
 }
 
 .session-card:hover {
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    transform: translateY(-2px);
+    box-shadow: none; /* Remove hover shadow */
+    transform: none; /* Remove hover transform */
+    border-color: #e0e0e0; /* Slightly darker border on hover */
 }
 
 .session-card.active {
-    border-left-color: #3498db;
-    background-color: #f0f8ff;
-    box-shadow: 0 3px 6px rgba(0,0,0,0.12);
+    border-left: 4px solid #3498db; /* Keep active indicator but smaller */
+    background-color: #f8fbff; /* Very subtle background change */
+    box-shadow: none; /* Remove active shadow */
 }
 
 /* Two-column layout for session card */
@@ -389,26 +394,28 @@ html, body {
     height: 700px;  /* Increased from 650px to match session list */
     display: flex;
     flex-direction: column;
-    border: 1px solid #eaeaea;
-    border-radius: 5px;
-    background-color: #f9f9f9;
+    border: none; /* Remove border */
+    border-radius: 0; /* Remove border radius */
+    background-color: white; /* Change from #f9f9f9 to white */
     padding: 4px 4px 4px 4px; /* Reduce padding */
 }
 
 .subject-timeseries-graph {
     flex-grow: 1;
     min-height: 500px;
-    border-radius: 4px;
+    border-radius: 0; /* Remove border radius */
     overflow: hidden;
     background-color: white;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    box-shadow: none; /* Remove shadow */
+    border: 1px solid #f0f0f0; /* Add subtle border for definition */
 }
 
 .feature-select-container {
     padding: 8px 12px;
     margin-bottom: 5px;
-    background-color: #f0f4f8;
-    border-radius: 4px 4px 0 0;
+    background-color: white; /* Change from #f0f4f8 to white */
+    border-radius: 0; /* Remove border radius */
+    border-bottom: 1px solid #f0f0f0; /* Add subtle bottom border */
 }
 
 .feature-select-label {
@@ -443,18 +450,22 @@ html, body {
     width: 100% !important;
 }
 
-/* Make section transition smoother */
+/* Make section transition smoother - seamless white background */
 .subject-detail-section, .subject-detail-page-container {
     transition: all 0.3s ease;
-    margin-top: 20px;
+    margin-top: 0; /* Remove top margin */
     padding: 15px;
+    background-color: white; /* Ensure white background */
+    border: none; /* Remove any border */
+    box-shadow: none; /* Remove any shadow */
 }
 
-/* Clean separation between sections */
+/* Clean separation between sections - REMOVED border and margin */
 .subject-detail-page-container {
-    border-top: 1px solid #e0e0e0;
-    margin-top: 15px;
-    padding-top: 25px;
+    border-top: none; /* Remove border */
+    margin-top: 0; /* Remove top margin */
+    padding-top: 15px; /* Reduce padding top */
+    background-color: white; /* Ensure white background */
 }
 
 /* Make sure the details fit nicely in the viewport */

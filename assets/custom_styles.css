@@ -81,17 +81,20 @@
     margin-top: 0;  /* Remove top margin */
     width: 100%;
     height: auto;
+    background-color: white; /* Ensure white background */
 }
 
 .subject-detail-section {
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    padding: 15px;  /* Reduced padding */
+    background-color: white; /* Keep white background */
+    border-radius: 0; /* Remove border radius */
+    box-shadow: none; /* Remove shadow */
+    padding: 15px;  /* Keep padding */
     margin-bottom: 0;
+    margin-top: 0; /* Remove top margin */
     height: auto; 
     max-height: none;
     overflow: visible;
+    border: none; /* Remove any border */
 }
 
 .subject-strata {
@@ -116,10 +119,12 @@
     color: #333;
 }
 
+/* Chart containers - seamless white background */
 .threshold-container, .chart-container {
     padding: 8px;  /* Reduced padding */
-    background-color: #f9f9f9;
-    border-radius: 5px;
+    background-color: white; /* Change from #f9f9f9 to white */
+    border-radius: 0; /* Remove border radius */
+    border: 1px solid #f0f0f0; /* Add subtle border for definition */
 }
 
 .threshold-list {
@@ -138,22 +143,26 @@
     color: #856404;
 }
 
-/* Subject detail page container - simplified */
+/* Subject detail page container - make seamless */
 .subject-detail-page-container {
-    background-color: #f9f9f9;
-    padding: 15px;  /* Reduced padding */
-    margin-top: 20px;  /* Reduced margin */
-    border-top: 3px solid #4a6dff;
+    background-color: white; /* Change from #f9f9f9 to white */
+    padding: 15px;  /* Keep padding */
+    margin-top: 0; /* Remove top margin */
+    border-top: none; /* Remove blue border */
+    border: none; /* Remove any border */
+    box-shadow: none; /* Remove any shadow */
+    border-radius: 0; /* Remove border radius */
 }
 
-/* Detail page content */
+/* Detail page content - make seamless */
 .detail-page-content {
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    padding: 20px;  /* Reduced padding */
-    margin: 15px 0;  /* Reduced margin */
-    min-height: 250px;  /* Reduced height */
+    background-color: white; /* Keep white */
+    border-radius: 0; /* Remove border radius */
+    box-shadow: none; /* Remove shadow */
+    padding: 20px;  /* Keep padding */
+    margin: 0; /* Remove all margins */
+    min-height: 250px;  /* Keep height */
+    border: none; /* Remove any border */
 }
 
 .placeholder-text {
@@ -161,13 +170,14 @@
     font-style: italic;
 }
 
-/* Make sure chart container has fixed height */
+/* Make sure chart container has fixed height - seamless */
 .chart-container {
     height: 250px;  /* Reduced height */
     padding: 8px;  /* Reduced padding */
-    background-color: #f9f9f9;
-    border-radius: 5px;
+    background-color: white; /* Change from #f9f9f9 to white */
+    border-radius: 0; /* Remove border radius */
     overflow: hidden;
+    border: 1px solid #f0f0f0; /* Add subtle border for definition */
 }
 
 /* Fix data table bottom spacing */
@@ -204,4 +214,69 @@
 
 .within-range {
     color: #27ae60;
+}
+
+/* Multi-select dropdown styling */
+.filter-dropdown .Select--multi .Select-value {
+    background-color: #4a6dff;
+    border: 1px solid #4a6dff;
+    border-radius: 3px;
+    color: white;
+    margin: 2px;
+    padding: 2px 5px;
+    font-size: 11px;
+}
+
+.filter-dropdown .Select--multi .Select-value-icon {
+    border-right: 1px solid rgba(255, 255, 255, 0.5);
+    padding: 1px 3px;
+}
+
+.filter-dropdown .Select--multi .Select-value-icon:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.filter-dropdown-sm .Select--multi .Select-value {
+    background-color: #4a6dff;
+    border: 1px solid #4a6dff;
+    border-radius: 2px;
+    color: white;
+    margin: 1px;
+    padding: 1px 3px;
+    font-size: 10px;
+    line-height: 1.2;
+}
+
+.filter-dropdown-sm .Select--multi .Select-value-icon {
+    border-right: 1px solid rgba(255, 255, 255, 0.5);
+    padding: 0px 2px;
+}
+
+/* Active filter badges - enhanced for multi-select */
+.filter-badge {
+    background-color: #4a6dff !important;
+    color: white !important;
+    border: none !important;
+    padding: 4px 8px !important;
+    border-radius: 4px !important;
+    font-size: 12px !important;
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.filter-badge:hover {
+    background-color: #3a5dff !important;
+}
+
+/* Improve dropdown option spacing */
+.filter-dropdown .Select-option {
+    padding: 6px 10px;
+    font-size: 13px;
+}
+
+.filter-dropdown-sm .Select-option {
+    padding: 4px 8px;
+    font-size: 12px;
 }

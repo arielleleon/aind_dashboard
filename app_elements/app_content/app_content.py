@@ -3,12 +3,13 @@ import dash_bootstrap_components as dbc
 from .app_dataframe import AppDataFrame
 from ..app_filter import AppFilter
 from ..app_subject_detail import AppSubjectDetail
+from shared_utils import app_utils
 
 class AppContent:
     def __init__(self):
         """Initialize app content components"""
         self.app_filter = AppFilter()
-        self.app_dataframe = AppDataFrame()
+        self.app_dataframe = AppDataFrame(app_utils=app_utils)
         self.app_subject_detail = AppSubjectDetail()
 
     def build(self):

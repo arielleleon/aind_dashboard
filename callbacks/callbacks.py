@@ -4,7 +4,6 @@ from dash import dcc
 import dash_bootstrap_components as dbc
 import pandas as pd
 from datetime import datetime, timedelta
-from app_utils import AppUtils
 from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
 from app_elements.app_filter.app_filter import AppFilter
 from app_elements.app_subject_detail.app_feature_chart import AppFeatureChart
@@ -14,8 +13,12 @@ from app_elements.app_subject_detail.app_subject_timeseries import AppSubjectTim
 import plotly.graph_objects as go
 import json
 
-app_utils = AppUtils()
-app_dataframe = AppDataFrame()
+# CRITICAL FIX: Import the shared app_utils instance from shared_utils module
+from shared_utils import app_utils
+
+# CRITICAL FIX: Pass the shared app_utils instance to AppDataFrame
+app_dataframe = AppDataFrame(app_utils=app_utils)
+
 app_filter = AppFilter()
 feature_chart = AppFeatureChart()
 session_card = AppSessionCard()
@@ -72,30 +75,53 @@ def update_active_filters(
         create_filter_badge(f"Time Window: {time_window_label}", "time-window-filter", time_window_value)
     )
     
-    # Add each active filter
+    # Helper function to format multi-select values
+    def format_multi_value(value):
+        if isinstance(value, list):
+            if len(value) == 1:
+                return value[0]
+            elif len(value) <= 3:
+                return ", ".join(value)
+            else:
+                return f"{', '.join(value[:2])}, +{len(value)-2} more"
+        else:
+            return str(value)
+    
+    # Add each active filter - now handling multi-select
     if stage_value:
+        formatted_value = format_multi_value(stage_value)
+        # Use the first value as the key for removal
+        key_value = stage_value[0] if isinstance(stage_value, list) else stage_value
         active_filters.append(
-            create_filter_badge(f"Stage: {stage_value}", "stage-filter", stage_value)
+            create_filter_badge(f"Stage: {formatted_value}", "stage-filter", key_value)
         )
     
     if curriculum_value:
+        formatted_value = format_multi_value(curriculum_value)
+        key_value = curriculum_value[0] if isinstance(curriculum_value, list) else curriculum_value
         active_filters.append(
-            create_filter_badge(f"Curriculum: {curriculum_value}", "curriculum-filter", curriculum_value)
+            create_filter_badge(f"Curriculum: {formatted_value}", "curriculum-filter", key_value)
         )
     
     if rig_value:
+        formatted_value = format_multi_value(rig_value)
+        key_value = rig_value[0] if isinstance(rig_value, list) else rig_value
         active_filters.append(
-            create_filter_badge(f"Rig: {rig_value}", "rig-filter", rig_value)
+            create_filter_badge(f"Rig: {formatted_value}", "rig-filter", key_value)
         )
     
     if trainer_value:
+        formatted_value = format_multi_value(trainer_value)
+        key_value = trainer_value[0] if isinstance(trainer_value, list) else trainer_value
         active_filters.append(
-            create_filter_badge(f"Trainer: {trainer_value}", "trainer-filter", trainer_value)
+            create_filter_badge(f"Trainer: {formatted_value}", "trainer-filter", key_value)
         )
     
     if pi_value:
+        formatted_value = format_multi_value(pi_value)
+        key_value = pi_value[0] if isinstance(pi_value, list) else pi_value
         active_filters.append(
-            create_filter_badge(f"PI: {pi_value}", "pi-filter", pi_value)
+            create_filter_badge(f"PI: {formatted_value}", "pi-filter", key_value)
         )
     
     # Return active filters and count
@@ -119,7 +145,8 @@ def create_filter_badge(label, filter_type, filter_value):
 
 # Callback to handle filter badge removal
 @callback(
-    [Output("stage-filter", "value"),
+    [Output("time-window-filter", "value"),
+     Output("stage-filter", "value"),
      Output("curriculum-filter", "value"),
      Output("rig-filter", "value"),
      Output("trainer-filter", "value"),
@@ -128,7 +155,8 @@ def create_filter_badge(label, filter_type, filter_value):
      Output("alert-category-filter", "value")],
     [Input({"type": "remove-filter", "index": ALL}, "n_clicks"),
      Input("clear-filters", "n_clicks")],
-    [State({"type": "remove-filter", "index": ALL}, "id"),
+    [State("time-window-filter", "value"),
+     State({"type": "remove-filter", "index": ALL}, "id"),
      State("stage-filter", "value"),
      State("curriculum-filter", "value"),
      State("rig-filter", "value"),
@@ -138,16 +166,22 @@ def create_filter_badge(label, filter_type, filter_value):
      State("alert-category-filter", "value")],
     prevent_initial_call=True
 )
-def remove_filter(remove_clicks, clear_clicks, remove_ids, 
+def remove_filter(remove_clicks, clear_clicks, time_window_value, remove_ids, 
                  stage_value, curriculum_value, rig_value, trainer_value, 
                  pi_value, sort_value, alert_category_value):
     # Initialize return values with current state
-    outputs = [stage_value, curriculum_value, rig_value, trainer_value, pi_value, 
+    outputs = [time_window_value, stage_value, curriculum_value, rig_value, trainer_value, pi_value, 
               sort_value, alert_category_value]
+    
+    # Add debugging to track clear button clicks
+    print(f"remove_filter callback triggered. ctx.triggered_id: {ctx.triggered_id}")
+    if clear_clicks:
+        print(f"Clear button clicks: {clear_clicks}")
     
     # If clear button was clicked, clear all filters
     if ctx.triggered_id == "clear-filters":
-        return [None, None, None, None, None, "none", "all"]
+        print("🧹 CLEAR ALL FILTERS button pressed - resetting all values")
+        return [30, None, None, None, None, None, "none", "all"]  # Reset to default time window (30 days)
     
     # Find which filter was clicked to be removed
     for i, clicks in enumerate(remove_clicks):
@@ -156,25 +190,27 @@ def remove_filter(remove_clicks, clear_clicks, remove_ids,
             filter_id = remove_ids[i]["index"]
             filter_type, filter_value = filter_id.split(":", 1)
             
-            # Don't allow removing time window filter
+            print(f"Removing individual filter: {filter_type} = {filter_value}")
+            
+            # Don't allow removing time window filter via badge (keep as is)
             if filter_type == "time-window-filter":
                 continue
                 
-            # Clear the corresponding filter
+            # Clear the corresponding filter - now properly handles multi-select
             if filter_type == "stage-filter":
-                outputs[0] = None
+                outputs[1] = None  # Clear entire stage filter
             elif filter_type == "curriculum-filter":
-                outputs[1] = None
+                outputs[2] = None  # Clear entire curriculum filter
             elif filter_type == "rig-filter":
-                outputs[2] = None
+                outputs[3] = None  # Clear entire rig filter
             elif filter_type == "trainer-filter":
-                outputs[3] = None
+                outputs[4] = None  # Clear entire trainer filter
             elif filter_type == "pi-filter":
-                outputs[4] = None
+                outputs[5] = None  # Clear entire PI filter
             elif filter_type == "sort-option":
-                outputs[5] = "none"  # Reset to default sort
+                outputs[6] = "none"  # Reset to default sort
             elif filter_type == "alert-category-filter":
-                outputs[6] = "all"   # Reset to show all alerts
+                outputs[7] = "all"   # Reset to show all alerts
             
             # Only process one removal at a time
             break
@@ -199,16 +235,22 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
                      alert_category, clear_clicks):
     print(f"Updating table with time window: {time_window_value} days")
     
-    # Get the cached formatted data (all subjects, all time)
-    if app_utils._cache['formatted_data'] is None:
-        # If not cached, format the data once
-        df = app_utils.get_session_data(use_cache=True)
-        formatter = AppDataFrame()
-        formatted_df = formatter.format_dataframe(df)
-        app_utils._cache['formatted_data'] = formatted_df
-    else:
-        formatted_df = app_utils._cache['formatted_data'].copy()
+    # CRITICAL FIX: Use UI-optimized table display data from the shared app_utils instance
+    # This data is already processed and cached, avoiding pipeline re-runs
+    formatted_df = pd.DataFrame(app_utils.get_table_display_data(use_cache=True))
     
+    if formatted_df.empty:
+        print("⚠️  No table display data found, falling back to formatted data cache")
+        # Fallback to formatted data cache if UI cache is empty
+        if app_utils._cache['formatted_data'] is not None:
+            formatted_df = app_utils._cache['formatted_data'].copy()
+        else:
+            print("🔄 No cached data found, triggering format_dataframe")
+            df = app_utils.get_session_data(use_cache=True)
+            formatted_df = app_dataframe.format_dataframe(df)
+    
+    print(f"📊 Starting with {len(formatted_df)} subjects before filtering")
+
     # Apply time window filter directly to the session_date column
     if time_window_value:
         reference_date = formatted_df['session_date'].max()
@@ -219,22 +261,38 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
         time_filtered = time_filtered.sort_values('session_date', ascending=False)
         formatted_df = time_filtered.drop_duplicates(subset=['subject_id'], keep='first')
         print(f"Applied {time_window_value} day window filter: {len(formatted_df)} subjects")
-    
-    # Apply each filter if it has a value
+
+    # Apply each filter if it has a value - now handling multi-select
     if stage_value:
-        formatted_df = formatted_df[formatted_df["current_stage_actual"] == stage_value]
+        # Handle both single values and lists
+        if isinstance(stage_value, list):
+            formatted_df = formatted_df[formatted_df["current_stage_actual"].isin(stage_value)]
+        else:
+            formatted_df = formatted_df[formatted_df["current_stage_actual"] == stage_value]
     
     if curriculum_value:
-        formatted_df = formatted_df[formatted_df["curriculum_name"] == curriculum_value]
+        if isinstance(curriculum_value, list):
+            formatted_df = formatted_df[formatted_df["curriculum_name"].isin(curriculum_value)]
+        else:
+            formatted_df = formatted_df[formatted_df["curriculum_name"] == curriculum_value]
     
     if rig_value:
-        formatted_df = formatted_df[formatted_df["rig"] == rig_value]
+        if isinstance(rig_value, list):
+            formatted_df = formatted_df[formatted_df["rig"].isin(rig_value)]
+        else:
+            formatted_df = formatted_df[formatted_df["rig"] == rig_value]
     
     if trainer_value:
-        formatted_df = formatted_df[formatted_df["trainer"] == trainer_value]
+        if isinstance(trainer_value, list):
+            formatted_df = formatted_df[formatted_df["trainer"].isin(trainer_value)]
+        else:
+            formatted_df = formatted_df[formatted_df["trainer"] == trainer_value]
     
     if pi_value:
-        formatted_df = formatted_df[formatted_df["PI"] == pi_value]
+        if isinstance(pi_value, list):
+            formatted_df = formatted_df[formatted_df["PI"].isin(pi_value)]
+        else:
+            formatted_df = formatted_df[formatted_df["PI"] == pi_value]
     
     # Apply alert category filter if selected
     if alert_category != "all":
@@ -254,27 +312,36 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
             # Filter for specific percentile category (B, G, SB, SG)
             formatted_df = formatted_df[formatted_df["percentile_category"] == alert_category]
     
-    # Apply sorting if specified
+    # Apply sorting if specified - updated to handle new sort values
     if sort_option != "none":
-        if sort_option == "session_date":
-            # Sort by session date (descending)
-            formatted_df = formatted_df.sort_values("session_date", ascending=False)
-        elif sort_option == "overall_percentile":
-            # Sort by overall percentile (ascending)
-            formatted_df = formatted_df.sort_values("overall_percentile", ascending=True)
-        elif sort_option == "alert":
-            # Custom sort order for alerts: SB, B, N, G, SG, NS
-            alert_order = {"SB": 0, "B": 1, "N": 2, "G": 3, "SG": 4, "NS": 5}
-            formatted_df["alert_sort"] = formatted_df["percentile_category"].map(alert_order)
-            formatted_df = formatted_df.sort_values("alert_sort", ascending=True)
-            formatted_df = formatted_df.drop(columns=["alert_sort"])
-        elif sort_option == "session_count":
-            # Sort by session count (descending)
-            formatted_df = formatted_df.sort_values("session", ascending=False)
+        # Debug: Check what columns are available
+        print(f"Available columns for sorting: {list(formatted_df.columns)}")
+        
+        if sort_option == "overall_percentile_asc":
+            # Try session_overall_percentile first, fall back to overall_percentile
+            if 'session_overall_percentile' in formatted_df.columns:
+                print("Sorting by session_overall_percentile (ascending)")
+                formatted_df = formatted_df.sort_values("session_overall_percentile", ascending=True, na_position='last')
+            elif 'overall_percentile' in formatted_df.columns:
+                print("Sorting by overall_percentile (ascending)")
+                formatted_df = formatted_df.sort_values("overall_percentile", ascending=True, na_position='last')
+            else:
+                print("WARNING: No overall percentile column found for sorting")
+        elif sort_option == "overall_percentile_desc":
+            # Try session_overall_percentile first, fall back to overall_percentile
+            if 'session_overall_percentile' in formatted_df.columns:
+                print("Sorting by session_overall_percentile (descending)")
+                formatted_df = formatted_df.sort_values("session_overall_percentile", ascending=False, na_position='last')
+            elif 'overall_percentile' in formatted_df.columns:
+                print("Sorting by overall_percentile (descending)")
+                formatted_df = formatted_df.sort_values("overall_percentile", ascending=False, na_position='last')
+            else:
+                print("WARNING: No overall percentile column found for sorting")
     
     # Count percentile categories for debugging
     percentile_counts = formatted_df["percentile_category"].value_counts().to_dict()
     print(f"Percentile categories: {percentile_counts}")
+    print(f"Applied sorting: {sort_option}")
     
     # Convert to records for datatable
     return formatted_df.to_dict("records")
@@ -307,7 +374,7 @@ def update_subject_detail(active_cell, table_data, page_current, page_size):
     default_footer_style = {"display": "none"}
     default_page_style = {"display": "none"}  # Style for the detail page
     default_ns_style = {"display": "none"}
-    empty_chart = feature_chart.build(None)
+    empty_chart = feature_chart.build_legacy(None)
 
     # Check if cell is clicked
     if not active_cell or active_cell['column_id'] != 'subject_id':
@@ -340,6 +407,10 @@ def update_subject_detail(active_cell, table_data, page_current, page_size):
 
     # Format percent with color based on category
     percentile_val = subject_data.get('overall_percentile')
+    if percentile_val is None or pd.isna(percentile_val):
+        # Try session_overall_percentile as fallback
+        percentile_val = subject_data.get('session_overall_percentile')
+    
     percentile_cat = subject_data.get('percentile_category', 'NS')
 
     if percentile_cat == 'NS' or pd.isna(percentile_val):
@@ -412,15 +483,28 @@ def update_subject_detail(active_cell, table_data, page_current, page_size):
     else:
         ns_reason_style = {'display': 'none'}
 
-    # Build feature chart
-    chart = feature_chart.build(subject_data)
+    # Build feature chart using optimized data structure
+    print(f"Building feature chart for subject: {subject_id}")
+    try:
+        chart = feature_chart.build(subject_id=subject_id, app_utils=app_utils)
+        print(f"✓ Feature chart built successfully")
+    except Exception as e:
+        print(f"❌ Error building feature chart: {str(e)}")
+        # Return fallback empty chart
+        chart = feature_chart.build_legacy(None)
 
     # Return values to update UI - now also showing the detail page automatically
+    print(f"🔄 SETTING detail-subject-id to: {subject_id} (type: {type(subject_id)})")
+    print(f"   This should trigger the timeseries callback with subject_id: {repr(subject_id)}")
+    print(f"🖥️  SHOWING subject detail page and footer:")
+    print(f"   Footer style: {{'display': 'block'}}")
+    print(f"   Detail page style: {{'display': 'block'}}")
+    
     return (
         {'display': 'block'},    # Show footer 
         {'display': 'block'},    # Show detail page automatically
         strata,
-        subject_id,
+        subject_id,              # This is the critical value for detail-subject-id
         pi,
         trainer,
         percentile,
@@ -464,7 +548,7 @@ def update_session_list(subject_id, load_more_clicks, session_list_state):
         is_load_more = False
     
     # Define how many sessions to load
-    initial_session_count = 5
+    initial_session_count = 8  # Increased from 5 to accommodate longer page
     load_more_count = 5
     
     # Calculate how many sessions to fetch
@@ -672,437 +756,68 @@ clientside_callback(
      Input("session-scroll-state", "data")]
 )
 
-# Callback to update the timeseries data store when a subject is selected
+# Callback to load timeseries data when subject is selected
 @callback(
-    Output("timeseries-data-store", "data"),
+    Output("timeseries-store", "data"),
     [Input("detail-subject-id", "children")]
 )
-def update_timeseries_data(subject_id):
-    """Update the timeseries data store with all sessions for the selected subject"""
-    print(f"\nupdate_timeseries_data called with subject_id: {subject_id}")
-    
-    # Default return value
-    empty_data = {
-        "subject_id": None,
-        "selected_session": None,
-        "all_sessions": []
-    }
-    
-    # If no subject selected, return empty data
+def load_timeseries_data(subject_id):
+    """Load optimized timeseries data for selected subject"""
     if not subject_id:
-        print("No subject ID provided")
-        return empty_data
-        
-    # Get all sessions for this subject
-    print(f"Getting sessions for subject {subject_id}")
-    all_sessions = app_utils.get_subject_sessions(subject_id)
+        return {}
     
-    if all_sessions is None or all_sessions.empty:
-        print(f"No sessions found for subject {subject_id}")
-        return empty_data
-        
-    print(f"Found {len(all_sessions)} sessions for subject {subject_id}")
-    print(f"Columns in sessions: {all_sessions.columns.tolist()}")
+    # Get optimized time series data from app_utils
+    time_series_data = app_utils.get_time_series_data(subject_id, use_cache=True)
     
-    # Check if processed feature columns exist
-    feature_columns = [col for col in all_sessions.columns if '_processed' in col]
-    print(f"Found {len(feature_columns)} processed feature columns: {feature_columns}")
+    if not time_series_data:
+        print(f"No timeseries data found for subject {subject_id}")
+        return {}
     
-    # Fix for missing processed values: manually add them if they don't exist
-    if not feature_columns:
-        print("WARNING: No processed feature columns found - adding them manually")
-        for feature in subject_timeseries.features_config.keys():
-            if feature not in all_sessions.columns:
-                print(f"Feature {feature} not in columns, can't create processed values")
-                continue
-                
-            # Create basic processed values - normalize the raw feature values
-            # This is a simplified version without proper standardization across subjects
-            # but should work for visualization purposes
-            feature_vals = all_sessions[feature].values
-            if len(feature_vals) == 0 or pd.isna(feature_vals).all():
-                print(f"No valid values for feature {feature}, skipping")
-                all_sessions[f"{feature}_processed"] = float('nan')
-                continue
-                
-            # Simple standardization (z-score)
-            try:
-                mean = feature_vals[~pd.isna(feature_vals)].mean()
-                std = feature_vals[~pd.isna(feature_vals)].std()
-                if std == 0:  # Avoid division by zero
-                    all_sessions[f"{feature}_processed"] = 0
-                else:
-                    processed = (feature_vals - mean) / std
-                    # Flip sign if lower is better (so higher always = better)
-                    if subject_timeseries.features_config[feature]:
-                        processed = -processed
-                    all_sessions[f"{feature}_processed"] = processed
-                print(f"Created {feature}_processed values")
-            except Exception as e:
-                print(f"Error creating processed values for {feature}: {str(e)}")
-                all_sessions[f"{feature}_processed"] = float('nan')
-    
-    # Sort by session number (ascending)
-    if 'session' in all_sessions.columns:
-        all_sessions = all_sessions.sort_values('session', ascending=True)
-    else:
-        all_sessions = all_sessions.sort_values('session_date', ascending=True)
-    
-    # Convert to records
-    sessions_list = all_sessions.to_dict('records')
-    
-    # Check the first session for key data
-    if sessions_list:
-        first_session = sessions_list[0]
-        print(f"First session has keys: {list(first_session.keys())[:10]}...")
-        for feature in subject_timeseries.features_config:
-            processed_col = f"{feature}_processed"
-            if processed_col in first_session:
-                print(f"{processed_col}: {first_session[processed_col]}")
-            else:
-                print(f"{processed_col} not found in session data")
-    
-    # Return data with all sessions
-    return {
-        "subject_id": subject_id,
-        "selected_session": sessions_list[0]['session'] if sessions_list else None,
-        "all_sessions": sessions_list
-    }
+    print(f"Loaded timeseries data for {subject_id}: {len(time_series_data.get('sessions', []))} sessions")
+    return time_series_data
 
-# Callback to update the timeseries plot with session data and selected features
+# Callback to update timeseries plot
 @callback(
-    Output("subject-timeseries-graph", "figure"),
-    [Input("timeseries-data-store", "data"),
-     Input("feature-select-dropdown", "value")]
+    Output("timeseries-plot", "figure"),
+    [Input("timeseries-store", "data"),
+     Input("timeseries-feature-dropdown", "value"),
+     Input({"type": "session-card", "index": ALL}, "n_clicks"),
+     Input("session-scroll-state", "data")],
+    [State({"type": "session-card", "index": ALL}, "id")]
 )
-def update_timeseries_plot(timeseries_data, selected_features):
-    """Update the timeseries plot with the selected features"""
-    print(f"update_timeseries_plot called with: {timeseries_data.get('subject_id')}")
-    print(f"Selected features: {selected_features}")
+def update_timeseries_plot(timeseries_data, selected_features, n_clicks_list, scroll_state, card_ids):
+    """Update timeseries plot with data and session highlighting"""
     
-    sessions = timeseries_data.get("all_sessions", [])
-    print(f"Number of sessions: {len(sessions)}")
+    # Determine highlighted session from clicks or scroll
+    highlighted_session = None
     
-    if not sessions:
-        print("No sessions found, returning empty figure")
-        fig = go.Figure()
-        fig.update_layout(
-            title=None,
-            xaxis_title="Session Number",
-            yaxis_title="Performance Metrics",
-            template="plotly_white",
-            margin=dict(l=20, r=10, t=10, b=30)
-        )
-        fig.add_annotation(
-            text="Select a subject to view timeseries data",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5,
-            showarrow=False,
-            font=dict(size=16)
-        )
-        return fig
-    
-    # Create a default figure
-    fig = go.Figure()
-    
-    # Get all features if 'all' is selected
-    all_features = list(subject_timeseries.features_config.keys())
-    features_to_plot = all_features if 'all' in selected_features else selected_features
-    print(f"Features to plot: {features_to_plot}")
-    
-    # Debug: Print the first session to check structure
-    if sessions:
-        print(f"First session keys: {list(sessions[0].keys())}")
-        
-        # Check if the processed columns exist
-        processed_columns = [f"{feature}_processed" for feature in features_to_plot if feature != 'all']
-        for col in processed_columns:
-            if col in sessions[0]:
-                print(f"Found column {col}: {sessions[0][col]}")
-            else:
-                print(f"Column {col} not found in session data")
-    
-    # Add traces for each feature
-    traces_added = 0
-    for feature in features_to_plot:
-        if feature == 'all':
-            continue
-        
-        # Get the processed values for this feature
-        processed_column = f"{feature}_processed"
-        
-        # Extract data points
-        session_numbers = []
-        processed_values = []
-        original_values = []
-        hover_texts = []
-        dates = []
-        
-        for session in sessions:
-            if processed_column in session and not pd.isna(session[processed_column]):
-                session_numbers.append(session['session'])
-                processed_values.append(session[processed_column])
-                
-                # Store original feature value if available
-                if feature in session:
-                    original_values.append(session[feature])
-                else:
-                    original_values.append(None)
-                
-                # Store session date
-                if 'session_date' in session:
-                    dates.append(session['session_date'])
-                else:
-                    dates.append(None)
-                
-                # Enhanced hover text will be updated after smoothing
-                hover_texts.append("")  # Placeholder
-        
-        print(f"Feature {feature}: Found {len(session_numbers)} data points")
-        
-        # Skip if no valid data points for this feature
-        if not session_numbers:
-            print(f"No data points for feature {feature}, skipping")
-            continue
-        
-        # Apply moving average smoothing
-        smoothed_values = subject_timeseries.moving_average(processed_values)
-        
-        # Update hover text with both original and smoothed values
-        for i in range(len(hover_texts)):
-            if smoothed_values[i] is not None:
-                hover_text = f"Session: {session_numbers[i]}<br>"
-                
-                # Add date if available
-                if dates[i] and not pd.isna(dates[i]):
-                    if hasattr(dates[i], 'strftime'):
-                        hover_text += f"Date: {dates[i].strftime('%Y-%m-%d')}<br>"
-                    else:
-                        hover_text += f"Date: {dates[i]}<br>"
-                
-                # Add original value if available
-                if original_values[i] is not None and not pd.isna(original_values[i]):
-                    hover_text += f"Raw {feature}: {original_values[i]:.2f}<br>"
-                
-                # Add processed value
-                hover_text += f"Processed: {processed_values[i]:.2f}<br>"
-                
-                # Add smoothed value
-                hover_text += f"Smoothed: {smoothed_values[i]:.2f}"
-                
-                hover_texts[i] = hover_text
-            
-        # Get the color for this feature
-        color = subject_timeseries.feature_colors.get(feature, '#000000')
-        
-        # Create a more readable name for the feature
-        feature_display = feature.replace('_', ' ').replace('abs(', '|').replace(')', '|').title()
-        
-        # Add the trace for this feature with smoothed line
-        fig.add_trace(go.Scatter(
-            x=session_numbers,
-            y=smoothed_values,
-            mode='lines',  # Lines only, no markers
-            name=feature_display,
-            line=dict(
-                color=color,
-                width=3,
-                shape='spline',  # Smoother line interpolation
-                smoothing=1.3
-            ),
-            hoverinfo="text",
-            hovertext=hover_texts
-        ))
-        traces_added += 1
-    
-    print(f"Added {traces_added} traces to the plot")
-    
-    if traces_added > 0 and 'session_numbers' in locals() and session_numbers:
-        # Add a horizontal reference line at y=0
-        fig.add_shape(
-            type="line",
-            x0=min(session_numbers),
-            y0=0,
-            x1=max(session_numbers),
-            y1=0,
-            line=dict(color="gray", width=1, dash="dot")
-        )
-    
-    # Update layout for better appearance
-    fig.update_layout(
-        title=None,
-        xaxis_title="Session Number",
-        yaxis_title="Performance Metrics",
-        template="plotly_white",
-        margin=dict(l=20, r=10, t=10, b=30),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        ),
-        hovermode="closest",
-        # Add grid lines for better readability
-        xaxis=dict(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='rgba(211,211,211,0.3)'  # Light gray
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='rgba(211,211,211,0.3)'  # Light gray
-        )
-    )
-    
-    if traces_added == 0:
-        print("WARNING: No traces were added to the plot. It will be blank.")
-        # Add a annotation to explain the blank plot
-        fig.add_annotation(
-            text="No feature data available for this subject",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5,
-            showarrow=False,
-            font=dict(size=16)
-        )
-    
-    return fig
-
-# Session highlighting callback
-@callback(
-    Output("subject-timeseries-graph", "figure", allow_duplicate=True),
-    [Input({"type": "session-card", "index": ALL}, "n_clicks"),
-     Input("session-scroll-state", "data"),
-     Input("subject-timeseries-graph", "figure")],
-    [State({"type": "session-card", "index": ALL}, "id")],
-    prevent_initial_call=True
-)
-def direct_session_highlight(n_clicks_list, scroll_state, current_figure, card_ids):
-    """Update the timeseries plot with a vertical line at the selected session"""
-    # Check for valid inputs
-    if not current_figure or not current_figure.get('data'):
-        return current_figure
-    
-    # Check if this was triggered by a click or a scroll event
-    trigger_id = ctx.triggered_id
-    
-    try:
-        session_str = None
-        
-        # Handle click events (prioritize these over scroll events)
-        if trigger_id != "session-scroll-state" and n_clicks_list and any(n_clicks_list):
-            # Find the card that was clicked (with highest n_clicks)
-            max_clicks = 0
-            clicked_idx = None
-            
-            for i, clicks in enumerate(n_clicks_list):
-                if clicks and clicks > max_clicks:
-                    max_clicks = clicks
-                    clicked_idx = i
-            
-            # If a card was clicked, get its info
-            if clicked_idx is not None:
-                # Get the card ID and extract session number
+    # Check for card clicks first (priority over scroll)
+    if n_clicks_list and any(n_clicks_list):
+        max_clicks = max(n_clicks_list)
+        if max_clicks > 0:
+            clicked_idx = n_clicks_list.index(max_clicks)
+            if clicked_idx < len(card_ids):
                 card_id = card_ids[clicked_idx]
-                index_str = str(card_id.get('index', ''))
-                
-                # Parse session number from id format: "subject_id-session_num"
-                print(f"Card clicked with index: {index_str}")
-                
-                if "-" in index_str:
-                    _, session_str = index_str.split("-")
-        
-        # If no card was clicked or no valid session found, check scroll state
-        if not session_str and trigger_id == "session-scroll-state" and scroll_state and scroll_state.get('visible_session'):
-            visible_session = scroll_state.get('visible_session')
-            print(f"Scroll event detected, visible session: {visible_session}")
-            
-            # Parse session number from id format: "subject_id-session_num"
-            if visible_session and "-" in visible_session:
-                _, session_str = visible_session.split("-")
-        
-        # If we don't have a session to highlight, return unchanged
-        if not session_str:
-            return current_figure
-            
-        # Handle session numbers with decimal points
-        try:
-            session_num = float(session_str)
-            session_num = int(session_num) if session_num.is_integer() else session_num
-        except ValueError:
-            print(f"Invalid session number: {session_str}")
-            return current_figure
-            
-        print(f"Highlighting session: {session_num}")
-        
-        # Create a modified figure with the vertical line
-        fig = go.Figure(current_figure)
-        
-        # Calculate y-axis range if needed
-        y_range = [-2, 2]  # Default range
-        for trace in fig.data:
-            if hasattr(trace, 'y') and trace.y:
-                valid_y = [y for y in trace.y if y is not None]
-                if valid_y:
-                    trace_min = min(valid_y)
-                    trace_max = max(valid_y)
-                    y_range[0] = min(y_range[0], trace_min - 0.1)
-                    y_range[1] = max(y_range[1], trace_max + 0.1)
-        
-        # Create simplified shapes and annotations
-        # First, remove any existing highlights
-        layout_data = {}
-        if hasattr(fig.layout, 'shapes'):
-            layout_data['shapes'] = [shape for shape in fig.layout.shapes 
-                                   if not getattr(shape, 'name', '') == 'session_highlight']
-        
-        # Add the new highlight line
-        highlight_shape = {
-            'type': 'line',
-            'name': 'session_highlight',
-            'x0': session_num,
-            'y0': y_range[0],
-            'x1': session_num,
-            'y1': y_range[1],
-            'line': {'color': 'rgba(65, 105, 225, 0.3)', 'width': 6, 'dash': 'solid'}
-        }
-        
-        if 'shapes' in layout_data:
-            layout_data['shapes'].append(highlight_shape)
-        else:
-            layout_data['shapes'] = [highlight_shape]
-        
-        # Add annotation to indicate the selected session
-        if hasattr(fig.layout, 'annotations'):
-            layout_data['annotations'] = [ann for ann in fig.layout.annotations 
-                                    if not getattr(ann, 'name', '') == 'session_annotation']
-        else:
-            layout_data['annotations'] = []
-            
-        # Add annotation for the current session - simple number, no arrow
-        layout_data['annotations'].append({
-            'name': 'session_annotation',
-            'x': session_num - 0.5,  # Position slightly to the left of the line
-            'y': y_range[1] * 0.95,  # Position slightly below the top
-            'xref': 'x',
-            'yref': 'y',
-            'text': f'{session_num}',
-            'showarrow': False,
-            'font': {'color': 'rgba(65, 105, 225, 0.7)', 'size': 13}  # Less bold, slightly more transparent
-        })
-        
-        # Update the figure layout
-        fig.update_layout(**layout_data)
-        
-        return fig
-        
-    except Exception as e:
-        print(f"ERROR in direct_session_highlight: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
-        return current_figure  # Return unchanged on error
+                session_str = card_id.get('index', '').split('-')[-1]
+                try:
+                    highlighted_session = int(float(session_str))
+                except (ValueError, IndexError):
+                    pass
+    
+    # Check scroll state if no click detected
+    elif scroll_state and scroll_state.get('visible_session'):
+        visible_session = scroll_state.get('visible_session')
+        if '-' in visible_session:
+            session_str = visible_session.split('-')[-1]
+            try:
+                highlighted_session = int(float(session_str))
+            except (ValueError, IndexError):
+                pass
+    
+    # Create the plot
+    return subject_timeseries.create_plot(
+        subject_data=timeseries_data,
+        selected_features=selected_features or ['all'],
+        highlighted_session=highlighted_session
+    )
 
-# Ensure the hidden output target exists somewhere in the layout
-def create_hidden_div():
-    return html.Div(id="hidden-callback-target", style={"display": "none"})

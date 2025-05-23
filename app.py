@@ -1,23 +1,17 @@
 import dash
 import dash_bootstrap_components as dbc
 from app_elements import *
-from callbacks import *
-from app_utils import AppUtils
+from shared_utils import app_utils
 
-# Initialize app utilities and cache data on startup
-app_utils = AppUtils()
-
-# Pre-load and cache the raw data
+# Pre-load and cache the raw data using the unified pipeline
+print("🚀 Initializing app with unified data pipeline...")
 raw_data = app_utils.get_session_data(use_cache=True)
+session_level_data = app_utils.process_data_pipeline(raw_data, use_cache=False)
 
-# Format the data once at startup (full dataset, no time window)
-from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
-formatter = AppDataFrame()
-formatted_data = formatter.format_dataframe(raw_data)
+print(f"✅ App initialized with {len(session_level_data)} sessions across {session_level_data['subject_id'].nunique()} subjects")
 
-# Store in cache for reuse
-app_utils._cache['formatted_data'] = formatted_data
-print(f"Initialized app with {len(formatted_data)} subjects' data")
+# Import callbacks AFTER shared_utils is loaded
+from callbacks import *
 
 app = dash.Dash(
     __name__,

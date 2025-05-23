@@ -3,7 +3,6 @@ import dash_bootstrap_components as dbc
 from .app_feature_chart import AppFeatureChart
 from .app_session_list import AppSessionList
 from .app_subject_timeseries import AppSubjectTimeseries
-from callbacks.callbacks import create_hidden_div
 
 class AppSubjectDetail:
     def __init__(self):
@@ -16,8 +15,6 @@ class AppSubjectDetail:
         Build subject detail component
         """
         return html.Div([
-            # Hidden div for callback targets
-            create_hidden_div(),
             
             # Store component to track selected session card
             dcc.Store(id="session-card-selected", data={"selected_card_id": None}),
@@ -89,7 +86,7 @@ class AppSubjectDetail:
                         # View details button removed
                     ], width=6),
 
-                    # Right column: Feature chart
+                    # Right column: Feature chart (NOT timeseries)
                     dbc.Col([
                         html.Div(id="feature-chart-container", className="feature-chart-no-border"),
                     ], width=6),
@@ -97,7 +94,7 @@ class AppSubjectDetail:
             ], id="subject-detail-footer", className="subject-detail-section", style={"display": "none"}),
 
             # Subject detail page (initially shown when subject is selected)
-            html.Div([
+            html.Div([                
                 # Main two-column layout - directly showing session list and timeseries
                 dbc.Row([
                     # Left column: Session list
@@ -105,7 +102,7 @@ class AppSubjectDetail:
                         self.session_list.build()
                     ], width=6, className="session-list-column"),
                     
-                    # Right column: Timeseries graph
+                    # Right column: Timeseries graph (ONLY HERE)
                     dbc.Col([
                         self.subject_timeseries.build()
                     ], width=6, className="timeseries-column"),
