@@ -10,6 +10,7 @@ from app_elements.app_subject_detail.app_feature_chart import AppFeatureChart
 from app_elements.app_subject_detail.app_session_card import AppSessionCard
 from app_elements.app_subject_detail.app_subject_image_loader import AppSubjectImageLoader
 from app_elements.app_subject_detail.app_subject_timeseries import AppSubjectTimeseries
+from app_elements.app_subject_detail.app_subject_percentile_timeseries import AppSubjectPercentileTimeseries
 import plotly.graph_objects as go
 import json
 
@@ -24,6 +25,7 @@ feature_chart = AppFeatureChart()
 session_card = AppSessionCard()
 image_loader = AppSubjectImageLoader()
 subject_timeseries = AppSubjectTimeseries()
+subject_percentile_timeseries = AppSubjectPercentileTimeseries()
 
 # Callback to update active filters display and count
 @callback(
@@ -816,6 +818,51 @@ def update_timeseries_plot(timeseries_data, selected_features, n_clicks_list, sc
     
     # Create the plot
     return subject_timeseries.create_plot(
+        subject_data=timeseries_data,
+        selected_features=selected_features or ['all'],
+        highlighted_session=highlighted_session
+    )
+
+# Callback to update percentile timeseries plot
+@callback(
+    Output("percentile-timeseries-plot", "figure"),
+    [Input("timeseries-store", "data"),
+     Input("percentile-timeseries-feature-dropdown", "value"),
+     Input({"type": "session-card", "index": ALL}, "n_clicks"),
+     Input("session-scroll-state", "data")],
+    [State({"type": "session-card", "index": ALL}, "id")]
+)
+def update_percentile_timeseries_plot(timeseries_data, selected_features, n_clicks_list, scroll_state, card_ids):
+    """Update percentile timeseries plot with data and session highlighting"""
+    
+    # Determine highlighted session from clicks or scroll (same logic as raw timeseries)
+    highlighted_session = None
+    
+    # Check for card clicks first (priority over scroll)
+    if n_clicks_list and any(n_clicks_list):
+        max_clicks = max(n_clicks_list)
+        if max_clicks > 0:
+            clicked_idx = n_clicks_list.index(max_clicks)
+            if clicked_idx < len(card_ids):
+                card_id = card_ids[clicked_idx]
+                session_str = card_id.get('index', '').split('-')[-1]
+                try:
+                    highlighted_session = int(float(session_str))
+                except (ValueError, IndexError):
+                    pass
+    
+    # Check scroll state if no click detected
+    elif scroll_state and scroll_state.get('visible_session'):
+        visible_session = scroll_state.get('visible_session')
+        if '-' in visible_session:
+            session_str = visible_session.split('-')[-1]
+            try:
+                highlighted_session = int(float(session_str))
+            except (ValueError, IndexError):
+                pass
+    
+    # Create the percentile plot
+    return subject_percentile_timeseries.create_plot(
         subject_data=timeseries_data,
         selected_features=selected_features or ['all'],
         highlighted_session=highlighted_session

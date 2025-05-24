@@ -205,78 +205,186 @@
 }
 
 .alert-value {
-    color: #333;
+    color: #e74c3c;
 }
 
 .out-of-range {
-    color: #d35400;
+    color: #e74c3c;
 }
 
 .within-range {
     color: #27ae60;
 }
 
-/* Multi-select dropdown styling */
+/* Filter styling improvements */
 .filter-dropdown .Select--multi .Select-value {
-    background-color: #4a6dff;
-    border: 1px solid #4a6dff;
-    border-radius: 3px;
-    color: white;
-    margin: 2px;
-    padding: 2px 5px;
-    font-size: 11px;
+    background-color: #e3f2fd !important;
+    border: 1px solid #2196f3 !important;
+    color: #1976d2 !important;
+    border-radius: 3px !important;
+    margin: 2px !important;
+    padding: 2px 5px !important;
+    font-size: 12px !important;
+    line-height: 1.2 !important;
+    max-width: 100px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
 }
 
 .filter-dropdown .Select--multi .Select-value-icon {
-    border-right: 1px solid rgba(255, 255, 255, 0.5);
-    padding: 1px 3px;
+    border-color: #2196f3 !important;
+    border-right-color: #1976d2 !important;
 }
 
 .filter-dropdown .Select--multi .Select-value-icon:hover {
-    background-color: rgba(255, 255, 255, 0.2);
+    background-color: #1976d2 !important;
+    color: white !important;
 }
 
 .filter-dropdown-sm .Select--multi .Select-value {
-    background-color: #4a6dff;
-    border: 1px solid #4a6dff;
-    border-radius: 2px;
-    color: white;
-    margin: 1px;
-    padding: 1px 3px;
-    font-size: 10px;
-    line-height: 1.2;
+    background-color: #e3f2fd !important;
+    border: 1px solid #2196f3 !important;
+    color: #1976d2 !important;
+    border-radius: 2px !important;
+    margin: 1px !important;
+    padding: 1px 3px !important;
+    font-size: 10px !important;
+    line-height: 1 !important;
+    max-width: 80px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
 }
 
 .filter-dropdown-sm .Select--multi .Select-value-icon {
-    border-right: 1px solid rgba(255, 255, 255, 0.5);
-    padding: 0px 2px;
+    border-color: #2196f3 !important;
+    border-right-color: #1976d2 !important;
 }
 
-/* Active filter badges - enhanced for multi-select */
 .filter-badge {
-    background-color: #4a6dff !important;
+    background-color: #007bff !important;
     color: white !important;
     border: none !important;
+    font-size: 12px !important;
     padding: 4px 8px !important;
     border-radius: 4px !important;
-    font-size: 12px !important;
-    max-width: 250px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    margin-right: 4px !important;
+    margin-bottom: 4px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
 }
 
 .filter-badge:hover {
-    background-color: #3a5dff !important;
+    background-color: #0056b3 !important;
+    transform: translateY(-1px) !important;
 }
 
-/* Improve dropdown option spacing */
 .filter-dropdown .Select-option {
-    padding: 6px 10px;
-    font-size: 13px;
+    font-size: 13px !important;
 }
 
 .filter-dropdown-sm .Select-option {
-    padding: 4px 8px;
-    font-size: 12px;
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+}
+
+/* Dual Timeseries Layout Styling */
+.timeseries-column {
+    padding-left: 10px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.raw-timeseries-section {
+    flex: 1;
+    min-height: 450px;
+    background-color: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.percentile-timeseries-section {
+    flex: 0 0 auto;
+    height: 350px;
+    background-color: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 15px;
+}
+
+.timeseries-title {
+    color: #333;
+    font-weight: 600;
+    font-size: 1.1rem;
+    margin-bottom: 10px;
+    border-bottom: 2px solid #f0f0f0;
+    padding-bottom: 5px;
+}
+
+/* Timeseries control styling */
+.timeseries-controls,
+.percentile-timeseries-controls {
+    margin-bottom: 15px;
+}
+
+.control-label {
+    font-weight: 600;
+    color: #555;
+    font-size: 0.9rem;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.timeseries-feature-dropdown,
+.percentile-timeseries-feature-dropdown {
+    font-size: 0.85rem;
+}
+
+/* Plot container improvements for dual layout */
+.timeseries-plot-container {
+    height: 380px;
+    background-color: white;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.percentile-timeseries-plot-container {
+    height: 280px;
+    background-color: white;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+/* Graph styling improvements */
+.timeseries-graph,
+.percentile-timeseries-graph {
+    height: 100%;
+    width: 100%;
+}
+
+/* Session list column adjustments for dual timeseries */
+.session-list-column {
+    padding-right: 10px;
+    border-right: 1px solid #e0e0e0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .raw-timeseries-section {
+        min-height: 400px;
+    }
+    
+    .percentile-timeseries-section {
+        height: 320px;
+    }
+    
+    .timeseries-plot-container {
+        height: 330px;
+    }
+    
+    .percentile-timeseries-plot-container {
+        height: 250px;
+    }
 }

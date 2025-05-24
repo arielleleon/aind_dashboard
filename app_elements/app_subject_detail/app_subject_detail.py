@@ -3,12 +3,14 @@ import dash_bootstrap_components as dbc
 from .app_feature_chart import AppFeatureChart
 from .app_session_list import AppSessionList
 from .app_subject_timeseries import AppSubjectTimeseries
+from .app_subject_percentile_timeseries import AppSubjectPercentileTimeseries
 
 class AppSubjectDetail:
     def __init__(self):
         self.feature_chart = AppFeatureChart()
         self.session_list = AppSessionList()
         self.subject_timeseries = AppSubjectTimeseries()
+        self.subject_percentile_timeseries = AppSubjectPercentileTimeseries()
         
     def build(self):
         """
@@ -95,16 +97,26 @@ class AppSubjectDetail:
 
             # Subject detail page (initially shown when subject is selected)
             html.Div([                
-                # Main two-column layout - directly showing session list and timeseries
+                # Main two-column layout - session list and dual timeseries plots
                 dbc.Row([
                     # Left column: Session list
                     dbc.Col([
                         self.session_list.build()
                     ], width=6, className="session-list-column"),
                     
-                    # Right column: Timeseries graph (ONLY HERE)
+                    # Right column: Dual timeseries graphs
                     dbc.Col([
-                        self.subject_timeseries.build()
+                        # Raw values timeseries (existing)
+                        html.Div([
+                            html.H5("Raw Feature Values (3-Session Rolling Average)", className="timeseries-title mb-2"),
+                            self.subject_timeseries.build()
+                        ], className="raw-timeseries-section mb-4"),
+                        
+                        # Percentile timeseries (new)
+                        html.Div([
+                            html.H5("Feature Percentiles", className="timeseries-title mb-2"),
+                            self.subject_percentile_timeseries.build()
+                        ], className="percentile-timeseries-section")
                     ], width=6, className="timeseries-column"),
                 ], className="subject-detail-main-row")
             ], id="subject-detail-page", className="subject-detail-page-container", style={"display": "none"})
