@@ -1,11 +1,11 @@
 /* DataTable height fixes */
 .dash-spreadsheet {
     max-height: none !important;
-    height: 100% !important;
+    height: auto !important;
 }
 .dash-spreadsheet-container {
     max-height: none !important;
-    height: 100% !important;
+    height: auto !important;
 }
 .dash-spreadsheet-inner table {
     height: auto !important;
@@ -49,14 +49,15 @@
     height: 100%;
 }
 
-/* Data row with increased height */
+/* Data row with flexible height - Updated to allow table expansion */
 .data-row {
-    height: calc(100vh - 300px);
+    height: auto;
+    min-height: 400px;
     margin-bottom: 10px;
 }
 
 .data-table-column, .data-table-container {
-    height: 100%;
+    height: auto;
 }
 
 /* Compact filters for smaller height */

@@ -400,7 +400,7 @@ class AppDataFrame:
                 id='session-table',
                 data=formatted_data.to_dict('records'),
                 columns=columns,
-                page_size=20,
+                page_size=50,  # Increased from 20 to show more rows
                 fixed_rows={'headers': True},
                 style_data_conditional=[
                     {
@@ -409,13 +409,11 @@ class AppDataFrame:
                     }
                 ],
                 style_table={
-                    'overflowY': 'auto',
-                    'overflowX': 'auto',
+                    'overflowX': 'auto',  # Keep horizontal scroll for wide tables
                     'backgroundColor': 'white',
-                    'height': 'calc(100vh - 350px)',
-                    'minHeight': '400px',
                     'width': '100%',
                     'marginBottom': '0px'
+                    # Removed height and overflowY constraints to allow natural expansion
                 },
                 style_cell={
                     'textAlign': 'left',

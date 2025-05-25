@@ -44,9 +44,9 @@ html, body {
     padding: 0 15px;
 }
 
-/* Content wrapper positioning - seamless white */
+/* Content wrapper positioning - seamless white, flexible height */
 .content-wrapper {
-    height: 100%;
+    height: auto;  /* Changed from 100% to auto for natural expansion */
     width: 100%;
     padding: 0 15px;
     position: relative;
@@ -56,12 +56,12 @@ html, body {
     background-color: white; /* Ensure white background */
 }
 
-/* Data table container - white background */
+/* Data table container - white background, natural height */
 .data-table-container {
-    max-height: calc(100vh - 200px); /* Updated for new layout - less height for filter */
-    overflow-y: auto;
+    /* Removed max-height constraint to allow table to expand naturally */
+    overflow-y: visible;  /* Changed from auto to visible */
     width: 100%;
-    flex: 1;  /* Allow it to grow */
+    flex: 0 1 auto;  /* Changed from flex: 1 to allow natural sizing */
     background-color: white; /* Ensure white background */
 }
 

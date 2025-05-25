@@ -386,8 +386,8 @@ def update_subject_detail(active_cell, table_data, page_current, page_size):
     # Calculate the actual row index in the full dataset
     # If page_current is None (which can happen on initial load), default to 0
     current_page = page_current if page_current is not None else 0
-    # If page_size is None, default to 20 (or whatever your default page size is)
-    rows_per_page = page_size if page_size is not None else 20
+    # If page_size is None, default to 50 (updated to match new page size)
+    rows_per_page = page_size if page_size is not None else 50
     
     # Calculate the absolute row index in the dataset
     absolute_row_idx = (current_page * rows_per_page) + active_cell['row']
