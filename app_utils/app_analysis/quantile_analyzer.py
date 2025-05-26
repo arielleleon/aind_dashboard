@@ -291,7 +291,6 @@ class QuantileAnalyzer:
             
             for col in session_percentile_cols:
                 if pd.notna(row[col]):
-                    # FIX: Use clean feature name without _processed suffix
                     feature_name = col.replace('_session_percentile', '')
                     percentile_values.append(row[col])
                     feature_names.append(feature_name)

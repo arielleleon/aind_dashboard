@@ -25,17 +25,6 @@ class ReferenceProcessor:
         self.min_sessions = min_sessions
         self.min_days = min_days
 
-        # Stage order for reference
-        self.stage_order = [
-            "STAGE_1_WARMUP",
-            "STAGE_1",
-            "STAGE_2",
-            "STAGE_3",
-            "STAGE_4",
-            "STAGE_FINAL",
-            "GRADUATED",
-        ]
-
     def get_eligible_subjects(self, df: pd.DataFrame) -> List[str]:
         """
         Get list of subjects that meet the eligibility criteria
@@ -68,7 +57,10 @@ class ReferenceProcessor:
 
     def preprocess_data(self, df: pd.DataFrame, remove_outliers: bool = False) -> pd.DataFrame:
         """
-        Preprocess the input data with standardization/feature transformations
+        Preprocess the input data with strata-specific standardization/feature transformations
+        
+        CRITICAL CHANGE: Now applies StandardScaler within each strata separately rather than globally.
+        This ensures that percentiles are truly relative to subjects in the same experimental conditions.
 
         Parameters:
             df: pd.DataFrame
@@ -78,7 +70,7 @@ class ReferenceProcessor:
 
         Returns:
             pd.DataFrame
-                Processed dataframe with standardized features
+                Processed dataframe with strata-specific standardized features
         """
         df = df.copy()
 
@@ -115,31 +107,114 @@ class ReferenceProcessor:
 
         df_clean["curriculum_version_group"] = df_clean["curriculum_version"].map(_map_curriculum_ver)
 
-        scaler = StandardScaler()
+        # CRITICAL CHANGE: Assign strata BEFORE standardization
+        print("Assigning strata before standardization for strata-specific processing...")
+        df_with_strata = self.assign_subject_strata(df_clean, use_simplified=True)
+        
+        # STRATA-SPECIFIC STANDARDIZATION: Apply StandardScaler within each strata
+        print("Applying strata-specific standardization...")
+        processed_df_list = []
+        
+        # Process each strata separately
+        for strata, strata_df in df_with_strata.groupby('strata'):
+            print(f"  Processing strata '{strata}' with {len(strata_df)} sessions")
+            strata_processed = strata_df.copy()
+            
+            # Check if we have enough subjects for meaningful standardization
+            unique_subjects = strata_df['subject_id'].nunique()
+            min_subjects_for_standardization = 5  # Minimum subjects needed for standardization
+            
+            if unique_subjects >= min_subjects_for_standardization:
+                # Apply standardization within this strata
+                for feature, lower_is_better in self.features_config.items():
+                    if feature not in strata_df.columns:
+                        continue
+                    
+                    # Get non-null feature values for this strata
+                    feature_values = strata_df[feature].dropna()
+                    
+                    if len(feature_values) < 3:  # Need minimum data points for standardization
+                        print(f"    Skipping {feature} - insufficient data points ({len(feature_values)})")
+                        continue
+                    
+                    # Create and fit scaler for this strata and feature
+                    scaler = StandardScaler()
+                    
+                    try:
+                        # Fit on all non-null values in this strata
+                        scaler.fit(feature_values.values.reshape(-1, 1))
+                        
+                        # Transform all values (including nulls which will remain null)
+                        scaled_values = np.full(len(strata_df), np.nan)
+                        non_null_mask = strata_df[feature].notna()
+                        
+                        if non_null_mask.any():
+                            scaled_values[non_null_mask] = scaler.transform(
+                                strata_df.loc[non_null_mask, feature].values.reshape(-1, 1)
+                            ).flatten()
+                        
+                        # Invert if lower is better (higher values always mean better performance)
+                        if lower_is_better:
+                            scaled_values = -scaled_values
+                        
+                        # Add processed feature to strata dataframe
+                        strata_processed[f'{feature}_processed'] = scaled_values
+                        
+                        print(f"    Standardized {feature}: mean={scaler.mean_[0]:.3f}, std={scaler.scale_[0]:.3f}, inverted={lower_is_better}")
+                        
+                    except Exception as e:
+                        print(f"    Error standardizing {feature} in strata {strata}: {e}")
+                        # If standardization fails, copy original values
+                        strata_processed[f'{feature}_processed'] = strata_df[feature]
+            
+            else:
+                print(f"    Insufficient subjects ({unique_subjects} < {min_subjects_for_standardization}) - using raw values")
+                # If insufficient subjects, just copy raw values as "processed"
+                for feature, lower_is_better in self.features_config.items():
+                    if feature in strata_df.columns:
+                        # Still apply inversion if needed
+                        if lower_is_better:
+                            strata_processed[f'{feature}_processed'] = -strata_df[feature]
+                        else:
+                            strata_processed[f'{feature}_processed'] = strata_df[feature]
+            
+            processed_df_list.append(strata_processed)
+        
+        # Combine all processed strata back together
+        if processed_df_list:
+            df_final = pd.concat(processed_df_list, ignore_index=True)
+            print(f"Combined {len(processed_df_list)} strata into final dataset with {len(df_final)} sessions")
+        else:
+            print("No valid strata found - returning empty dataframe")
+            return pd.DataFrame()
 
-        for feature, lower_is_better in self.features_config.items():
-            if feature not in df_clean.columns:
-                continue
-
-            # Standardize the feature
-            scaled_values = scaler.fit_transform(df_clean[[feature]])
-
-            # Invert if lower is better (higher values always mean better performance)
-            if lower_is_better:
-                scaled_values = -scaled_values
-
-            # Add processed feature to dataframe
-            df_clean[f'{feature}_processed'] = scaled_values
-
-        # Make outlier removal optional
+        # Make outlier removal optional (now applied within each strata)
         if remove_outliers:
-            processed_features = [col for col in df_clean.columns if col.endswith('_processed')]
-            for feature in processed_features:
-                mean = df_clean[feature].mean()
-                std = df_clean[feature].std()
-                df_clean = df_clean[(df_clean[feature] >= mean - 3*std) & (df_clean[feature] <= mean + 3*std)]
+            print("Applying outlier removal within each strata...")
+            outlier_removed_list = []
+            
+            for strata, strata_df in df_final.groupby('strata'):
+                strata_clean = strata_df.copy()
+                processed_features = [col for col in strata_df.columns if col.endswith('_processed')]
+                
+                for feature in processed_features:
+                    if strata_df[feature].notna().sum() < 3:  # Need at least 3 points for outlier detection
+                        continue
+                        
+                    mean = strata_df[feature].mean()
+                    std = strata_df[feature].std()
+                    
+                    if std > 0:  # Only apply outlier removal if we have variation
+                        outlier_mask = (strata_df[feature] >= mean - 3*std) & (strata_df[feature] <= mean + 3*std)
+                        strata_clean = strata_clean[outlier_mask | strata_df[feature].isna()]
+                
+                outlier_removed_list.append(strata_clean)
+            
+            if outlier_removed_list:
+                df_final = pd.concat(outlier_removed_list, ignore_index=True)
+                print(f"After outlier removal: {len(df_final)} sessions remaining")
 
-        return df_clean
+        return df_final
 
     def _simplify_strata(self, strat_id: str) -> str:
         """
