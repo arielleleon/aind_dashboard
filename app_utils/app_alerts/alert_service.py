@@ -130,7 +130,7 @@ class AlertService:
 
     def calculate_quantile_alerts(self, subject_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         """
-        Calculate quantile-based alerts for subjects
+        Calculate quantile-based alerts for subjects using session-level data
         
         Parameters:
             subject_ids: Optional[List[str]]
@@ -143,80 +143,18 @@ class AlertService:
         if not self._validate_analyzer():
             return {}
         
-        # Calculate overall percentiles using the app_utils wrapper to the dedicated calculator
-        overall_percentiles = self.app_utils.calculate_overall_percentile(subject_ids=subject_ids)
-        
-        # Get raw data to determine the most recent strata for each subject
-        raw_data = None
-        if hasattr(self.app_utils, 'get_session_data'):
-            raw_data = self.app_utils.get_session_data()
-        
-        # Create a dictionary to map subjects to their latest strata
-        subject_latest_strata = {}
-        if raw_data is not None and not raw_data.empty:
-            # Get the most recent session for each subject
-            latest_sessions = raw_data.sort_values('session_date').groupby('subject_id').last().reset_index()
-            
-            # Map subject_id to their current strata, reconstructing it from session data
-            for _, row in latest_sessions.iterrows():
-                subject_id = row['subject_id']
-                
-                # Extract task and stage
-                task = row.get('task', '')
-                stage = row.get('current_stage_actual', '')
-                
-                # Determine version 
-                version = row.get('curriculum_version', '')
-                if "2.3" in version:
-                    ver_group = "v3"
-                elif "1.0" in version:
-                    ver_group = "v1"
-                else:
-                    ver_group = "v2"
-                
-                # Simplify stage
-                if 'STAGE_FINAL' in stage or 'GRADUATED' in stage:
-                    simplified_stage = 'ADVANCED'
-                elif any(s in stage for s in ['STAGE_4', 'STAGE_3']):
-                    simplified_stage = 'INTERMEDIATE'
-                elif any(s in stage for s in ['STAGE_2', 'STAGE_1', 'STAGE_1_WARMUP']):
-                    simplified_stage = 'BEGINNER'
-                else:
-                    simplified_stage = 'UNKNOWN'
-                
-                # Create the strata string
-                strata = f"{task}_{simplified_stage}_{ver_group}"
-                
-                # Add to the mapping
-                subject_latest_strata[subject_id] = strata
+        # Get session-level overall percentiles using the new approach
+        session_percentiles = self.app_utils.get_session_overall_percentiles(subject_ids=subject_ids)
         
         # Create a dictionary to store alerts by subject ID
         alerts = {}
         
-        # Process each subject
-        for subject_id, subject_group in overall_percentiles.groupby('subject_id'):
-            # Get the actual latest strata if available, otherwise use logic from overall_percentiles
-            if subject_id in subject_latest_strata:
-                # Find the entry with matching strata
-                latest_strata = subject_latest_strata[subject_id]
-                matching_rows = subject_group[subject_group['strata'] == latest_strata]
-                
-                # Use matching row if found, otherwise fallback to date-based or other methods
-                if not matching_rows.empty:
-                    subject_data = matching_rows.iloc[0]
-                elif 'last_date' in subject_group.columns:
-                    subject_data = subject_group.sort_values('last_date', ascending=False).iloc[0]
-                else:
-                    subject_data = subject_group.iloc[0]
-            elif 'last_date' in subject_group.columns:
-                # Sort by date if available
-                subject_data = subject_group.sort_values('last_date', ascending=False).iloc[0]
-            else:
-                # Fallback to first row if no better method
-                subject_data = subject_group.iloc[0]
-        
-            # Extract overall percentile
-            overall_percentile = subject_data.get('overall_percentile')
+        # Process each subject's most recent session
+        for _, row in session_percentiles.iterrows():
+            subject_id = row['subject_id']
+            
+            # Extract overall percentile from session data
+            overall_percentile = row.get('session_overall_percentile')
             
             # Skip subjects with no percentile (not scored)
             if pd.isna(overall_percentile):
@@ -229,7 +167,7 @@ class AlertService:
                     'overall_percentile': None,
                     'alert_category': 'NS',
                     'ns_reason': ns_reason,
-                    'strata': subject_data.get('strata')
+                    'strata': row.get('strata', 'Unknown')
                 }
                 continue
             
@@ -241,23 +179,18 @@ class AlertService:
                 'subject_id': subject_id,
                 'overall_percentile': overall_percentile,
                 'alert_category': alert_category,
-                'strata': subject_data.get('strata')
+                'strata': row.get('strata', 'Unknown')
             }
             
-            # Add feature-specific percentiles if available
+            # Add feature-specific percentiles from session data
             feature_percentiles = {}
-            for feature in self.config["feature_config"].keys():
-                percentile_col = f"{feature}_percentile"
+            for feature in ['finished_trials', 'ignore_rate', 'total_trials', 'foraging_performance', 'abs(bias_naive)']:
+                session_percentile_col = f"{feature}_session_percentile"
                 
-                # Check if feature percentile is in the data
-                if percentile_col in subject_data:
-                    feature_percentile = subject_data[percentile_col]
-                    
-                    # Map to category if percentile is valid
-                    if not pd.isna(feature_percentile):
-                        feature_category = self.map_percentile_to_category(feature_percentile)
-                    else:
-                        feature_category = 'NS'
+                # Check if feature percentile is in the session data
+                if session_percentile_col in row and not pd.isna(row[session_percentile_col]):
+                    feature_percentile = row[session_percentile_col]
+                    feature_category = self.map_percentile_to_category(feature_percentile)
                     
                     # Add to feature percentiles
                     feature_percentiles[feature] = {
@@ -522,10 +455,9 @@ class AlertService:
                 if row['session_count'].values[0] < min_sessions:
                     return f"Insufficient sessions (< {min_sessions})"
                 
-                # Check overall percentiles
-                overall_df = analyzer.calculate_overall_percentile(subject_ids=None, feature_weights=None)
-                subject_row = overall_df[overall_df['subject_id'] == subject_id]
-                if subject_row.empty or pd.isna(subject_row['overall_percentile'].values[0]):
+                # Check overall percentiles using session-level approach
+                session_percentiles = self.app_utils.get_session_overall_percentiles([subject_id])
+                if session_percentiles.empty or pd.isna(session_percentiles['session_overall_percentile'].values[0]):
                     return "No percentile data (strata may be too small)"
                 
                 return "Unknown reason"
@@ -758,18 +690,18 @@ class AlertService:
                     if 'strata' in row:
                         unified_alerts[subject_id]['strata'] = row['strata']
         
-        # Calculate overall percentiles for all subjects using the app_utils method 
+        # Calculate overall percentiles for all subjects using the session-level method 
         overall_percentiles = {}
         try:
-            # Get overall percentiles for all subjects using app_utils method 
-            overall_df = self.app_utils.calculate_overall_percentile(list(all_subjects))
+            # Get overall percentiles for all subjects using session-level method 
+            overall_df = self.app_utils.get_session_overall_percentiles(list(all_subjects))
             if not overall_df.empty:
-                # Create mapping of subject_id to overall_percentile
+                # Create mapping of subject_id to session_overall_percentile
                 overall_percentiles = dict(
-                    zip(overall_df['subject_id'], overall_df['overall_percentile'])
+                    zip(overall_df['subject_id'], overall_df['session_overall_percentile'])
                 )
         except Exception as e:
-            print(f"Error calculating overall percentiles: {e}")
+            print(f"Error calculating session-level overall percentiles: {e}")
         
         # Add subjects that don't have alerts yet and get NS reasons
         subjects_without_alerts = all_subjects - set(unified_alerts.keys())

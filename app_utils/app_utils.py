@@ -26,14 +26,12 @@ class AppUtils:
         # Simplified cache for processed data
         self._cache = {
             'raw_data': None,
-            'processed_data': None,  
-            'formatted_data': None,
-            'stratified_data': None,
-            'overall_percentiles': None,
+            'session_level_data': None,
+            'optimized_storage': None,
+            'ui_structures': None,
             'unified_alerts': None,
             'last_process_time': None,
-            'data_hash': None,
-            'session_level_data': None
+            'data_hash': None
         }
 
     def get_session_data(self, load_bpod = False, use_cache = True):
@@ -65,17 +63,12 @@ class AppUtils:
     
     def _invalidate_derived_caches(self):
         """Reset all derived data caches when raw data changes"""
-        self._cache['processed_data'] = None
-        self._cache['formatted_data'] = None
-        self._cache['formatted_data_hash'] = None
-        self._cache['stratified_data'] = None
-        self._cache['overall_percentiles'] = None
-        self._cache['unified_alerts'] = None
-        self._cache['last_process_time'] = None
-        self._cache['data_hash'] = None
         self._cache['session_level_data'] = None
         self._cache['optimized_storage'] = None  # Optimized storage cache
         self._cache['ui_structures'] = None      # UI-optimized structures cache
+        self._cache['unified_alerts'] = None
+        self._cache['last_process_time'] = None
+        self._cache['data_hash'] = None
         
         # Also clear percentile calculator cache
         if hasattr(self, 'percentile_calculator'):
@@ -112,90 +105,6 @@ class AppUtils:
         )
         return self.reference_processor
     
-    def process_reference_data(self, df, reference_date = None, remove_outliers = False, use_cache = True):
-        """
-        Process data through reference pipeline with enhanced historical data handling
-        
-        Parameters:
-            df (pd.DataFrame): Data to process
-            reference_date (datetime, optional): Reference date for sliding window
-            remove_outliers (bool): Whether to remove outliers
-            use_cache (bool): Whether to use cached data if available
-            
-        Returns:
-            Dict[str, pd.DataFrame]: Dictionary of stratified data
-        """
-        # Check if we have cached results
-        if use_cache and self._cache['stratified_data'] is not None:
-            print(f"Using cached stratified data")
-            return self._cache['stratified_data']
-            
-        if self.reference_processor is None:
-            raise ValueError("Reference processor not initialized. Call initialize_reference_processor first.")
-        
-        # Filter out off-curriculum sessions FIRST
-        original_count = len(df)
-        
-        # Track subjects with off-curriculum sessions
-        self.off_curriculum_subjects = {}
-        
-        # Create a boolean mask for off-curriculum sessions
-        off_curriculum_mask = (
-            df['curriculum_name'].isna() | 
-            (df['curriculum_name'] == "None") |
-            df['current_stage_actual'].isna() | 
-            (df['current_stage_actual'] == "None") |
-            df['curriculum_version'].isna() |
-            (df['curriculum_version'] == "None")
-        )
-        
-        # Identify subjects with off-curriculum sessions
-        for subject_id in df['subject_id'].unique():
-            subject_sessions = df[df['subject_id'] == subject_id]
-            off_curriculum_sessions = subject_sessions[off_curriculum_mask.loc[subject_sessions.index]]
-            
-            if not off_curriculum_sessions.empty:
-                # Store information about this subject's off-curriculum sessions
-                self.off_curriculum_subjects[subject_id] = {
-                    'count': len(off_curriculum_sessions),
-                    'total_sessions': len(subject_sessions),
-                    'latest_date': off_curriculum_sessions['session_date'].max()
-                }
-        
-        # Remove all off-curriculum sessions from the analysis pipeline
-        df_filtered = df[~off_curriculum_mask].copy()
-        off_curriculum_count = original_count - len(df_filtered)
-        
-        print(f"Filtered out {off_curriculum_count} off-curriculum sessions ({off_curriculum_count/original_count:.1%} of total)")
-        print(f"Identified {len(self.off_curriculum_subjects)} subjects with off-curriculum sessions")
-        
-        # Get eligible subjects - no longer using sliding window
-        eligible_subjects = self.reference_processor.get_eligible_subjects(df_filtered)
-        eligible_df = df_filtered[df_filtered['subject_id'].isin(eligible_subjects)]
-        print(f"Got {len(eligible_subjects)} eligible subjects")
-
-        # Preprocess data
-        processed_df = self.reference_processor.preprocess_data(eligible_df, remove_outliers)
-        print(f"Preprocessed data: {len(processed_df)} sessions")
-
-        # Prepare for quantile analysis
-        stratified_data = self.reference_processor.prepare_for_quantile_analysis(
-            processed_df, 
-            include_history=True
-        )
-        print(f"Created {len(stratified_data)} strata including historical data")
-
-        # Store historical data for later use
-        self.historical_data = self.reference_processor.subject_history
-        print(f"Stored historical data for {len(self.historical_data) if self.historical_data is not None else 0} subject-strata combinations")
-
-        # Cache the results
-        self._cache['processed_data'] = processed_df
-        self._cache['stratified_data'] = stratified_data
-        self._cache['last_process_time'] = datetime.now()
-
-        return stratified_data
-    
     def initialize_quantile_analyzer(self, stratified_data):
         """
         Initialize quantile analyzer
@@ -227,49 +136,34 @@ class AppUtils:
         
         return self.quantile_analyzer.get_subject_history(subject_id)
     
-    def calculate_overall_percentile(self, subject_ids = None, use_cache = True, feature_weights = None):
+    def get_session_overall_percentiles(self, subject_ids=None, use_cache=True, feature_weights=None):
         """
-        Calculate overall percentile scores for subjects using the OverallPercentileCalculator
-
+        Get overall percentile scores for subjects using the session-level pipeline
+        
         Parameters:
             subject_ids (List[str], optional): List of specific subjects to calculate for
             use_cache (bool): Whether to use cached results if available
             feature_weights (Dict[str, float], optional): Optional weights for features
 
         Returns:
-            pd.DataFrame: Dataframe with overall percentile scores
+            pd.DataFrame: DataFrame with session-level overall percentile scores
         """
-        # Return cached results if available and no specific subjects requested
-        if use_cache and subject_ids is None:
-            cached_percentiles = self.percentile_calculator.get_cached_percentiles()
-            if cached_percentiles is not None:
-                print("Using cached overall percentiles")
-                return cached_percentiles
-            
-            # Fall back to app_utils cache if calculator cache is empty
-            if self._cache['overall_percentiles'] is not None:
-                print("Using cached overall percentiles from app_utils")
-                return self._cache['overall_percentiles']
-            
-        if self.quantile_analyzer is None:
-            raise ValueError("Quantile analyzer not initialized. Process data first.")
+        # Get session-level data
+        if use_cache and self._cache['session_level_data'] is not None:
+            session_data = self._cache['session_level_data']
+        else:
+            # Process all data to get session-level data
+            raw_data = self.get_session_data(use_cache=True)
+            session_data = self.process_data_pipeline(raw_data, use_cache=True)
         
-        # Get comprehensive dataframe from quantile analyzer
-        comprehensive_df = self.quantile_analyzer.create_comprehensive_dataframe(include_history=False)
+        # Filter for specific subjects if requested
+        if subject_ids is not None:
+            session_data = session_data[session_data['subject_id'].isin(subject_ids)]
         
-        # Use dedicated calculator to compute overall percentiles
-        percentiles = self.percentile_calculator.calculate_overall_percentile(
-            comprehensive_df=comprehensive_df,
-            subject_ids=subject_ids,
-            feature_weights=feature_weights
-        )
+        # Get the most recent session for each subject (for summary views)
+        most_recent = session_data.sort_values(['subject_id', 'session_date']).groupby('subject_id').last().reset_index()
         
-        # Cache results if calculating for all subjects
-        if subject_ids is None:
-            self._cache['overall_percentiles'] = percentiles
-            self.percentile_calculator.set_cache(percentiles)
-            
-        return percentiles
+        return most_recent
     
     def initialize_alert_service(self, config: Optional[Dict[str, Any]] = None) -> AlertService:
         """
@@ -359,7 +253,7 @@ class AppUtils:
         
     def get_formatted_data(self, window_days=30, reference_date=None, use_cache=True):
         """
-        Get formatted data for display, using cache if available
+        Get formatted data for display using the unified session-level pipeline
         
         Parameters:
             window_days (int): Number of days to include in sliding window
@@ -369,47 +263,20 @@ class AppUtils:
         Returns:
             pd.DataFrame: Formatted data for display
         """
-        # Check if we have cached formatted data
-        if use_cache and self._cache['formatted_data'] is not None:
-            print(f"Using cached formatted data")
-            # Apply time window filter directly to cached data
-            formatted_df = self._cache['formatted_data'].copy()
-            
-            # Apply time window filter directly to the session_date column
-            if reference_date is None:
-                reference_date = formatted_df['session_date'].max()
-            
-            start_date = reference_date - timedelta(days=window_days)
-            time_filtered_df = formatted_df[formatted_df['session_date'] >= start_date]
-            
-            # Get most recent session for each subject in the window
-            time_filtered_df = time_filtered_df.sort_values('session_date', ascending=False)
-            result_df = time_filtered_df.drop_duplicates(subset=['subject_id'], keep='first')
-            
-            print(f"Applied {window_days} day window filter: {len(result_df)} subjects")
-            return result_df
-            
-        # If not cached, we need to format the data
-        from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
-        
-        # Get raw data
-        df = self.get_session_data(use_cache=use_cache)
-        
-        # Create formatter
-        formatter = AppDataFrame()
-        
-        # Format data
-        formatted_df = formatter.format_dataframe(df, reference_date=reference_date)
-        
-        # Cache the full formatted data
-        self._cache['formatted_data'] = formatted_df
+        # Get all session data from the unified pipeline
+        if use_cache and self._cache['session_level_data'] is not None:
+            session_data = self._cache['session_level_data']
+        else:
+            # Process all data to get session-level data
+            raw_data = self.get_session_data(use_cache=True)
+            session_data = self.process_data_pipeline(raw_data, use_cache=True)
         
         # Apply time window filter
         if reference_date is None:
-            reference_date = formatted_df['session_date'].max()
+            reference_date = session_data['session_date'].max()
         
         start_date = reference_date - timedelta(days=window_days)
-        time_filtered_df = formatted_df[formatted_df['session_date'] >= start_date]
+        time_filtered_df = session_data[session_data['session_date'] >= start_date]
         
         # Get most recent session for each subject in the window
         time_filtered_df = time_filtered_df.sort_values('session_date', ascending=False)
@@ -451,27 +318,6 @@ class AppUtils:
             print(f"Error getting sessions for subject {subject_id}: {str(e)}")
             return None
     
-    def analyze_session_level_percentiles(self, 
-                                         subject_ids: Optional[List[str]] = None, 
-                                         feature_weights: Optional[Dict[str, float]] = None,
-                                         use_cache: bool = True) -> pd.DataFrame:
-        """
-        DEPRECATED: Use process_data_pipeline() instead
-        
-        This method is kept for backward compatibility but delegates to the unified pipeline.
-        """
-        print("DEPRECATED: analyze_session_level_percentiles() - Use process_data_pipeline() instead")
-        
-        # Get raw data and process through unified pipeline
-        raw_data = self.get_session_data(use_cache=True)
-        
-        # Filter for specific subjects if requested
-        if subject_ids is not None:
-            raw_data = raw_data[raw_data['subject_id'].isin(subject_ids)]
-        
-        # Use the unified pipeline
-        return self.process_data_pipeline(raw_data, use_cache=use_cache)
-
     def process_data_pipeline(self, df: pd.DataFrame, use_cache: bool = True) -> pd.DataFrame:
         """
         NEW UNIFIED PIPELINE: Process raw session data through the complete session-level pipeline

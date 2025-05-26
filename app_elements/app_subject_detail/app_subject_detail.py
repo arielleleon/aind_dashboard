@@ -21,8 +21,8 @@ class AppSubjectDetail:
             # Store component to track selected session card
             dcc.Store(id="session-card-selected", data={"selected_card_id": None}),
             
-            # Interval component to check for scroll updates (100ms interval)
-            dcc.Interval(id="scroll-tracker-interval", interval=100, n_intervals=0),
+            # Interval component to check for scroll updates (300ms interval - reduced frequency)
+            dcc.Interval(id="scroll-tracker-interval", interval=300, n_intervals=0),
             
             # Footer content (initially hidden)
             html.Div([

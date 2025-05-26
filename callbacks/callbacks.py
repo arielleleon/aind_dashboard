@@ -597,10 +597,22 @@ def update_session_list(subject_id, load_more_clicks, session_list_state):
 clientside_callback(
     """
     function(dummy, n_intervals) {
+        // Only run if the subject detail page is visible
+        const subjectDetailPage = document.getElementById('subject-detail-page');
+        if (!subjectDetailPage || subjectDetailPage.style.display === 'none') {
+            return {visible_session: null};
+        }
+        
         const scrollContainer = document.getElementById('session-list-scroll-container');
         if (!scrollContainer) return {visible_session: null};
         
-        // Function to throttle scroll events
+        // Check if the scroll container is actually visible in the viewport
+        const containerRect = scrollContainer.getBoundingClientRect();
+        if (containerRect.height === 0 || containerRect.width === 0) {
+            return {visible_session: null};
+        }
+        
+        // Function to throttle scroll events - increased throttle time
         function throttle(func, limit) {
             let inThrottle;
             return function() {
@@ -623,7 +635,6 @@ clientside_callback(
             const containerRect = scrollContainer.getBoundingClientRect();
             const containerTop = containerRect.top;
             const containerBottom = containerRect.bottom;
-            const containerHeight = containerBottom - containerTop;
             
             let maxVisibleArea = 0;
             let mostVisibleCard = null;
@@ -674,19 +685,31 @@ clientside_callback(
             window.sessionScrollTracking = {
                 lastSession: null,
                 throttledUpdate: throttle(function() {
-                    window.sessionScrollTracking.lastSession = getMostVisibleSession();
-                    // Allow the callback to update on next interval
-                    window.sessionScrollTracking.needsUpdate = true;
-                }, 50), // Throttle to 50ms
-                needsUpdate: true
+                    // Only update if the subject detail page is still visible
+                    const subjectDetailPage = document.getElementById('subject-detail-page');
+                    if (subjectDetailPage && subjectDetailPage.style.display !== 'none') {
+                        window.sessionScrollTracking.lastSession = getMostVisibleSession();
+                        window.sessionScrollTracking.needsUpdate = true;
+                    }
+                }, 150), // Increased throttle from 50ms to 150ms
+                needsUpdate: true,
+                listenerAttached: false
             };
-            
-            // Add scroll event listener with throttling
-            scrollContainer.addEventListener('scroll', window.sessionScrollTracking.throttledUpdate);
+        }
+        
+        // Only attach scroll listener if not already attached and container exists
+        if (!window.sessionScrollTracking.listenerAttached && scrollContainer) {
+            // Use passive event listener to improve performance and prevent interference
+            scrollContainer.addEventListener('scroll', window.sessionScrollTracking.throttledUpdate, { passive: true });
+            window.sessionScrollTracking.listenerAttached = true;
+        }
+        
+        // Reduce update frequency - only check every 3rd interval (300ms instead of 100ms)
+        if (n_intervals % 3 !== 0) {
+            return {visible_session: window.sessionScrollTracking.lastSession};
         }
         
         // Only get the current visible session and trigger updates when needed
-        // for better performance (avoid unnecessary processing on each interval)
         if (window.sessionScrollTracking.needsUpdate) {
             const currentVisibleSession = getMostVisibleSession();
             window.sessionScrollTracking.lastSession = currentVisibleSession;
@@ -756,6 +779,29 @@ clientside_callback(
     Output({"type": "session-card", "index": ALL}, "className"),
     [Input({"type": "session-card", "index": ALL}, "n_clicks"),
      Input("session-scroll-state", "data")]
+)
+
+# Cleanup scroll tracking when subject detail page is hidden
+clientside_callback(
+    """
+    function(footer_style, page_style) {
+        // Clean up scroll tracking when subject detail page is hidden
+        if (page_style && page_style.display === 'none' && window.sessionScrollTracking) {
+            // Remove the scroll event listener to prevent interference with page scrolling
+            const scrollContainer = document.getElementById('session-list-scroll-container');
+            if (scrollContainer && window.sessionScrollTracking.listenerAttached) {
+                scrollContainer.removeEventListener('scroll', window.sessionScrollTracking.throttledUpdate);
+                window.sessionScrollTracking.listenerAttached = false;
+                window.sessionScrollTracking.needsUpdate = false;
+                window.sessionScrollTracking.lastSession = null;
+            }
+        }
+        return {};  // Return empty object since we're not updating any outputs
+    }
+    """,
+    Output("session-card-selected", "data"),  # Use existing store as dummy output
+    [Input("subject-detail-footer", "style"),
+     Input("subject-detail-page", "style")]
 )
 
 # Callback to load timeseries data when subject is selected
