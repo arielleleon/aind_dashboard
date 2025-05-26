@@ -753,6 +753,9 @@ class AppUtils:
         """
         print("Creating UI-optimized data structures...")
         
+        # Import pandas for data checking
+        import pandas as pd
+        
         # DEBUG: Check what columns are available in session_data
         print(f"📊 Session data columns ({len(session_data.columns)} total):")
         session_percentile_cols = [col for col in session_data.columns if col.endswith('_session_percentile')]
@@ -883,12 +886,83 @@ class AppUtils:
             
             ui_structures['time_series_data'][subject_id] = time_series
         
-        # 5. Table Display Cache
+        # 5. Table Display Cache WITH THRESHOLD ANALYSIS
         # Pre-compute table display data for fast rendering
         most_recent = session_data.sort_values('session_date').groupby('subject_id').last().reset_index()
         
+        # CRITICAL FIX: Initialize threshold analyzer for UI cache creation
+        print("Computing threshold alerts for UI cache...")
+        
+        # Define threshold configurations
+        threshold_config = {
+            'session': {
+                'condition': 'gt',
+                'value': 40  # Total sessions threshold
+            },
+            'water_day_total': {
+                'condition': 'gt',
+                'value': 3.5  # Water day total threshold (ml)
+            }
+        }
+        
+        # Stage-specific session thresholds
+        stage_thresholds = {
+            'STAGE_1': 5,
+            'STAGE_2': 5,
+            'STAGE_3': 6,
+            'STAGE_4': 10,
+            'STAGE_FINAL': 10,
+            'GRADUATED': 20
+        }
+        
+        # Combine general thresholds with stage-specific thresholds
+        combined_config = threshold_config.copy()
+        for stage, threshold in stage_thresholds.items():
+            combined_config[f"stage_{stage}_sessions"] = {
+                'condition': 'gt',
+                'value': threshold
+            }
+        
+        # Initialize threshold analyzer
+        from app_utils.app_analysis.threshold_analyzer import ThresholdAnalyzer
+        threshold_analyzer = ThresholdAnalyzer(combined_config)
+        
         table_data = []
         for _, row in most_recent.iterrows():
+            subject_id = row['subject_id']
+            
+            # Calculate threshold alerts for this subject
+            total_sessions_alert = 'N'
+            stage_sessions_alert = 'N'
+            water_day_total_alert = 'N'
+            overall_threshold_alert = 'N'
+            
+            # Get all sessions for this subject (needed for threshold calculations)
+            subject_sessions = session_data[session_data['subject_id'] == subject_id]
+            if not subject_sessions.empty:
+                
+                # 1. Check total sessions alert
+                total_sessions_result = threshold_analyzer.check_total_sessions(subject_sessions)
+                total_sessions_alert = total_sessions_result['display_format']
+                if total_sessions_result['alert'] == 'T':
+                    overall_threshold_alert = 'T'
+                
+                # 2. Check stage-specific sessions alert
+                current_stage = row.get('current_stage_actual')
+                if current_stage and current_stage in stage_thresholds:
+                    stage_sessions_result = threshold_analyzer.check_stage_sessions(subject_sessions, current_stage)
+                    stage_sessions_alert = stage_sessions_result['display_format']
+                    if stage_sessions_result['alert'] == 'T':
+                        overall_threshold_alert = 'T'
+                
+                # 3. Check water day total alert
+                water_day_total = row.get('water_day_total')
+                if not pd.isna(water_day_total):
+                    water_alert_result = threshold_analyzer.check_water_day_total(water_day_total)
+                    water_day_total_alert = water_alert_result['display_format']
+                    if water_alert_result['alert'] == 'T':
+                        overall_threshold_alert = 'T'
+            
             display_row = {
                 'subject_id': row['subject_id'],
                 'session_date': row['session_date'],
@@ -916,11 +990,31 @@ class AppUtils:
                 'foraging_performance': row.get('foraging_performance'),
                 'abs(bias_naive)': row.get('abs(bias_naive)'),
                 'finished_rate': row.get('finished_rate'),
-                # Initialize alert columns with default values
-                'threshold_alert': 'N',
-                'total_sessions_alert': 'N',
-                'stage_sessions_alert': 'N',
-                'water_day_total_alert': 'N',
+                # Add additional raw data columns requested by user
+                'water_in_session_foraging': row.get('water_in_session_foraging'),
+                'water_in_session_manual': row.get('water_in_session_manual'),
+                'water_in_session_total': row.get('water_in_session_total'),
+                'water_after_session': row.get('water_after_session'),
+                'target_weight_ratio': row.get('target_weight_ratio'),
+                'weight_after_ratio': row.get('weight_after_ratio'),
+                'reward_volume_left_mean': row.get('reward_volume_left_mean'),
+                'reward_volume_right_mean': row.get('reward_volume_right_mean'),
+                'reaction_time_median': row.get('reaction_time_median'),
+                'reaction_time_mean': row.get('reaction_time_mean'),
+                'early_lick_rate': row.get('early_lick_rate'),
+                'invalid_lick_ratio': row.get('invalid_lick_ratio'),
+                'double_dipping_rate_finished_trials': row.get('double_dipping_rate_finished_trials'),
+                'double_dipping_rate_finished_reward_trials': row.get('double_dipping_rate_finished_reward_trials'),
+                'double_dipping_rate_finished_noreward_trials': row.get('double_dipping_rate_finished_noreward_trials'),
+                'lick_consistency_mean_finished_trials': row.get('lick_consistency_mean_finished_trials'),
+                'lick_consistency_mean_finished_reward_trials': row.get('lick_consistency_mean_finished_reward_trials'),
+                'lick_consistency_mean_finished_noreward_trials': row.get('lick_consistency_mean_finished_noreward_trials'),
+                'avg_trial_length_in_seconds': row.get('avg_trial_length_in_seconds'),
+                # FIXED: Set computed threshold alert values instead of defaults
+                'threshold_alert': overall_threshold_alert,
+                'total_sessions_alert': total_sessions_alert,
+                'stage_sessions_alert': stage_sessions_alert,
+                'water_day_total_alert': water_day_total_alert,
                 'ns_reason': ''
             }
             
@@ -946,6 +1040,10 @@ class AppUtils:
         print(f"  - Strata lookups: {len(ui_structures['strata_lookup'])} strata")
         print(f"  - Time series data: {len(ui_structures['time_series_data'])} subjects")
         print(f"  - Table display cache: {len(ui_structures['table_display_cache'])} rows")
+        
+        # Count threshold alerts in UI cache
+        threshold_count = sum(1 for row in table_data if row['threshold_alert'] == 'T')
+        print(f"  - Threshold alerts computed: {threshold_count} subjects with alerts")
         
         return ui_structures
     
@@ -1331,3 +1429,69 @@ class AppUtils:
         print(f"  Optimizations: {', '.join(optimization_results['optimizations_applied'])}")
         
         return optimization_results
+
+    def clear_ui_cache(self):
+        """
+        Clear UI-optimized caches to force regeneration with updated column structure
+        Call this after modifying the columns in create_ui_optimized_structures
+        """
+        print("Clearing UI caches to force regeneration with new columns...")
+        self._cache['ui_structures'] = None
+        self._cache['optimized_storage'] = None
+        print("✅ UI caches cleared - new columns will be included on next data access")
+        
+    def force_reload_with_new_columns(self):
+        """
+        Force complete reload of data with new column structure
+        This clears all caches and reprocesses data to include new columns
+        """
+        print("🔄 Force reloading data with new column structure...")
+        
+        # Clear all caches
+        self._invalidate_derived_caches()
+        
+        # Reload raw data
+        raw_data = self.reload_data()
+        print(f"Reloaded {len(raw_data)} sessions")
+        
+        # Reprocess pipeline with new column structure  
+        session_data = self.process_data_pipeline(raw_data, use_cache=False)
+        print(f"Reprocessed {len(session_data)} sessions with new columns")
+        
+        # Get sample of new table data to verify columns
+        table_data = self.get_table_display_data(use_cache=False)
+        if table_data:
+            print(f"✅ Table display cache regenerated with {len(table_data[0])} columns")
+        
+        return session_data
+
+    def force_regenerate_ui_cache_with_threshold_alerts(self):
+        """
+        Force regeneration of UI cache with threshold alerts included
+        This clears the UI cache and ensures threshold alerts are computed
+        """
+        print("🔄 Force regenerating UI cache with threshold alerts...")
+        
+        # Clear UI-related caches
+        self._cache['ui_structures'] = None
+        self._cache['optimized_storage'] = None
+        
+        # Get session-level data (this should be available)
+        if self._cache['session_level_data'] is not None:
+            session_data = self._cache['session_level_data']
+        else:
+            # Process data if needed
+            raw_data = self.get_session_data(use_cache=True)
+            session_data = self.process_data_pipeline(raw_data, use_cache=True)
+        
+        # Force create new UI structures with threshold analysis
+        ui_structures = self.create_ui_optimized_structures(session_data)
+        self._cache['ui_structures'] = ui_structures
+        
+        # Verify threshold alerts were computed
+        table_data = ui_structures.get('table_display_cache', [])
+        threshold_count = sum(1 for row in table_data if row.get('threshold_alert') == 'T')
+        
+        print(f"✅ UI cache regenerated with {threshold_count} threshold alerts computed")
+        
+        return threshold_count

@@ -209,45 +209,50 @@ class AppDataFrame:
                 default_val = 'NS' if col in ['percentile_category', 'combined_alert'] else ('N' if col.endswith('_alert') else '')
                 output_df.loc[:, col] = default_val
         
-        # THRESHOLD ALERTS: Initialize threshold analyzer and calculate alerts
-        print("Calculating threshold alerts...")
+        # THRESHOLD ALERTS: Check if threshold alerts are already computed in UI cache
+        threshold_alerts_precomputed = 'threshold_alert' in output_df.columns and output_df['threshold_alert'].notna().any()
         
-        # Initialize threshold analyzer with configuration
-        # Combine general thresholds with stage-specific thresholds
-        combined_config = self.threshold_config.copy()
-        for stage, threshold in self.stage_thresholds.items():
-            combined_config[f"stage_{stage}_sessions"] = {
-                'condition': 'gt',
-                'value': threshold
-            }
-        
-        threshold_analyzer = ThresholdAnalyzer(combined_config)
-        
-        # Calculate threshold alerts for each subject
-        for idx, row in output_df.iterrows():
-            subject_id = row['subject_id']
+        if threshold_alerts_precomputed:
+            print("✅ Using pre-computed threshold alerts from UI cache")
+        else:
+            print("🔄 Computing threshold alerts (UI cache not available)")
             
-            # Get all sessions for this subject (needed for session count calculations)
-            subject_sessions = app_utils.get_subject_sessions(subject_id)
-            if subject_sessions is not None and not subject_sessions.empty:
+            # Initialize threshold analyzer with configuration
+            # Combine general thresholds with stage-specific thresholds
+            combined_config = self.threshold_config.copy()
+            for stage, threshold in self.stage_thresholds.items():
+                combined_config[f"stage_{stage}_sessions"] = {
+                    'condition': 'gt',
+                    'value': threshold
+                }
+            
+            threshold_analyzer = ThresholdAnalyzer(combined_config)
+            
+            # Calculate threshold alerts for each subject
+            for idx, row in output_df.iterrows():
+                subject_id = row['subject_id']
                 
-                # 1. Check total sessions alert
-                total_sessions_alert = threshold_analyzer.check_total_sessions(subject_sessions)
-                output_df.loc[idx, 'total_sessions_alert'] = total_sessions_alert['display_format']
-                
-                # 2. Check stage-specific sessions alert
-                current_stage = row.get('current_stage_actual')
-                if current_stage and current_stage in self.stage_thresholds:
-                    stage_sessions_alert = threshold_analyzer.check_stage_sessions(subject_sessions, current_stage)
-                    output_df.loc[idx, 'stage_sessions_alert'] = stage_sessions_alert['display_format']
-                
-                # 3. Check water day total alert
-                water_day_total = row.get('water_day_total')
-                if not pd.isna(water_day_total):
-                    water_alert = threshold_analyzer.check_water_day_total(water_day_total)
-                    output_df.loc[idx, 'water_day_total_alert'] = water_alert['display_format']
-        
-        print(f"Threshold alerts calculated for {len(output_df)} subjects")
+                # Get all sessions for this subject (needed for session count calculations)
+                subject_sessions = app_utils.get_subject_sessions(subject_id)
+                if subject_sessions is not None and not subject_sessions.empty:
+                    
+                    # 1. Check total sessions alert
+                    total_sessions_alert = threshold_analyzer.check_total_sessions(subject_sessions)
+                    output_df.loc[idx, 'total_sessions_alert'] = total_sessions_alert['display_format']
+                    
+                    # 2. Check stage-specific sessions alert
+                    current_stage = row.get('current_stage_actual')
+                    if current_stage and current_stage in self.stage_thresholds:
+                        stage_sessions_alert = threshold_analyzer.check_stage_sessions(subject_sessions, current_stage)
+                        output_df.loc[idx, 'stage_sessions_alert'] = stage_sessions_alert['display_format']
+                    
+                    # 3. Check water day total alert
+                    water_day_total = row.get('water_day_total')
+                    if not pd.isna(water_day_total):
+                        water_alert = threshold_analyzer.check_water_day_total(water_day_total)
+                        output_df.loc[idx, 'water_day_total_alert'] = water_alert['display_format']
+            
+            print(f"Threshold alerts calculated for {len(output_df)} subjects")
         
         # Apply abbreviations to strata names if not already present
         if 'strata_abbr' not in output_df.columns or output_df['strata_abbr'].isna().all():
@@ -268,11 +273,44 @@ class AppDataFrame:
             if alert_category == 'NS' and 'ns_reason' in alerts:
                 output_df.loc[mask, 'ns_reason'] = alerts['ns_reason']
             
-            # Apply threshold alerts
+            # FIXED: Apply threshold alerts from unified alerts structure
+            # The unified alerts structure has threshold data under 'threshold' key
             threshold_data = alerts.get('threshold', {})
-            if threshold_data.get('threshold_alert', 'N') == 'T':
-                output_df.loc[mask, 'threshold_alert'] = 'T'
-                
+            
+            # Check if there's an overall threshold alert 
+            overall_threshold_alert = threshold_data.get('threshold_alert', 'N')
+            
+            # If we don't have pre-computed threshold alerts, apply from unified alerts
+            if not threshold_alerts_precomputed:
+                if overall_threshold_alert == 'T':
+                    output_df.loc[mask, 'threshold_alert'] = 'T'
+                    
+                    # Apply specific threshold alerts if available
+                    specific_alerts = threshold_data.get('specific_alerts', {})
+                    
+                    # Apply total sessions alert
+                    total_alert = specific_alerts.get('total_sessions', {})
+                    if total_alert.get('alert') == 'T':
+                        value = total_alert.get('value', '')
+                        output_df.loc[mask, 'total_sessions_alert'] = f"T | {value}"
+                    
+                    # Apply stage sessions alert
+                    stage_alert = specific_alerts.get('stage_sessions', {})
+                    if stage_alert.get('alert') == 'T':
+                        value = stage_alert.get('value', '')
+                        stage = stage_alert.get('stage', '')
+                        output_df.loc[mask, 'stage_sessions_alert'] = f"T | {stage} | {value}"
+                    
+                    # Apply water day total alert
+                    water_alert = specific_alerts.get('water_day_total', {})
+                    if water_alert.get('alert') == 'T':
+                        value = water_alert.get('value', '')
+                        output_df.loc[mask, 'water_day_total_alert'] = f"T | {value:.1f}"
+            
+            # Combine percentile and threshold alerts for display
+            current_threshold_alert = output_df.loc[mask, 'threshold_alert'].iloc[0] if mask.any() else 'N'
+            
+            if current_threshold_alert == 'T':
                 # Combine alerts
                 if alert_category != 'NS':
                     output_df.loc[mask, 'combined_alert'] = f"{alert_category}, T"
@@ -282,6 +320,18 @@ class AppDataFrame:
                 output_df.loc[mask, 'combined_alert'] = alert_category
         
         print(f"Applied alerts to {len(output_df)} subjects")
+        
+        # DEBUG: Check final threshold alert counts
+        threshold_alert_count = (output_df['threshold_alert'] == 'T').sum()
+        total_sessions_alert_count = output_df['total_sessions_alert'].str.contains('T \|', na=False).sum()
+        stage_sessions_alert_count = output_df['stage_sessions_alert'].str.contains('T \|', na=False).sum()
+        water_day_alert_count = output_df['water_day_total_alert'].str.contains('T \|', na=False).sum()
+        
+        print(f"Final threshold alert counts:")
+        print(f"  - Overall threshold alerts: {threshold_alert_count}")
+        print(f"  - Total sessions alerts: {total_sessions_alert_count}")
+        print(f"  - Stage sessions alerts: {stage_sessions_alert_count}")
+        print(f"  - Water day total alerts: {water_day_alert_count}")
         
         # Return the formatted dataframe
         return output_df
@@ -334,6 +384,19 @@ class AppDataFrame:
             'target_weight_ratio': 'Target Weight\nRatio',
             'weight_after': 'Weight After',
             'weight_after_ratio': 'Weight After\nRatio',
+            'reward_volume_left_mean': 'Reward Volume\nLeft (Mean)',
+            'reward_volume_right_mean': 'Reward Volume\nRight (Mean)',
+            'reaction_time_median': 'Reaction Time\n(Median)',
+            'reaction_time_mean': 'Reaction Time\n(Mean)',
+            'early_lick_rate': 'Early Lick\nRate',
+            'invalid_lick_ratio': 'Invalid Lick\nRatio',
+            'double_dipping_rate_finished_trials': 'Double Dipping Rate\n(Finished Trials)',
+            'double_dipping_rate_finished_reward_trials': 'Double Dipping Rate\n(Reward Trials)',
+            'double_dipping_rate_finished_noreward_trials': 'Double Dipping Rate\n(No Reward Trials)',
+            'lick_consistency_mean_finished_trials': 'Lick Consistency\n(Finished Trials)',
+            'lick_consistency_mean_finished_reward_trials': 'Lick Consistency\n(Reward Trials)',
+            'lick_consistency_mean_finished_noreward_trials': 'Lick Consistency\n(No Reward Trials)',
+            'avg_trial_length_in_seconds': 'Avg Trial Length\n(Seconds)',
             'total_trials_with_autowater': 'Total Trials\n(Autowater)',
             'finished_trials_with_autowater': 'Finished Trials\n(Autowater)',
             'finished_rate_with_autowater': 'Finish Rate\n(Autowater)',
