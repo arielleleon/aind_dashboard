@@ -217,75 +217,100 @@
     color: #27ae60;
 }
 
-/* Filter styling improvements */
+/* DataTable Alert Row Styling Enhancements */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table tbody tr {
+    transition: all 0.2s ease-in-out;
+}
+
+/* Ensure alert row highlighting is visible on hover */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table tbody tr:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Ensure text remains readable in colored cells */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table tbody tr td {
+    text-shadow: none;
+}
+
+/* Make sure alert column icons/text are clearly visible */
+.dash-table-container [data-dash-column="combined_alert"],
+.dash-table-container [data-dash-column="percentile_category"] {
+    font-weight: 600;
+    text-align: center;
+}
+
+/* Filter styling improvements - Updated for unified color scheme */
 .filter-dropdown .Select--multi .Select-value {
-    background-color: #e3f2fd !important;
-    border: 1px solid #2196f3 !important;
-    color: #1976d2 !important;
+    background-color: #e8f0ff !important;  /* Updated to match #4a6dff theme */
+    border: 1px solid #4a6dff !important;  /* Updated to match unified theme */
+    color: #3a5dff !important;  /* Updated to match unified theme */
     border-radius: 3px !important;
-    margin: 2px !important;
-    padding: 2px 5px !important;
-    font-size: 12px !important;
-    line-height: 1.2 !important;
-    max-width: 100px !important;
+    margin: 1px !important;  /* Reduced from 2px */
+    padding: 1px 4px !important;  /* Reduced from 2px 5px */
+    font-size: 11px !important;  /* Reduced from 12px */
+    line-height: 1.1 !important;  /* Reduced from 1.2 */
+    max-width: 90px !important;  /* Reduced from 100px */
     overflow: hidden !important;
     text-overflow: ellipsis !important;
 }
 
 .filter-dropdown .Select--multi .Select-value-icon {
-    border-color: #2196f3 !important;
-    border-right-color: #1976d2 !important;
+    border-color: #4a6dff !important;  /* Updated to match unified theme */
+    border-right-color: #3a5dff !important;  /* Updated to match unified theme */
 }
 
 .filter-dropdown .Select--multi .Select-value-icon:hover {
-    background-color: #1976d2 !important;
+    background-color: #3a5dff !important;  /* Updated to match unified theme */
     color: white !important;
 }
 
 .filter-dropdown-sm .Select--multi .Select-value {
-    background-color: #e3f2fd !important;
-    border: 1px solid #2196f3 !important;
-    color: #1976d2 !important;
+    background-color: #e8f0ff !important;  /* Updated to match #4a6dff theme */
+    border: 1px solid #4a6dff !important;  /* Updated to match unified theme */
+    color: #3a5dff !important;  /* Updated to match unified theme */
     border-radius: 2px !important;
     margin: 1px !important;
     padding: 1px 3px !important;
-    font-size: 10px !important;
+    font-size: 9px !important;  /* Reduced from 10px */
     line-height: 1 !important;
-    max-width: 80px !important;
+    max-width: 70px !important;  /* Reduced from 80px */
     overflow: hidden !important;
     text-overflow: ellipsis !important;
 }
 
 .filter-dropdown-sm .Select--multi .Select-value-icon {
-    border-color: #2196f3 !important;
-    border-right-color: #1976d2 !important;
+    border-color: #4a6dff !important;  /* Updated to match unified theme */
+    border-right-color: #3a5dff !important;  /* Updated to match unified theme */
 }
 
 .filter-badge {
-    background-color: #007bff !important;
+    background-color: #4a6dff !important;  /* Updated to match unified theme */
     color: white !important;
     border: none !important;
-    font-size: 12px !important;
-    padding: 4px 8px !important;
+    font-size: 11px !important;  /* Reduced from 12px */
+    padding: 3px 6px !important;  /* Reduced from 4px 8px */
     border-radius: 4px !important;
-    margin-right: 4px !important;
-    margin-bottom: 4px !important;
+    margin-right: 3px !important;  /* Reduced from 4px */
+    margin-bottom: 3px !important;  /* Reduced from 4px */
     cursor: pointer !important;
     transition: all 0.2s ease !important;
 }
 
 .filter-badge:hover {
-    background-color: #0056b3 !important;
+    background-color: #3a5dff !important;  /* Updated to match unified theme */
     transform: translateY(-1px) !important;
 }
 
 .filter-dropdown .Select-option {
-    font-size: 13px !important;
+    font-size: 12px !important;  /* Reduced from 13px */
+    padding: 3px 8px !important;  /* More compact padding */
 }
 
 .filter-dropdown-sm .Select-option {
-    font-size: 11px !important;
-    padding: 4px 8px !important;
+    font-size: 10px !important;  /* Reduced from 11px */
+    padding: 3px 6px !important;  /* Reduced from 4px 8px */
 }
 
 /* Dual Timeseries Layout Styling */
@@ -387,5 +412,134 @@
     
     .percentile-timeseries-plot-container {
         height: 250px;
+    }
+}
+
+/* NEW: Subject Detail Layout Styles */
+
+/* Charts summary row - contains heatmap spanning full width */
+.charts-summary-row {
+    background-color: white;
+    padding: 15px;
+    border-bottom: 1px solid #f0f0f0;
+    margin-bottom: 0;
+}
+
+/* Heatmap column - now full width */
+.heatmap-full-width-column {
+    padding: 0 15px;
+}
+
+/* Compact subject info styles */
+.compact-info-section {
+    margin-bottom: 15px;
+    padding: 12px 0;  /* Increased padding */
+    display: flex;    /* Make the container a flex container */
+    flex-wrap: wrap;  /* Allow wrapping on smaller screens */
+    gap: 12px;        /* Add consistent gap between elements */
+}
+
+.compact-subject-info {
+    font-size: 14px;  /* Increased from 10px to be more readable */
+    color: #2c3e50;   /* Changed to match other titles (#2c3e50 instead of #333333) */
+    font-weight: 600; /* Increased from 500 to 600 to match other titles */
+    line-height: 1.3; /* Slightly increased for better readability */
+    margin-bottom: 0; /* Remove bottom margin since we're using gap */
+    background-color: #f8f9fa;
+    padding: 12px 16px; /* Increased padding for better spacing */
+    border-radius: 6px; /* Slightly larger border radius */
+    border-left: 4px solid #007bff;
+    display: flex;      /* Use flex for better alignment */
+    align-items: center; /* Center content vertically */
+    margin-right: 0;   /* Remove right margin since we're using gap */
+    min-height: 40px;   /* Added minimum height for consistency */
+    flex: 0 0 auto;    /* Don't grow or shrink, maintain intrinsic size */
+}
+
+.compact-subject-info:last-child {
+    margin-right: 0;
+}
+
+/* Heatmap section styles */
+.heatmap-section {
+    background-color: white;
+    border-radius: 6px;
+    padding: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.heatmap-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 10px;
+}
+
+.heatmap-container {
+    background-color: #ffffff;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+/* Subject detail main layout */
+.subject-detail-main-row {
+    margin-top: 20px;
+}
+
+.session-list-column {
+    padding-right: 15px;
+}
+
+.timeseries-column {
+    padding-left: 15px;
+}
+
+/* Timeseries section titles */
+.timeseries-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #2c3e50;
+    border-bottom: 2px solid #e9ecef;
+    padding-bottom: 5px;
+}
+
+/* Subject detail page container */
+.subject-detail-page-container {
+    padding: 20px;
+    background-color: #f8f9fa;
+    min-height: calc(100vh - 50px);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .charts-summary-row {
+        padding: 10px;
+    }
+    
+    .heatmap-full-width-column {
+        padding: 0 10px;
+    }
+    
+    .compact-info-section {
+        flex-direction: column; /* Stack vertically on mobile */
+        gap: 8px;              /* Smaller gap on mobile */
+    }
+    
+    .compact-subject-info {
+        font-size: 13px;       /* Slightly smaller font on mobile */
+        padding: 10px 14px;    /* Slightly smaller padding on mobile */
+        min-height: 36px;      /* Slightly smaller height on mobile */
+        width: 100%;           /* Full width on mobile */
+        max-width: none;       /* Remove max width constraint */
+    }
+    
+    .subject-detail-main-row {
+        margin-top: 15px;
+    }
+    
+    .session-list-column,
+    .timeseries-column {
+        padding: 0 10px;
+        margin-bottom: 20px;
     }
 }

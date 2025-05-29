@@ -4,10 +4,12 @@ from typing import Dict, List, Tuple, Optional, Union, Any
 import matplotlib.pyplot as plt
 import seaborn as sns
 from .overall_percentile_calculator import OverallPercentileCalculator
+from .statistical_utils import StatisticalUtils
 
 class QuantileAnalyzer:
     """
     Analyzer for calculating and retrieving quantile-based metrics for subject performance
+    ENHANCED IN PHASE 2: Now supports weighted percentile ranking for robust outlier handling
     """
     
     def __init__(self, stratified_data: Dict[str, pd.DataFrame], historical_data: Optional[pd.DataFrame] = None):
@@ -25,12 +27,15 @@ class QuantileAnalyzer:
         self.percentile_data = {}
         self.historical_percentile_data = None
         self.percentile_calculator = OverallPercentileCalculator()
+        self.statistical_utils = StatisticalUtils()
         self.calculate_percentiles()
         
     def calculate_percentiles(self):
         """
         Calculate percentile ranks for each subject within each stratified group
         using combined current and historical data for more robust distributions
+        
+        ENHANCED IN PHASE 2: Now supports weighted percentile ranking when outlier weights are available
         """
         # Calculate percentiles for strata (now contains both current and historical data)
         for strata, df in self.stratified_data.items():
@@ -48,11 +53,43 @@ class QuantileAnalyzer:
             # Create a copy to store percentiles
             percentile_df = df.copy()
             
+            # Check if we have outlier weights for weighted percentile calculation
+            has_outlier_weights = 'outlier_weight' in df.columns
+            
+            if has_outlier_weights:
+                print(f"  Using weighted percentile ranking (outlier weights detected)")
+                outlier_count = (df['outlier_weight'] < 1.0).sum()
+                print(f"    Found {outlier_count} sessions with outlier weights")
+            
             # Calculate percentile for each feature - ranking all subjects together
             for feature in feature_cols:
-                percentile_df[f"{feature.replace('_processed', '_percentile')}"] = (
-                    df[feature].rank(pct=True) * 100
-                )
+                feature_values = df[feature].values
+                
+                if has_outlier_weights:
+                    # PHASE 2: Use weighted percentile ranking
+                    outlier_weights = df['outlier_weight'].values
+                    
+                    # Calculate weighted percentiles for each subject
+                    percentiles = []
+                    for i, target_value in enumerate(feature_values):
+                        if pd.isna(target_value):
+                            percentiles.append(np.nan)
+                        else:
+                            # Use weighted percentile ranking
+                            percentile = self.statistical_utils.calculate_weighted_percentile_rank(
+                                reference_values=feature_values,
+                                reference_weights=outlier_weights,
+                                target_value=target_value
+                            )
+                            percentiles.append(percentile)
+                    
+                    percentile_df[f"{feature.replace('_processed', '_percentile')}"] = percentiles
+                    
+                else:
+                    # Traditional percentile ranking (for backward compatibility)
+                    percentile_df[f"{feature.replace('_processed', '_percentile')}"] = (
+                        df[feature].rank(pct=True) * 100
+                    )
                 
             # Store percentile data with an indicator of data source
             self.percentile_data[strata] = percentile_df
@@ -185,6 +222,9 @@ class QuantileAnalyzer:
     def calculate_session_level_percentiles(self, session_data: pd.DataFrame) -> pd.DataFrame:
         """ 
         Calculate session-level percentile ranks for each subject in each strata
+        Enhanced with 95% confidence interval calculations and weighted percentile ranking
+        
+        ENHANCED IN PHASE 2: Now supports weighted percentile ranking when outlier weights are available
 
         Parameters:
             session_data: pd.DataFrame
@@ -192,7 +232,7 @@ class QuantileAnalyzer:
         
         Returns:
             pd.DataFrame
-                DataFrame with calculated percentiles for each session
+                DataFrame with calculated percentiles and confidence intervals for each session
         """
         # Create a copy to avoid modifying the input
         result_df = session_data.copy()
@@ -206,6 +246,12 @@ class QuantileAnalyzer:
             
         # Track how many session-level percentiles we create
         created_columns = 0
+        created_ci_columns = 0
+        
+        # Check if session data has outlier weights
+        session_has_weights = 'outlier_weight' in session_data.columns
+        if session_has_weights:
+            print("Session data contains outlier weights - will use weighted percentiles where available")
             
         # Process each strata separately to maintain consistent reference distributions
         for strata, strata_df in session_data.groupby('strata'):
@@ -216,6 +262,13 @@ class QuantileAnalyzer:
                 
             # Get reference distribution for this strata
             reference_df = self.percentile_data[strata]
+            
+            # Check if reference distribution has outlier weights
+            reference_has_weights = 'outlier_weight' in reference_df.columns
+            
+            print(f"Processing strata '{strata}' with {len(reference_df)} reference subjects for CI calculation")
+            if reference_has_weights:
+                print(f"  Reference distribution has outlier weights")
             
             # For each rolling average feature, calculate percentile using reference distribution
             for rolling_col in rolling_avg_cols:
@@ -234,6 +287,21 @@ class QuantileAnalyzer:
                 # Get reference values for this feature
                 reference_values = reference_df[processed_col].values
                 
+                # Get reference weights if available
+                if reference_has_weights:
+                    reference_weights = reference_df['outlier_weight'].values
+                else:
+                    reference_weights = np.ones(len(reference_values))  # Equal weights
+                
+                # Remove NaN values from reference for CI calculation
+                valid_mask = ~np.isnan(reference_values)
+                clean_reference_values = reference_values[valid_mask]
+                clean_reference_weights = reference_weights[valid_mask]
+                
+                if len(clean_reference_values) < 3:
+                    print(f"Insufficient reference data for CI calculation in {processed_col}, strata '{strata}'")
+                    continue
+                
                 # For each session in this strata
                 for idx, row in strata_df.iterrows():
                     # Get rolling average value
@@ -242,20 +310,44 @@ class QuantileAnalyzer:
                     if pd.isna(rolling_value):
                         continue
                     
-                    temp_values = pd.Series(list(reference_values) + [rolling_value])
-                    temp_values = temp_values[~temp_values.isna()]  # Remove NaN values
+                    if reference_has_weights:
+                        # PHASE 2: Use weighted percentile ranking
+                        percentile = self.statistical_utils.calculate_weighted_percentile_rank(
+                            reference_values=clean_reference_values,
+                            reference_weights=clean_reference_weights,
+                            target_value=rolling_value
+                        )
+                    else:
+                        # Traditional percentile calculation
+                        temp_values = pd.Series(list(clean_reference_values) + [rolling_value])
+                        temp_values = temp_values[~temp_values.isna()]  # Remove NaN values
+                        
+                        # Calculate percentile using rank method for consistency
+                        ranks = temp_values.rank(pct=True)
+                        percentile = ranks.iloc[-1] * 100  # Get percentile of the last value (our rolling value)
                     
-                    # Calculate percentile using rank method for consistency
-                    ranks = temp_values.rank(pct=True)
-                    percentile = ranks.iloc[-1] * 100  # Get percentile of the last value (our rolling value)
+                    # Calculate confidence interval for this percentile
+                    ci_lower, ci_upper = self.statistical_utils.calculate_percentile_confidence_interval(
+                        clean_reference_values, 
+                        percentile, 
+                        confidence_level=0.95
+                    )
                     
                     # Store in result dataframe with correct column name
                     # Extract clean feature name for percentile column
                     clean_feature_name = feature_name.replace('_processed', '')
                     result_df.loc[idx, f"{clean_feature_name}_session_percentile"] = percentile
+                    result_df.loc[idx, f"{clean_feature_name}_session_percentile_ci_lower"] = ci_lower
+                    result_df.loc[idx, f"{clean_feature_name}_session_percentile_ci_upper"] = ci_upper
+                    
                     created_columns += 1
+                    created_ci_columns += 2  # Lower and upper bounds
         
         print(f"Created {created_columns} session-level percentile columns")
+        print(f"Created {created_ci_columns} confidence interval columns")
+        if session_has_weights or any('outlier_weight' in self.percentile_data[strata].columns for strata in self.percentile_data):
+            print(f"Used weighted percentile ranking where outlier weights were available")
+        
         return result_df
     
     def calculate_session_overall_percentile(self, session_data: pd.DataFrame, 

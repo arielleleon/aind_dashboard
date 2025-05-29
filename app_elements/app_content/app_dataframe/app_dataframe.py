@@ -8,6 +8,7 @@ from app_utils.app_analysis.overall_percentile_calculator import OverallPercenti
 from dash import callback_context, Input, Output, clientside_callback
 from typing import Dict, Any
 from app_utils.app_analysis.threshold_analyzer import ThresholdAnalyzer
+from .column_groups_config import COLUMN_GROUPS, get_columns_for_groups, get_default_visible_columns
 
 class AppDataFrame:
     def __init__(self, app_utils=None):
@@ -111,13 +112,27 @@ class AppDataFrame:
         else:
             return strata_name.replace(" ", "")
 
-    def format_dataframe(self, df: pd.DataFrame, reference_date: datetime = None) -> pd.DataFrame:
+    def get_filtered_columns(self, all_columns, visible_column_ids):
+        """
+        Filter the column definitions to only include visible columns
+        
+        Parameters:
+            all_columns (list): List of all column definitions
+            visible_column_ids (list): List of column IDs that should be visible
+            
+        Returns:
+            list: Filtered list of column definitions
+        """
+        return [col for col in all_columns if col['id'] in visible_column_ids]
+
+    def format_dataframe(self, df: pd.DataFrame, reference_date: datetime = None, visible_columns: list = None) -> pd.DataFrame:
         """
         Format the dataframe for display in the table with unified session-level metrics
         
         1. Use already processed UI-optimized data if available
         2. Apply unified alerts
         3. Add feature-specific percentiles and metadata
+        4. Filter to visible columns if specified
         """
         # Defensive copy of input data
         original_df = df.copy() if df is not None else pd.DataFrame()
@@ -323,9 +338,9 @@ class AppDataFrame:
         
         # DEBUG: Check final threshold alert counts
         threshold_alert_count = (output_df['threshold_alert'] == 'T').sum()
-        total_sessions_alert_count = output_df['total_sessions_alert'].str.contains('T \|', na=False).sum()
-        stage_sessions_alert_count = output_df['stage_sessions_alert'].str.contains('T \|', na=False).sum()
-        water_day_alert_count = output_df['water_day_total_alert'].str.contains('T \|', na=False).sum()
+        total_sessions_alert_count = output_df['total_sessions_alert'].str.contains(r'T \|', na=False).sum()
+        stage_sessions_alert_count = output_df['stage_sessions_alert'].str.contains(r'T \|', na=False).sum()
+        water_day_alert_count = output_df['water_day_total_alert'].str.contains(r'T \|', na=False).sum()
         
         print(f"Final threshold alert counts:")
         print(f"  - Overall threshold alerts: {threshold_alert_count}")
@@ -333,17 +348,88 @@ class AppDataFrame:
         print(f"  - Stage sessions alerts: {stage_sessions_alert_count}")
         print(f"  - Water day total alerts: {water_day_alert_count}")
         
+        # Filter to visible columns if specified
+        if visible_columns is not None:
+            # Only keep columns that exist in the dataframe and are in visible_columns
+            existing_visible_cols = [col for col in visible_columns if col in output_df.columns]
+            output_df = output_df[existing_visible_cols]
+            print(f"Filtered to {len(existing_visible_cols)} visible columns")
+        
         # Return the formatted dataframe
         return output_df
     
+    def _get_percentile_formatting_rules(self):
+        """
+        Generate conditional formatting rules for percentile-based values
+        Uses computed alert categories from UI cache to match tooltip coloring
+        """
+        formatting_rules = []
+        
+        # Define color mapping matching tooltip system
+        alert_colors = {
+            'SB': '#FF6B35',  # Dark orange (Severely Below)
+            'B': '#FFB366',   # Light orange (Below)
+            'G': '#4A90E2',   # Light blue (Good)
+            'SG': '#2E5A87',  # Dark blue (Severely Good)
+            'T': '#795548'    # Brown (Threshold alerts)
+            # 'N' and 'NS' get no coloring (default text color)
+        }
+        
+        # Color rules for overall percentile columns using overall category
+        overall_percentile_columns = ['overall_percentile', 'session_overall_percentile']
+        
+        for col in overall_percentile_columns:
+            for category, color in alert_colors.items():
+                if category in ['N', 'NS']:  # Skip normal and not scored
+                    continue
+                    
+                formatting_rules.append({
+                    'if': {
+                        'filter_query': f'{{overall_percentile_category}} = {category}',
+                        'column_id': col
+                    },
+                    'color': color,
+                    'fontWeight': '600'
+                })
+        
+        # Color rules for feature-specific percentile columns using their category columns
+        for feature in self.features_config.keys():
+            feature_category_col = f'{feature}_category'
+            
+            # Feature percentile columns that should use this category
+            feature_percentile_columns = [
+                f'{feature}_session_percentile',
+                f'{feature}_percentile',  # Legacy strata percentiles
+                f'{feature}_processed_rolling_avg',
+                feature,  # Raw feature value
+                f'{feature}_processed'  # Processed feature value
+            ]
+            
+            for col in feature_percentile_columns:
+                for category, color in alert_colors.items():
+                    if category in ['N', 'NS']:  # Skip normal and not scored
+                        continue
+                        
+                    formatting_rules.append({
+                        'if': {
+                            'filter_query': f'{{{feature_category_col}}} = {category}',
+                            'column_id': col
+                        },
+                        'color': color,
+                        'fontWeight': '600'
+                    })
+        
+        return formatting_rules
+
     def build(self):
         """
-        Build data table component with enhanced feature-specific columns
-        and session-level metrics
+        Build data table component with enhanced feature-specific columns,
+        session-level metrics, and collapsible column groups
         """
-        # Get the data and apply formatting
+        # Get the data and apply formatting (with default visible columns)
         raw_data = self.data_loader.get_data()
-        formatted_data = self.format_dataframe(raw_data)
+        default_visible_columns = get_default_visible_columns()
+        formatted_data = self.format_dataframe(raw_data, visible_columns=default_visible_columns)
         
         # Identify float columns for formatting
         float_columns = [col for col in formatted_data.columns if formatted_data[col].dtype == 'float64']
@@ -421,26 +507,36 @@ class AppDataFrame:
         # Add overall percentile columns (both session and strata versions)
         formatted_column_names['session_overall_percentile'] = 'Session Overall\nPercentile'
         formatted_column_names['overall_percentile'] = 'Strata Overall\nPercentile'
+        
+        # PHASE 2: Add outlier detection column names
+        formatted_column_names['outlier_weight'] = 'Outlier\nWeight'
+        formatted_column_names['is_outlier'] = 'Is\nOutlier'
 
         # Create columns with formatted names and custom numeric formatting
-        columns = []
-        for col in formatted_data.columns:
+        # Create ALL column definitions (for switching between)
+        all_table_data = self.format_dataframe(raw_data)  # Get all columns
+        all_columns = []
+        for col in all_table_data.columns:
             column_def = {
                 "name": formatted_column_names.get(col, col.replace('_', ' ').title()),
                 "id": col
             }
             
             # Add specific formatting for float columns
-            if col in float_columns:
+            if col in all_table_data.columns and all_table_data[col].dtype == 'float64':
                 column_def['type'] = 'numeric'
                 column_def['format'] = {"specifier": ".5~g"}
             
-            columns.append(column_def)
+            all_columns.append(column_def)
+        
+        # Filter to default visible columns
+        visible_columns = self.get_filtered_columns(all_columns, default_visible_columns)
         
         # DEBUG: Show column count and key session-level columns for verification
         session_cols = [col for col in formatted_data.columns if col.endswith('_session_percentile')]
         rolling_cols = [col for col in formatted_data.columns if col.endswith('_rolling_avg')]
-        print(f"\nDataTable build - Total columns: {len(columns)}")
+        print(f"\nDataTable build - Total columns available: {len(all_columns)}")
+        print(f"  Default visible columns: {len(visible_columns)}")
         print(f"  Session percentile columns: {len(session_cols)}")
         print(f"  Rolling average columns: {len(rolling_cols)}")
         if session_cols:
@@ -449,37 +545,343 @@ class AppDataFrame:
             print(f"  Example rolling columns: {rolling_cols[:2]}")
         print("")
 
-        # Build the table with updated styling
+        # Build the complete component with toggle controls and table
         return html.Div([
-
+            # Main data table
             dash_table.DataTable(
                 id='session-table',
                 data=formatted_data.to_dict('records'),
-                columns=columns,
-                page_size=50,  # Increased from 20 to show more rows
+                columns=visible_columns,  # Start with default visible columns
+                page_size=25,  # Will be dynamically updated by callback
                 fixed_rows={'headers': True},
                 style_data_conditional=[
+                    # Cursor styling for subject_id column
                     {
                         'if': {'column_id': 'subject_id'},
                         'cursor': 'pointer'
+                    },
+                    # Row highlighting based on alert categories
+                    # SB (Severely Below) - Dark Orange
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = SB',
+                            'column_id': ['subject_id', 'combined_alert', 'percentile_category', 'overall_percentile', 'session_overall_percentile']
+                        },
+                        'backgroundColor': '#FF6B35',  # Dark orange
+                        'color': '#1a1a1a',  # Dark text for better readability
+                        'fontWeight': '700'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = SB'
+                        },
+                        'backgroundColor': '#FFF2EE'  # Very light orange for other columns
+                    },
+                    # SB subject_id column gets the border
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = SB',
+                            'column_id': 'subject_id'
+                        },
+                        'borderLeft': '4px solid #FF6B35'
+                    },
+                    # B (Below) - Light Orange  
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = B',
+                            'column_id': ['subject_id', 'combined_alert', 'percentile_category', 'overall_percentile', 'session_overall_percentile']
+                        },
+                        'backgroundColor': '#FFB366',  # Light orange
+                        'color': '#2d1810',  # Dark brown text for better readability
+                        'fontWeight': '700'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = B'
+                        },
+                        'backgroundColor': '#FFF7F0'  # Very light orange for other columns
+                    },
+                    # B subject_id column gets the border
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = B',
+                            'column_id': 'subject_id'
+                        },
+                        'borderLeft': '4px solid #FFB366'
+                    },
+                    # G (Good) - Light Blue
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = G',
+                            'column_id': ['subject_id', 'combined_alert', 'percentile_category', 'overall_percentile', 'session_overall_percentile']
+                        },
+                        'backgroundColor': '#4A90E2',  # Light blue
+                        'color': '#1a1a1a',  # Dark text for better readability
+                        'fontWeight': '700'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = G'
+                        },
+                        'backgroundColor': '#F0F6FF'  # Very light blue for other columns
+                    },
+                    # G subject_id column gets the border
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = G',
+                            'column_id': 'subject_id'
+                        },
+                        'borderLeft': '4px solid #4A90E2'
+                    },
+                    # SG (Severely Good) - Dark Blue
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = SG',
+                            'column_id': ['subject_id', 'combined_alert', 'percentile_category', 'overall_percentile', 'session_overall_percentile']
+                        },
+                        'backgroundColor': '#2E5A87',  # Dark blue
+                        'color': '#ffffff',  # White text for dark background
+                        'fontWeight': '700'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = SG'
+                        },
+                        'backgroundColor': '#EBF3FF'  # Very light blue for other columns
+                    },
+                    # SG subject_id column gets the border
+                    {
+                        'if': {
+                            'filter_query': '{percentile_category} = SG',
+                            'column_id': 'subject_id'
+                        },
+                        'borderLeft': '4px solid #2E5A87'
+                    },
+                    # Special styling for combined alerts (percentile + threshold)
+                    # SB with threshold alert
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "SB, T"',
+                            'column_id': ['subject_id', 'combined_alert', 'percentile_category', 'overall_percentile', 'session_overall_percentile']
+                        },
+                        'backgroundColor': '#E55100',  # Darker orange for combined alert
+                        'color': '#ffffff',  # White text for dark background
+                        'fontWeight': '700',
+                        'border': '2px solid #D84315'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "SB, T"'
+                        },
+                        'backgroundColor': '#FFF0E6'  # Light orange background
+                    },
+                    # SB+T subject_id column gets thicker border for combined alerts
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "SB, T"',
+                            'column_id': 'subject_id'
+                        },
+                        'borderLeft': '6px solid #E55100'
+                    },
+                    # B with threshold alert
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "B, T"',
+                            'column_id': ['subject_id', 'combined_alert', 'percentile_category', 'overall_percentile', 'session_overall_percentile']
+                        },
+                        'backgroundColor': '#F57C00',  # Darker orange for combined alert
+                        'color': '#1a1a1a',  # Dark text for better readability
+                        'fontWeight': '700',
+                        'border': '2px solid #EF6C00'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "B, T"'
+                        },
+                        'backgroundColor': '#FFF4E6'  # Light orange background
+                    },
+                    # B+T subject_id column gets thicker border
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "B, T"',
+                            'column_id': 'subject_id'
+                        },
+                        'borderLeft': '6px solid #F57C00'
+                    },
+                    # G with threshold alert
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "G, T"',
+                            'column_id': ['subject_id', 'combined_alert', 'percentile_category', 'overall_percentile', 'session_overall_percentile']
+                        },
+                        'backgroundColor': '#1976D2',  # Darker blue for combined alert
+                        'color': '#ffffff',  # White text for dark background
+                        'fontWeight': '700',
+                        'border': '2px solid #1565C0'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "G, T"'
+                        },
+                        'backgroundColor': '#E8F4FD'  # Light blue background
+                    },
+                    # G+T subject_id column gets thicker border
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "G, T"',
+                            'column_id': 'subject_id'
+                        },
+                        'borderLeft': '6px solid #1976D2'
+                    },
+                    # SG with threshold alert
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "SG, T"',
+                            'column_id': ['subject_id', 'combined_alert', 'percentile_category', 'overall_percentile', 'session_overall_percentile']
+                        },
+                        'backgroundColor': '#0D47A1',  # Darker blue for combined alert
+                        'color': '#ffffff',  # White text for dark background
+                        'fontWeight': '700',
+                        'border': '2px solid #01579B'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "SG, T"'
+                        },
+                        'backgroundColor': '#E3F2FD'  # Light blue background
+                    },
+                    # SG+T subject_id column gets thicker border
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} contains "SG, T"',
+                            'column_id': 'subject_id'
+                        },
+                        'borderLeft': '6px solid #0D47A1'
+                    },
+                    # Threshold-only alerts (when percentile category is NS but has threshold alert)
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} = T',
+                            'column_id': ['subject_id', 'combined_alert', 'threshold_alert', 'total_sessions_alert', 'stage_sessions_alert', 'water_day_total_alert']
+                        },
+                        'backgroundColor': '#795548',  # Brown for threshold-only alerts
+                        'color': '#ffffff',  # White text for dark background
+                        'fontWeight': '700'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} = T'
+                        },
+                        'backgroundColor': '#F3F0EE'  # Light brown background
+                    },
+                    # T-only subject_id column gets the border
+                    {
+                        'if': {
+                            'filter_query': '{combined_alert} = T',
+                            'column_id': 'subject_id'
+                        },
+                        'borderLeft': '4px solid #795548'
+                    },
+                    # Individual threshold alert column styling (match tooltip colors)
+                    # Total sessions alert column - when contains "T |"
+                    {
+                        'if': {
+                            'filter_query': '{total_sessions_alert} contains "T |"',
+                            'column_id': 'total_sessions_alert'
+                        },
+                        'color': '#795548',  # Brown color matching tooltip
+                        'fontWeight': '600'
+                    },
+                    # Stage sessions alert column - when contains "T |"
+                    {
+                        'if': {
+                            'filter_query': '{stage_sessions_alert} contains "T |"',
+                            'column_id': 'stage_sessions_alert'
+                        },
+                        'color': '#795548',  # Brown color matching tooltip
+                        'fontWeight': '600'
+                    },
+                    # Water day total alert column - when contains "T |"
+                    {
+                        'if': {
+                            'filter_query': '{water_day_total_alert} contains "T |"',
+                            'column_id': 'water_day_total_alert'
+                        },
+                        'color': '#795548',  # Brown color matching tooltip
+                        'fontWeight': '600'
+                    },
+                    # Threshold alert column - when equals "T"
+                    {
+                        'if': {
+                            'filter_query': '{threshold_alert} = T',
+                            'column_id': 'threshold_alert'
+                        },
+                        'color': '#795548',  # Brown color matching tooltip
+                        'fontWeight': '600'
+                    },
+                    # Base column formatting for threshold violations
+                    # Session column - when any session threshold alert is triggered
+                    {
+                        'if': {
+                            'filter_query': '{total_sessions_alert} contains "T |" || {stage_sessions_alert} contains "T |"',
+                            'column_id': 'session'
+                        },
+                        'color': '#795548',  # Brown color matching threshold alerts
+                        'fontWeight': '600'
+                    },
+                    # Water day total column - when water threshold alert is triggered
+                    {
+                        'if': {
+                            'filter_query': '{water_day_total_alert} contains "T |"',
+                            'column_id': 'water_day_total'
+                        },
+                        'color': '#795548',  # Brown color matching threshold alerts
+                        'fontWeight': '600'
+                    },
+                    # PHASE 2: Outlier detection styling
+                    # Mark outlier sessions with distinct violet/purple color
+                    {
+                        'if': {
+                            'filter_query': '{is_outlier} = true',
+                            'column_id': ['outlier_weight', 'is_outlier']
+                        },
+                        'backgroundColor': '#9C27B0',  # Purple for outlier indicator columns
+                        'color': '#ffffff',
+                        'fontWeight': '600'
+                    },
+                    # Add subtle background tint for outlier sessions in data columns
+                    {
+                        'if': {
+                            'filter_query': '{is_outlier} = true'
+                        },
+                        'backgroundColor': '#F3E5F5'  # Very light purple background for outlier rows
+                    },
+                    # Add border indicator for outlier sessions
+                    {
+                        'if': {
+                            'filter_query': '{is_outlier} = true',
+                            'column_id': 'subject_id'
+                        },
+                        'borderRight': '3px solid #9C27B0'  # Purple right border on subject_id for outliers
                     }
-                ],
+                ] + self._get_percentile_formatting_rules(),
                 style_table={
                     'overflowX': 'auto',  # Keep horizontal scroll for wide tables
                     'backgroundColor': 'white',
                     'width': '100%',
-                    'marginBottom': '0px'
-                    # Removed height and overflowY constraints to allow natural expansion
+                    'marginBottom': '0px',
+                    'height': 'auto'  # Let height be determined by content
                 },
                 style_cell={
                     'textAlign': 'left',
-                    'padding': '12px',
+                    'padding': '10px 12px',  # Consistent cell padding
                     'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
                     'fontSize': '14px',
-                    'height': 'auto',
+                    'height': '48px',  # Fixed row height for consistency
                     'minWidth': '100px',
                     'backgroundColor': 'white',
-                    'border': 'none'
+                    'border': 'none',
+                    'lineHeight': '1.2'
                 },
                 style_header={
                     'backgroundColor': 'white',
@@ -489,7 +891,7 @@ class AppDataFrame:
                     'position': 'sticky',
                     'top': 0,
                     'zIndex': 999,
-                    'height': 'auto',
+                    'height': '60px',  # Fixed header height
                     'whiteSpace': 'normal',
                     'textAlign': 'center',  
                     'padding': '10px 5px',  
@@ -498,4 +900,4 @@ class AppDataFrame:
                 cell_selectable=True,
                 row_selectable=False
             )
-        ], className="data-table-container", style={'width': '100%'})
+        ], className="data-table-container", style={'width': '100%', 'overflow': 'visible'})

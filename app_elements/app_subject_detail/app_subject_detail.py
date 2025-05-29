@@ -1,102 +1,74 @@
 from dash import html, dcc
 import dash_bootstrap_components as dbc
-from .app_feature_chart import AppFeatureChart
 from .app_session_list import AppSessionList
 from .app_subject_timeseries import AppSubjectTimeseries
 from .app_subject_percentile_timeseries import AppSubjectPercentileTimeseries
+from .app_subject_percentile_heatmap import AppSubjectPercentileHeatmap
+from .app_subject_compact_info import AppSubjectCompactInfo
 
 class AppSubjectDetail:
     def __init__(self):
-        self.feature_chart = AppFeatureChart()
         self.session_list = AppSessionList()
         self.subject_timeseries = AppSubjectTimeseries()
         self.subject_percentile_timeseries = AppSubjectPercentileTimeseries()
+        self.percentile_heatmap = AppSubjectPercentileHeatmap()
+        self.compact_info = AppSubjectCompactInfo()
         
     def build(self):
         """
-        Build subject detail component
+        Build subject detail component with new layout:
+        - Compact info spanning full width
+        - Heatmap spanning both columns (including overall percentile)
+        - Session list and timeseries below
         """
         return html.Div([
             
             # Store component to track selected session card
             dcc.Store(id="session-card-selected", data={"selected_card_id": None}),
             
+            # Store component to track selected subject ID
+            dcc.Store(id="selected-subject-store", data={"subject_id": None}),
+            
             # Interval component to check for scroll updates (300ms interval - reduced frequency)
             dcc.Interval(id="scroll-tracker-interval", interval=300, n_intervals=0),
-            
-            # Footer content (initially hidden)
-            html.Div([
-                dbc.Row([
-                    # Left column: subject info
-                    dbc.Col([
-                        # Subject ID 
-                        html.Div([
-                            html.H2(id='detail-subject-id', className="subject-strata mb-3")
-                        ], className="subject-id-container"),
-
-                        dbc.Row([
-                            # Subject info 
-                            dbc.Col([
-                                html.Div([
-                                    html.Div("Strata: ", className="detail-label"),
-                                    html.Div(id="detail-strata", className="detail-value")
-                                ], className="detail-item"),
-
-                                html.Div([
-                                    html.Div("PI: ", className="detail-label"),
-                                    html.Div(id="detail-pi", className="detail-value")
-                                ], className="detail-item"),
-
-                                html.Div([
-                                    html.Div("Trainer: ", className="detail-label"),
-                                    html.Div(id="detail-trainer", className="detail-value")
-                                ], className="detail-item"),
-                            ], width=6),
-
-                            # Session and performance information
-                            dbc.Col([
-                                html.Div([
-                                    html.Div("Overall Percentile:", className="detail-label"),
-                                    html.Div(id="detail-percentile", className="detail-value")
-                                ], className="detail-item"),
-
-                                html.Div([
-                                    html.Div("Last Session:", className="detail-label"),
-                                    html.Div(id="detail-last-session", className="detail-value")
-                                ], className="detail-item"),
-
-                                html.Div([
-                                    html.Div("Training Consistency:", className="detail-label"),
-                                    html.Div(id="detail-consistency", className="detail-value")
-                                ], className="detail-item"),
-                            ], width=6),
-                        ], className="mb-3"),
-
-                        # Threshold alerts - removed the border container
-                        html.Div([
-                            html.Div("Threshold Alerts:", className="detail-label mb-2"),
-                            html.Div(id="detail-threshold-alerts", className="detail-value")
-                        ], className="detail-item mb-3"),
-
-                        # NS reason if applicable
-                        html.Div(id="detail-ns-reason-container", className="ns-reason-container mb-3",
-                                style={"display": "none"}, children=[
-                            html.Div("Not Scored Reason:", className="detail-label mb-2"),
-                            html.Div(id="detail-ns-reason", className="detail-ns-reason")
-                        ]),
-
-                        # View details button removed
-                    ], width=6),
-
-                    # Right column: Feature chart (NOT timeseries)
-                    dbc.Col([
-                        html.Div(id="feature-chart-container", className="feature-chart-no-border"),
-                    ], width=6),
-                ], className="subject-detail-content")
-            ], id="subject-detail-footer", className="subject-detail-section", style={"display": "none"}),
 
             # Subject detail page (initially shown when subject is selected)
-            html.Div([                
+            html.Div([
+                # NEW: Top section with compact info and heatmap spanning full width
+                dbc.Row([
+                    dbc.Col([
+                        # Compact subject info (very small text) - now spans full width
+                        html.Div(id="compact-subject-info-container", className="compact-info-section mb-3"),
+                        
+                        # Percentile heatmap spanning full width with toggle button
+                        html.Div([
+                            # Title row with toggle button
+                            html.Div([
+                                html.H6("Feature Percentile Progress Over Time", className="heatmap-title mb-2"),
+                                html.Div([
+                                    dbc.Button(
+                                        "Binned",
+                                        id="heatmap-colorscale-toggle",
+                                        size="sm",
+                                        color="outline-secondary",
+                                        className="heatmap-toggle-btn",
+                                        style={
+                                            "fontSize": "12px",
+                                            "padding": "4px 12px",
+                                            "fontFamily": "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+                                            "borderRadius": "6px",
+                                            "minWidth": "80px"
+                                        }
+                                    ),
+                                    # Store to track toggle state
+                                    dcc.Store(id="heatmap-colorscale-state", data={"mode": "binned"})
+                                ], className="heatmap-toggle-container")
+                            ], className="heatmap-header-row d-flex justify-content-between align-items-center mb-2"),
+                            html.Div(id="percentile-heatmap-container", className="heatmap-container")
+                        ], className="heatmap-section")
+                    ], width=12, className="heatmap-full-width-column"),
+                ], className="charts-summary-row mb-4"),
+                
                 # Main two-column layout - session list and dual timeseries plots
                 dbc.Row([
                     # Left column: Session list
@@ -106,15 +78,13 @@ class AppSubjectDetail:
                     
                     # Right column: Dual timeseries graphs
                     dbc.Col([
-                        # Raw values timeseries (existing)
+                        # Raw values timeseries (existing) - title removed
                         html.Div([
-                            html.H5("Raw Feature Values (3-Session Rolling Average)", className="timeseries-title mb-2"),
                             self.subject_timeseries.build()
                         ], className="raw-timeseries-section mb-4"),
                         
-                        # Percentile timeseries (new)
+                        # Percentile timeseries (new) - title removed
                         html.Div([
-                            html.H5("Feature Percentiles", className="timeseries-title mb-2"),
                             self.subject_percentile_timeseries.build()
                         ], className="percentile-timeseries-section")
                     ], width=6, className="timeseries-column"),

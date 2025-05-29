@@ -1,0 +1,160 @@
+/* Subject Hover Tooltip Styles - Apple-style minimal design */
+
+.subject-tooltip {
+    background-color: rgba(255, 255, 255, 0.98);  /* Slightly more opaque */
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);  /* Safari support */
+    border: 1px solid rgba(0, 0, 0, 0.12);  /* Slightly more visible border */
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1);  /* Enhanced shadow */
+    padding: 8px 12px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.3;
+    max-width: 220px;
+    min-width: 140px;
+    color: #333;
+    pointer-events: none;
+    user-select: none;
+    white-space: nowrap;
+    position: absolute;
+    z-index: 10000;  /* Ensure it's above everything */
+}
+
+.subject-tooltip.hidden {
+    opacity: 0 !important;
+    visibility: hidden;
+    transform: translateY(2px);
+}
+
+/* Tooltip Header */
+.tooltip-header {
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.tooltip-subject-id {
+    font-weight: 600;
+    font-size: 13px;
+    color: #1a1a1a;
+    margin-bottom: 2px;
+}
+
+.tooltip-strata {
+    font-size: 11px;
+    color: #666;
+    font-weight: 500;
+}
+
+/* Overall Percentile */
+.tooltip-overall {
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tooltip-label {
+    color: #666;
+    font-weight: 500;
+    font-size: 11px;
+}
+
+.tooltip-value {
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.tooltip-ns {
+    color: #999;
+    font-style: italic;
+    font-weight: 500;
+}
+
+/* Feature Alerts Section */
+.tooltip-features {
+    margin-top: 6px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.tooltip-feature-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.tooltip-feature-item:last-child {
+    margin-bottom: 0;
+}
+
+.tooltip-feature-label {
+    color: #666;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.tooltip-feature-value {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Threshold Alerts Section */
+.tooltip-thresholds {
+    margin-top: 6px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.tooltip-threshold-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.tooltip-threshold-item:last-child {
+    margin-bottom: 0;
+}
+
+.tooltip-threshold-label {
+    color: #666;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.tooltip-threshold-value {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Smooth transitions */
+.subject-tooltip {
+    transition: opacity 0.15s ease-in-out, transform 0.15s ease-in-out;
+    transform: translateY(-2px);
+}
+
+.subject-tooltip.hidden {
+    transform: translateY(2px);
+}
+
+/* Ensure tooltip doesn't interfere with table interactions */
+.subject-tooltip * {
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .subject-tooltip {
+        font-size: 11px;
+        padding: 6px 10px;
+        max-width: 180px;
+    }
+    
+    .tooltip-subject-id {
+        font-size: 12px;
+    }
+} 

@@ -29,9 +29,9 @@ class AppSubjectTimeseries:
     def build(self):
         """Build the complete timeseries component"""
         return html.Div([
-            # Feature selection controls
+            # Feature selection controls at the top
             html.Div([
-                html.Label("Select Features:", className="control-label"),
+                html.Label("Raw Feature Values (3-Session Rolling Average):", className="control-label mb-1", style={"fontSize": "14px", "fontWeight": "600"}),
                 dcc.Dropdown(
                     id="timeseries-feature-dropdown",
                     options=self._get_feature_options(),
@@ -39,10 +39,9 @@ class AppSubjectTimeseries:
                     multi=True,
                     className="timeseries-feature-dropdown"
                 )
-            ], className="timeseries-controls mb-3"),
+            ], className="timeseries-controls mb-2"),
             
-            # Main timeseries plot
-            html.Div([
+            # Main timeseries plot - simplified container
                 dcc.Graph(
                     id="timeseries-plot",
                     figure=self._create_empty_figure(),
@@ -50,9 +49,9 @@ class AppSubjectTimeseries:
                         'displayModeBar': False,
                         'responsive': True
                     },
-                    className="timeseries-graph"
-                )
-            ], className="timeseries-plot-container"),
+                className="timeseries-graph",
+                style={'height': '550px'}  # Increased height since title removed
+            ),
             
             # Data store for timeseries data
             dcc.Store(id="timeseries-store", data={})
@@ -79,8 +78,8 @@ class AppSubjectTimeseries:
             xaxis_title="Session Number", 
             yaxis_title="Rolling Average Performance (Smoothed)",
             template="plotly_white",
-            margin=dict(l=40, r=20, t=20, b=40),
-            height=400,
+            margin=dict(l=40, r=20, t=40, b=40),  # Increased top margin for hover tooltips
+            height=550,
             legend=dict(
                 orientation="h",
                 yanchor="bottom", 
@@ -176,8 +175,7 @@ class AppSubjectTimeseries:
             
             # Normalize values for better visualization (shows relative performance)
             normalized_values = self._normalize_for_display(rolling_avg_values, feature)
-            
-            # Create strata info for hover (only for first trace to avoid repetition)
+
             if i == 0:  # First trace gets strata info
                 strata_hover_info = [strata_sessions_map.get(session, 'Unknown') for session in valid_sessions]
                 hover_template = (f"<b>Strata: %{{customdata[2]}}</b><br><br>" +  # Strata at top with spacing
@@ -219,8 +217,8 @@ class AppSubjectTimeseries:
             xaxis_title="Session Number",
             yaxis_title="3-Session Rolling Average (Normalized & Smoothed)", 
             template="plotly_white",
-            margin=dict(l=40, r=20, t=20, b=40),
-            height=400,
+            margin=dict(l=40, r=20, t=40, b=40),  # Increased top margin for hover tooltips
+            height=550,
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
@@ -257,6 +255,9 @@ class AppSubjectTimeseries:
                     annotation_text=f"Session {highlighted_session}",
                     annotation_position="top"
                 )
+        
+        # PHASE 2: Add outlier markers to time series plot
+        self._add_outlier_markers(fig, sessions, subject_data.get('is_outlier', []))
         
         return fig
     
@@ -413,3 +414,51 @@ class AppSubjectTimeseries:
                     yshift=10
                 )
             )
+
+    def _add_outlier_markers(self, fig, sessions, outlier_data):
+        """
+        Add purple markers for outlier sessions on the time series plot
+        
+        Parameters:
+            fig: plotly.graph_objects.Figure - The time series figure
+            sessions: list - List of session numbers
+            outlier_data: list - List of boolean outlier indicators for each session
+        """
+        if not sessions or not outlier_data or len(outlier_data) != len(sessions):
+            print("No outlier data available or length mismatch for time series markers")
+            return
+        
+        outlier_sessions = []
+        
+        # Find outlier sessions
+        for session, is_outlier in zip(sessions, outlier_data):
+            if is_outlier:
+                outlier_sessions.append(session)
+        
+        if not outlier_sessions:
+            return
+        
+        # Get current y-axis range to position markers at the top
+        y_range = fig.layout.yaxis.range if fig.layout.yaxis.range else [-3, 3]
+        marker_y_position = y_range[1] * 0.9  # Position near top of plot
+        
+        # Add purple markers for outlier sessions
+        fig.add_trace(go.Scatter(
+            x=outlier_sessions,
+            y=[marker_y_position] * len(outlier_sessions),
+            mode='markers',
+            marker=dict(
+                color='#9C27B0',  # Purple color matching dataframe and heatmap
+                size=12,
+                symbol='diamond',
+                line=dict(
+                    width=2,
+                    color='#FFFFFF'
+                )
+            ),
+            name='Outlier Sessions',
+            hovertemplate='<b>Outlier Session</b><br>Session: %{x}<extra></extra>',
+            showlegend=True
+        ))
+        
+        print(f"Added outlier markers for {len(outlier_sessions)} sessions: {outlier_sessions}")

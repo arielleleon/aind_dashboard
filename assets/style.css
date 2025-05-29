@@ -69,20 +69,21 @@ html, body {
 .filter-container {
     background-color: #f8f9fa;
     border-radius: 8px;
-    padding: 10px;
-    margin-bottom: 10px;
+    padding: 8px;  /* Reduced from 10px */
+    margin-bottom: 8px;  /* Reduced from 10px */
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     width: 100%;
     flex-shrink: 0;  /* Prevent filter from shrinking */
     height: auto;
+    min-height: 160px;  /* Reduced from 180px due to compact design */
 }
 
 .filter-header {
-    margin-bottom: 8px;
+    margin-bottom: 6px;  /* Reduced from 8px */
 }
 
 .filter-title {
-    font-size: 16px;
+    font-size: 14px;  /* Reduced from 16px */
     font-weight: 600;
 }
 
@@ -90,47 +91,57 @@ html, body {
     background-color: #4a6dff;
     color: white;
     border-radius: 50%;
-    width: 24px;
-    height: 24px;
+    width: 20px;  /* Reduced from 24px */
+    height: 20px;  /* Reduced from 24px */
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    font-size: 12px;  /* Reduced from 14px */
 }
 
 .clear-filters-btn {
     background: none;
     border: none;
     color: #4a6dff;
-    font-size: 14px;
+    font-size: 12px;  /* Reduced from 14px */
     cursor: pointer;
+    padding: 4px 8px;  /* Add padding for better click target */
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.clear-filters-btn:hover {
+    background-color: #f0f0f0;
+    color: #3a5dff;
 }
 
 .filter-label {
     font-weight: 600;
-    margin-bottom: 4px;
+    margin-bottom: 3px;  /* Reduced from 4px */
     display: block;
-    font-size: 12px;
+    font-size: 11px;  /* Reduced from 12px */
+    color: #555;  /* Slightly softer color */
 }
 
 .filter-button-group {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;  /* Reduced from 8px */
 }
 
 .filter-button {
     background-color: white;
     border: 1px solid #e0e0e0;
-    border-radius: 20px;
-    padding: 6px 16px;
-    font-size: 14px;
+    border-radius: 4px;  /* Reduced from 20px for consistency with column toggles */
+    padding: 4px 12px;  /* Reduced from 6px 16px */
+    font-size: 12px;  /* Reduced from 14px */
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
 }
 
 .filter-button:hover {
     background-color: #f0f0f0;
+    border-color: #d0d0d0;
 }
 
 .filter-button.active {
@@ -140,44 +151,80 @@ html, body {
 }
 
 .filter-dropdown .Select-control {
-    min-height: 32px;
-    height: 32px;
+    min-height: 28px;  /* Reduced from 32px */
+    height: 28px;  /* Reduced from 32px */
+    font-size: 12px;  /* Add smaller font size */
 }
 
 .filter-dropdown .Select-value {
-    line-height: 32px !important;
+    line-height: 28px !important;  /* Reduced from 32px */
+    font-size: 12px !important;
 }
 
 .filter-dropdown .Select-placeholder {
-    line-height: 32px !important;
+    line-height: 28px !important;  /* Reduced from 32px */
+    font-size: 12px !important;
+    color: #999;  /* Softer placeholder color */
 }
 
 .filter-dropdown .Select-input {
-    height: 32px;
+    height: 28px;  /* Reduced from 32px */
 }
 
 .filter-badge {
-    font-size: 12px;
+    font-size: 11px;  /* Reduced from 12px */
     font-weight: normal;
-    padding: 4px 8px;
-    border-radius: 12px;
-    margin-right: 4px;
-    margin-bottom: 4px;
+    padding: 3px 6px;  /* Reduced from 4px 8px */
+    border-radius: 4px;  /* Reduced from 12px for consistency */
+    margin-right: 3px;  /* Reduced from 4px */
+    margin-bottom: 3px;  /* Reduced from 4px */
     display: inline-block;
+    background-color: #4a6dff !important;  /* Ensure consistency */
+    color: white !important;
+    border: none !important;
+    transition: all 0.2s ease !important;
+}
+
+.filter-badge:hover {
+    background-color: #3a5dff !important;
+    transform: translateY(-1px) !important;
 }
 
 .filter-badge span {
     cursor: pointer;
     font-weight: bold;
-    margin-left: 6px;
+    margin-left: 4px;  /* Reduced from 6px */
 }
 
 /* Make the active filters container take less vertical space */
 .active-filters {
-    min-height: 26px;
+    min-height: 22px;  /* Reduced from 26px */
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+}
+
+/* Enhanced filter dropdown styling for compact design */
+.filter-dropdown-sm {
+    min-height: 26px !important;  /* Reduced from 28px */
+    font-size: 11px !important;  /* Reduced from 12px */
+}
+
+.filter-dropdown-sm .Select-control {
+    min-height: 26px !important;  /* Reduced from 28px */
+    height: 26px !important;  /* Reduced from 28px */
+}
+
+.filter-dropdown-sm .Select-value, 
+.filter-dropdown-sm .Select-placeholder {
+    line-height: 26px !important;  /* Reduced from 28px */
+    font-size: 11px !important;  /* Reduced from 12px */
+}
+
+/* Column-specific padding adjustments */
+.filter-column {
+    padding-left: 6px;  /* Reduced padding */
+    padding-right: 6px;  /* Reduced padding */
 }
 
 /* Content container styling */
@@ -211,10 +258,10 @@ html, body {
 
 /* Session List Styles */
 .session-list-wrapper {
-    height: 700px;  /* Increased from 650px */
+    height: 1250px;  /* Increased to match new combined timeseries height (2 plots × 550px + controls + spacing) */
     display: flex;
     flex-direction: column;
-    border: none; /* Remove border */
+    border: 1px solid #f0f0f0; /* Add subtle border to match timeseries components */
     border-radius: 0; /* Remove border radius */
     background-color: white; /* Change from #f9f9f9 to white */
 }
@@ -253,14 +300,6 @@ html, body {
     display: flex;
     flex-direction: column;
     gap: 15px;  /* Increased from 10px */
-}
-
-/* Load more container - white background */
-.load-more-container {
-    text-align: center;
-    padding: 10px 0;
-    border-top: 1px solid #f0f0f0; /* Lighter border */
-    background-color: white; /* Change from #f9f9f9 to white */
 }
 
 /* Updated Session Card Styles - seamless appearance */
@@ -391,7 +430,7 @@ html, body {
 
 /* Timeseries Styles */
 .subject-timeseries-container {
-    height: 700px;  /* Increased from 650px to match session list */
+    height: 700px;  /* Container height for individual timeseries sections */
     display: flex;
     flex-direction: column;
     border: none; /* Remove border */
@@ -407,7 +446,7 @@ html, body {
     overflow: hidden;
     background-color: white;
     box-shadow: none; /* Remove shadow */
-    border: 1px solid #f0f0f0; /* Add subtle border for definition */
+    border: none; /* Remove border since parent component container has it */
 }
 
 .feature-select-container {
@@ -574,4 +613,94 @@ html, body {
 
 .modal[data-debug-state="closed"] {
     border: 2px solid red;
+    visibility: hidden !important;
+}
+
+/* Heatmap toggle button and header styles */
+.heatmap-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.heatmap-title {
+    margin-bottom: 0 !important;  /* Override default margin */
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+}
+
+.heatmap-toggle-container {
+    display: flex;
+    align-items: center;
+}
+
+.heatmap-toggle-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif !important;
+    font-size: 12px !important;
+    padding: 4px 12px !important;
+    border-radius: 6px !important;
+    min-width: 80px !important;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    border: 1px solid #6c757d !important;
+    background-color: white !important;
+}
+
+.heatmap-toggle-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.heatmap-toggle-btn:focus {
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.3) !important;
+    border-color: #4A90E2 !important;
+}
+
+/* Active state for continuous mode */
+.btn-outline-primary.heatmap-toggle-btn {
+    border-color: #4A90E2 !important;
+    color: #4A90E2 !important;
+}
+
+.btn-outline-primary.heatmap-toggle-btn:hover {
+    background-color: #4A90E2 !important;
+    color: white !important;
+}
+
+/* Default state for binned mode */
+.btn-outline-secondary.heatmap-toggle-btn {
+    border-color: #6c757d !important;
+    color: #6c757d !important;
+}
+
+.btn-outline-secondary.heatmap-toggle-btn:hover {
+    background-color: #6c757d !important;
+    color: white !important;
+}
+
+.heatmap-section {
+    margin-bottom: 16px;
+    background-color: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Timeseries component containers - consistent styling with session list */
+.subject-timeseries-component {
+    border: 1px solid #f0f0f0; /* Match session list border */
+    border-radius: 0;
+    background-color: white;
+    height: 100%;
+    padding: 8px; /* Add consistent padding */
+}
+
+.subject-percentile-timeseries-component {
+    border: 1px solid #f0f0f0; /* Match session list border */
+    border-radius: 0;
+    background-color: white;
+    height: 100%;
+    padding: 8px; /* Add consistent padding */
 }

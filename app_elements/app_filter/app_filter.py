@@ -1,6 +1,7 @@
 from dash import html, dcc, Input, Output, State, callback
 import dash_bootstrap_components as dbc
 from app_utils import AppUtils
+from app_elements.app_content.app_dataframe.column_groups_config import COLUMN_GROUPS
 
 class AppFilter:
     def __init__(self):
@@ -42,10 +43,44 @@ class AppFilter:
             {"label": "Threshold", "value": "T"}
         ]
 
+        # Column groups for toggle functionality
+        self.column_groups = COLUMN_GROUPS
+
+    def _create_group_toggle(self, group_id, group_config):
+        """Create a toggle button for a column group"""
+        # All groups start collapsed, regardless of config
+        is_expanded = False
+        
+        return html.Div([
+            dbc.Button([
+                html.I(className=f"{group_config.get('icon', 'fas fa-table')} me-2"),
+                html.Span(group_config['label']),
+                html.Span(
+                    f" ({len(group_config['columns'])})", 
+                    className="column-count"
+                )
+            ],
+            id={'type': 'column-group-toggle', 'group': group_id},
+            color="primary" if is_expanded else "outline-secondary",
+            className="column-group-button",
+            size="sm"
+            )
+        ], className="column-group-toggle-wrapper")
+
+    def _get_default_column_state(self):
+        """Get the default expanded state for all column groups - all start collapsed"""
+        default_state = {}
+        for group_id, group_config in self.column_groups.items():
+            if group_config.get('collapsible', True):
+                # Always start collapsed, ignoring default_expanded setting
+                default_state[group_id] = False
+            else:
+                default_state[group_id] = True  # Non-collapsible groups are always expanded
+        return default_state
 
     def build(self):
         """
-        Build filter component with a more compact layout for full width
+        Build filter component with column visibility controls included below the filters
         """
         return html.Div([
             # Filter header with title and clear button
@@ -53,7 +88,7 @@ class AppFilter:
                 dbc.Col(
                     html.Div([
                         html.I(className="fas fa-filter me-2"),
-                        html.Span("Filters"),
+                        html.Span("Filters & Column Visibility"),
                         html.Span(id="filter-count", className="filter-count ms-2")
                     ], className="filter-title"),
                     width="auto"
@@ -171,5 +206,30 @@ class AppFilter:
                         ], width=6, className="ps-1")
                     ], className="g-0")
                 ], width=2, className="filter-column")
-            ])
-        ], className="filter-container mb-2", style={"height": "auto", "min-height": "120px"})
+            ]),
+            
+            # Column visibility section (new addition)
+            html.Hr(className="my-3"),
+            html.Div([
+                html.Div([
+                    html.I(className="fas fa-columns me-2"),
+                    html.Span("Column Visibility", className="column-toggle-title"),
+                    html.Span("Toggle column groups on/off", className="column-toggle-subtitle ms-2")
+                ], className="mb-2"),
+                
+                # Column toggle buttons
+                html.Div([
+                    self._create_group_toggle(group_id, group_config)
+                    for group_id, group_config in self.column_groups.items()
+                    if group_config.get('collapsible', True)  # Only show toggles for collapsible groups
+                ], className="column-toggle-buttons"),
+                
+                # Store for tracking expanded state
+                dcc.Store(
+                    id="column-groups-state", 
+                    data=self._get_default_column_state()
+                ),
+                
+            ], className="column-toggle-section")
+            
+        ], className="filter-container mb-2", style={"height": "auto", "min-height": "160px"})

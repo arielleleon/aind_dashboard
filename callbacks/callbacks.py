@@ -5,12 +5,14 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 from datetime import datetime, timedelta
 from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
+from app_elements.app_content.app_tooltip.app_hover_tooltip import AppHoverTooltip
 from app_elements.app_filter.app_filter import AppFilter
-from app_elements.app_subject_detail.app_feature_chart import AppFeatureChart
 from app_elements.app_subject_detail.app_session_card import AppSessionCard
 from app_elements.app_subject_detail.app_subject_image_loader import AppSubjectImageLoader
 from app_elements.app_subject_detail.app_subject_timeseries import AppSubjectTimeseries
 from app_elements.app_subject_detail.app_subject_percentile_timeseries import AppSubjectPercentileTimeseries
+from app_elements.app_subject_detail.app_subject_percentile_heatmap import AppSubjectPercentileHeatmap
+from app_elements.app_subject_detail.app_subject_compact_info import AppSubjectCompactInfo
 import plotly.graph_objects as go
 import json
 
@@ -19,13 +21,15 @@ from shared_utils import app_utils
 
 # CRITICAL FIX: Pass the shared app_utils instance to AppDataFrame
 app_dataframe = AppDataFrame(app_utils=app_utils)
+app_tooltip = AppHoverTooltip(app_utils=app_utils)
 
 app_filter = AppFilter()
-feature_chart = AppFeatureChart()
 session_card = AppSessionCard()
 image_loader = AppSubjectImageLoader()
 subject_timeseries = AppSubjectTimeseries()
 subject_percentile_timeseries = AppSubjectPercentileTimeseries()
+percentile_heatmap = AppSubjectPercentileHeatmap()
+compact_info = AppSubjectCompactInfo()
 
 # Callback to update active filters display and count
 @callback(
@@ -300,13 +304,42 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
     if alert_category != "all":
         if alert_category == "T":
             # Filter for threshold alerts specifically
-            # Updated to handle the new "T | STAGE_NAME" format in stage_sessions_alert
-            formatted_df = formatted_df[
-                (formatted_df["threshold_alert"] == "T") | 
-                (formatted_df["total_sessions_alert"] == "T") | 
-                (formatted_df["stage_sessions_alert"].str.contains("T |", na=False)) | 
-                (formatted_df["water_day_total_alert"] == "T")
-            ]
+            # FIXED: Handle the actual format of threshold alerts which contain "T |" not just "T"
+            print("🔍 DEBUG: Checking threshold alert values...")
+            
+            # Debug: Check what threshold alert values we have
+            if 'threshold_alert' in formatted_df.columns:
+                threshold_values = formatted_df['threshold_alert'].value_counts()
+                print(f"  threshold_alert values: {threshold_values.to_dict()}")
+            
+            if 'total_sessions_alert' in formatted_df.columns:
+                total_values = formatted_df['total_sessions_alert'].value_counts()
+                print(f"  total_sessions_alert values: {total_values.to_dict()}")
+            
+            if 'stage_sessions_alert' in formatted_df.columns:
+                stage_values = formatted_df['stage_sessions_alert'].value_counts()
+                print(f"  stage_sessions_alert values: {stage_values.to_dict()}")
+            
+            if 'water_day_total_alert' in formatted_df.columns:
+                water_values = formatted_df['water_day_total_alert'].value_counts()
+                print(f"  water_day_total_alert values: {water_values.to_dict()}")
+            
+            # CORRECTED FILTER: Match the actual threshold alert patterns
+            threshold_mask = (
+                # Overall threshold alert column set to 'T'
+                (formatted_df.get("threshold_alert", pd.Series(dtype='object')) == "T") |
+                # Individual threshold alerts contain "T |" pattern
+                (formatted_df.get("total_sessions_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False)) |
+                (formatted_df.get("stage_sessions_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False)) |
+                (formatted_df.get("water_day_total_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False))
+            )
+            
+            before_count = len(formatted_df)
+            formatted_df = formatted_df[threshold_mask]
+            after_count = len(formatted_df)
+            
+            print(f"🔽 Threshold filter applied: {before_count} → {after_count} subjects")
+            
         elif alert_category == "NS":
             # Filter for Not Scored subjects
             formatted_df = formatted_df[formatted_df["percentile_category"] == "NS"]
@@ -348,21 +381,11 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
     # Convert to records for datatable
     return formatted_df.to_dict("records")
 
-# Subject selection from table - modified to also show subject detail page automatically
+# Subject selection from table - modified to use new layout components
 @callback(
-    [Output("subject-detail-footer", "style"),
-     Output("subject-detail-page", "style"),  # Added output for the detail page
-     Output("detail-strata", "children"),
-     Output("detail-subject-id", "children"),
-     Output("detail-pi", "children"),
-     Output("detail-trainer", "children"),
-     Output("detail-percentile", "children"),
-     Output("detail-last-session", "children"),
-     Output("detail-consistency", "children"),
-     Output("detail-threshold-alerts", "children"),
-     Output("detail-ns-reason", "children"),
-     Output("detail-ns-reason-container", "style"),
-     Output("feature-chart-container", "children")],
+    [Output("subject-detail-page", "style"),  # Only need the page style now
+     Output("compact-subject-info-container", "children"),  # NEW: Compact info
+     Output("selected-subject-store", "data")],  # Store the selected subject ID
     [Input("session-table", "active_cell")],
     [State("session-table", "data"),
      State("session-table", "page_current"),
@@ -373,149 +396,48 @@ def update_subject_detail(active_cell, table_data, page_current, page_size):
     print(f"Active cell: {active_cell}")
     print(f"Current page: {page_current}, Page size: {page_size}")
     
-    default_footer_style = {"display": "none"}
-    default_page_style = {"display": "none"}  # Style for the detail page
-    default_ns_style = {"display": "none"}
-    empty_chart = feature_chart.build_legacy(None)
+    default_page_style = {"display": "none"}
+    empty_compact_info = compact_info.build()
+    empty_subject_store = {"subject_id": None}
 
     # Check if cell is clicked
     if not active_cell or active_cell['column_id'] != 'subject_id':
         print("No active cell or not in subject_id column")
-        return default_footer_style, default_page_style, "", "", "", "", "", "", "", "", "", default_ns_style, empty_chart
+        return default_page_style, empty_compact_info, empty_subject_store
     
     # Calculate the actual row index in the full dataset
-    # If page_current is None (which can happen on initial load), default to 0
     current_page = page_current if page_current is not None else 0
-    # If page_size is None, default to 50 (updated to match new page size)
     rows_per_page = page_size if page_size is not None else 50
-    
-    # Calculate the absolute row index in the dataset
     absolute_row_idx = (current_page * rows_per_page) + active_cell['row']
     
-    # Safety check to make sure we don't go out of bounds
+    # Safety check
     if absolute_row_idx >= len(table_data):
         print(f"Row index {absolute_row_idx} is out of bounds for data length {len(table_data)}")
-        return default_footer_style, default_page_style, "", "", "", "", "", "", "", "", "", default_ns_style, empty_chart
+        return default_page_style, empty_compact_info, empty_subject_store
     
-    # Get the correct subject data using the absolute row index
+    # Get the subject data
     subject_data = table_data[absolute_row_idx]
     subject_id = subject_data['subject_id']
     print(f"Selected subject: {subject_id} at absolute row {absolute_row_idx}")
 
-    # Extract data for display
-    strata = f"Current Strata: {subject_data.get('strata_abbr', 'N/A')}"
-    pi = subject_data.get('PI', 'N/A')
-    trainer = subject_data.get('trainer', 'N/A')
-
-    # Format percent with color based on category
-    percentile_val = subject_data.get('overall_percentile')
-    if percentile_val is None or pd.isna(percentile_val):
-        # Try session_overall_percentile as fallback
-        percentile_val = subject_data.get('session_overall_percentile')
+    # Build components using optimized data structures
+    print(f"Building components for subject: {subject_id}")
     
-    percentile_cat = subject_data.get('percentile_category', 'NS')
-
-    if percentile_cat == 'NS' or pd.isna(percentile_val):
-        percentile = "NS"
-    else:
-        percentile = f"{percentile_val:.2f}%"
-    
-    # Format last session
-    session_date = subject_data.get('session_date')
-    if session_date:
-        try:
-            if isinstance(session_date, str):
-                session_date = datetime.strptime(session_date, '%Y-%m-%d %H:%M:%S')
-            last_session = session_date.strftime('%Y-%m-%d')
-        except:
-            last_session = str(session_date)
-    else:
-        last_session = 'N/A'
-    
-    # Format training consistency
-    consistency = f"{subject_data.get('training_consistency', 'N/A')}%" # NEED TO IMPLEMENT
-
-    # Format threshold alerts
-    threshold_alerts = []
-
-    # Check total sessions alert
-    total_sessions_alert = subject_data.get('total_sessions_alert', 'N')
-    if 'T |' in total_sessions_alert:
-        # Parse the value: "T | 45"
-        parts = total_sessions_alert.split('|')
-        value = parts[1].strip()
-        threshold_alerts.append(html.Div([
-            html.Span("Total Sessions: ", className="alert-label"),
-            html.Span(f"Out of Range ({value})", className="alert-value")
-        ]))
-
-    # Check stage sessions alert
-    stage_alert = subject_data.get('stage_sessions_alert', '')
-    if 'T |' in stage_alert:
-        # Parse the format: "T | STAGE_FINAL | 30"
-        parts = stage_alert.split('|')
-        stage_name = parts[1].strip()
-        sessions = parts[2].strip() if len(parts) > 2 else ""
-        threshold_alerts.append(html.Div([
-            html.Span("Stage-Specific: ", className="alert-label"),
-            html.Span(f"Out of Range | {stage_name} ({sessions})", className="alert-value")
-        ]))
-
-    # Check water day total alert
-    water_alert = subject_data.get('water_day_total_alert', '')
-    if 'T |' in water_alert:
-        # Parse the format: "T | 3.7"
-        parts = water_alert.split('|')
-        value = parts[1].strip()
-        threshold_alerts.append(html.Div([
-            html.Span("water_day_total: ", className="alert-label"),
-            html.Span(f"Out of Range ({value} mL)", className="alert-value")
-        ]))
-
-    # Format threshold alerts text
-    if threshold_alerts:
-        threshold_text = html.Div(threshold_alerts, className="threshold-alerts-container")
-    else:
-        threshold_text = "None"
-
-    # Check NS reason
-    ns_reason = subject_data.get('ns_reason', '')
-    if percentile_cat == 'NS' and ns_reason:
-        ns_reason_style = {'display': 'block'}
-    else:
-        ns_reason_style = {'display': 'none'}
-
-    # Build feature chart using optimized data structure
-    print(f"Building feature chart for subject: {subject_id}")
     try:
-        chart = feature_chart.build(subject_id=subject_id, app_utils=app_utils)
-        print(f"✓ Feature chart built successfully")
+        # Build compact info
+        compact_subject_info = compact_info.build(subject_id=subject_id, app_utils=app_utils)
+        print(f"✓ Compact info built successfully")
+        
     except Exception as e:
-        print(f"❌ Error building feature chart: {str(e)}")
-        # Return fallback empty chart
-        chart = feature_chart.build_legacy(None)
+        print(f"❌ Error building components: {str(e)}")
+        compact_subject_info = empty_compact_info
 
-    # Return values to update UI - now also showing the detail page automatically
-    print(f"🔄 SETTING detail-subject-id to: {subject_id} (type: {type(subject_id)})")
-    print(f"   This should trigger the timeseries callback with subject_id: {repr(subject_id)}")
-    print(f"🖥️  SHOWING subject detail page and footer:")
-    print(f"   Footer style: {{'display': 'block'}}")
-    print(f"   Detail page style: {{'display': 'block'}}")
+    print(f"🖥️  SHOWING subject detail page with new layout (heatmap handled by separate callback)")
     
     return (
-        {'display': 'block'},    # Show footer 
-        {'display': 'block'},    # Show detail page automatically
-        strata,
-        subject_id,              # This is the critical value for detail-subject-id
-        pi,
-        trainer,
-        percentile,
-        last_session,
-        consistency,
-        threshold_text,
-        ns_reason,
-        ns_reason_style,
-        chart
+        {'display': 'block'},    # Show detail page
+        compact_subject_info,    # Compact info (full width)
+        {"subject_id": subject_id}  # Store the selected subject ID
     )
 
 # Callback to populate the session list when a subject is selected
@@ -523,41 +445,24 @@ def update_subject_detail(active_cell, table_data, page_current, page_size):
     [Output("session-list-container", "children"),
      Output("session-list-state", "data"),
      Output("session-count", "children")],
-    [Input("detail-subject-id", "children"),
-     Input("load-more-sessions-btn", "n_clicks")],
+    [Input("selected-subject-store", "data")],  # Removed load-more-sessions-btn input
     [State("session-list-state", "data")]
 )
-def update_session_list(subject_id, load_more_clicks, session_list_state):
+def update_session_list(selected_subject_data, session_list_state):
+    # Extract subject_id from the store data
+    subject_id = selected_subject_data.get('subject_id') if selected_subject_data else None
+    
+    print(f"Session list callback triggered with subject_id: {subject_id}")
+    
     # Default return values
     empty_list = []
     updated_state = {"subject_id": None, "sessions_loaded": 0, "total_sessions": 0}
     session_count = "0"
     
-    # Check if triggered by a subject change or load more button
-    is_load_more = ctx.triggered_id == "load-more-sessions-btn"
-    
     # If no subject selected or empty, return defaults
     if not subject_id:
+        print("No subject selected - returning empty session list")
         return empty_list, updated_state, session_count
-    
-    # Initialize with current state for load more
-    current_subject = session_list_state.get("subject_id", None)
-    sessions_loaded = session_list_state.get("sessions_loaded", 0)
-    
-    # If subject changed, reset state
-    if subject_id != current_subject:
-        sessions_loaded = 0
-        is_load_more = False
-    
-    # Define how many sessions to load
-    initial_session_count = 8  # Increased from 5 to accommodate longer page
-    load_more_count = 5
-    
-    # Calculate how many sessions to fetch
-    if is_load_more:
-        session_limit = sessions_loaded + load_more_count
-    else:
-        session_limit = initial_session_count
     
     # Get all sessions for this subject
     all_sessions = app_utils.get_subject_sessions(subject_id)
@@ -565,31 +470,30 @@ def update_session_list(subject_id, load_more_clicks, session_list_state):
     if all_sessions is None or all_sessions.empty:
         return empty_list, updated_state, session_count
     
-    # Sort by session date (descending)
+    # Sort by session date (descending) and load ALL sessions
     all_sessions = all_sessions.sort_values('session_date', ascending=False)
     
-    # Limit to the requested number
-    sessions_to_display = all_sessions.head(session_limit)
+    print(f"Loading all {len(all_sessions)} sessions for subject {subject_id}")
     
-    # Build session cards
+    # Build session cards for ALL sessions
     session_cards = []
-    for idx, session_row in sessions_to_display.iterrows():
+    for idx, session_row in all_sessions.iterrows():
         # First card is active by default
-        is_active = idx == 0 and not is_load_more
+        is_active = idx == 0
         
         # Create session card
         card = session_card.build(session_row.to_dict(), is_active=is_active)
         session_cards.append(card)
     
-    # Update state
+    # Update state with all sessions loaded
     updated_state = {
         "subject_id": subject_id,
-        "sessions_loaded": len(sessions_to_display),
+        "sessions_loaded": len(all_sessions),
         "total_sessions": len(all_sessions)
     }
     
     # Update session count
-    session_count = str(len(sessions_to_display))
+    session_count = str(len(all_sessions))
     
     return session_cards, updated_state, session_count
 
@@ -626,7 +530,7 @@ clientside_callback(
             }
         }
         
-        // Function to determine which session card is most visible
+        // Function to determine which session card is most visible (center-based approach)
         function getMostVisibleSession() {
             // Use data-* attributes instead of complex JSON id selector
             const cards = document.querySelectorAll('[data-debug^="session-card-"]');
@@ -635,23 +539,28 @@ clientside_callback(
             const containerRect = scrollContainer.getBoundingClientRect();
             const containerTop = containerRect.top;
             const containerBottom = containerRect.bottom;
+            const containerCenter = (containerTop + containerBottom) / 2;
             
-            let maxVisibleArea = 0;
+            let minDistanceToCenter = Infinity;
             let mostVisibleCard = null;
             
             cards.forEach(card => {
                 const cardRect = card.getBoundingClientRect();
                 
-                // Calculate the visible area of this card
+                // Only consider cards that are at least partially visible
                 const visibleTop = Math.max(cardRect.top, containerTop);
                 const visibleBottom = Math.min(cardRect.bottom, containerBottom);
                 
                 if (visibleBottom > visibleTop) {
-                    const visibleArea = visibleBottom - visibleTop;
-                    const visibleRatio = visibleArea / cardRect.height;
+                    // Calculate the center of the visible portion of the card
+                    const visibleCenter = (visibleTop + visibleBottom) / 2;
                     
-                    if (visibleRatio > maxVisibleArea) {
-                        maxVisibleArea = visibleRatio;
+                    // Calculate distance from visible card center to container center
+                    const distanceToCenter = Math.abs(visibleCenter - containerCenter);
+                    
+                    // Prefer the card whose visible center is closest to the container center
+                    if (distanceToCenter < minDistanceToCenter) {
+                        minDistanceToCenter = distanceToCenter;
                         mostVisibleCard = card;
                     }
                 }
@@ -784,7 +693,7 @@ clientside_callback(
 # Cleanup scroll tracking when subject detail page is hidden
 clientside_callback(
     """
-    function(footer_style, page_style) {
+    function(page_style) {
         // Clean up scroll tracking when subject detail page is hidden
         if (page_style && page_style.display === 'none' && window.sessionScrollTracking) {
             // Remove the scroll event listener to prevent interference with page scrolling
@@ -800,19 +709,20 @@ clientside_callback(
     }
     """,
     Output("session-card-selected", "data"),  # Use existing store as dummy output
-    [Input("subject-detail-footer", "style"),
-     Input("subject-detail-page", "style")]
+    [Input("subject-detail-page", "style")]
 )
 
-# Callback to load timeseries data when subject is selected
+# Update the timeseries callback to use the store
 @callback(
     Output("timeseries-store", "data"),
-    [Input("detail-subject-id", "children")]
+    [Input("selected-subject-store", "data")]
 )
-def load_timeseries_data(subject_id):
+def load_timeseries_data(selected_subject_data):
     """Load optimized timeseries data for selected subject"""
-    if not subject_id:
+    if not selected_subject_data or not selected_subject_data.get('subject_id'):
         return {}
+    
+    subject_id = selected_subject_data['subject_id']
     
     # Get optimized time series data from app_utils
     time_series_data = app_utils.get_time_series_data(subject_id, use_cache=True)
@@ -874,12 +784,16 @@ def update_timeseries_plot(timeseries_data, selected_features, n_clicks_list, sc
     Output("percentile-timeseries-plot", "figure"),
     [Input("timeseries-store", "data"),
      Input("percentile-timeseries-feature-dropdown", "value"),
+     Input("percentile-ci-toggle", "value"),  # Add CI toggle input
      Input({"type": "session-card", "index": ALL}, "n_clicks"),
      Input("session-scroll-state", "data")],
     [State({"type": "session-card", "index": ALL}, "id")]
 )
-def update_percentile_timeseries_plot(timeseries_data, selected_features, n_clicks_list, scroll_state, card_ids):
-    """Update percentile timeseries plot with data and session highlighting"""
+def update_percentile_timeseries_plot(timeseries_data, selected_features, ci_toggle_value, n_clicks_list, scroll_state, card_ids):
+    """Update percentile timeseries plot with data, session highlighting, and confidence interval toggle"""
+    
+    # Determine if confidence intervals should be shown
+    show_confidence_intervals = ci_toggle_value and 'show_ci' in ci_toggle_value
     
     # Determine highlighted session from clicks or scroll (same logic as raw timeseries)
     highlighted_session = None
@@ -907,10 +821,465 @@ def update_percentile_timeseries_plot(timeseries_data, selected_features, n_clic
             except (ValueError, IndexError):
                 pass
     
-    # Create the percentile plot
+    # Create the percentile plot with confidence intervals toggle
     return subject_percentile_timeseries.create_plot(
         subject_data=timeseries_data,
         selected_features=selected_features or ['all'],
-        highlighted_session=highlighted_session
+        highlighted_session=highlighted_session,
+        show_confidence_intervals=show_confidence_intervals
     )
+
+# Callback to update percentile heatmap with session highlighting
+@callback(
+    Output("percentile-heatmap-container", "children"),
+    [Input("selected-subject-store", "data"),
+     Input({"type": "session-card", "index": ALL}, "n_clicks"),
+     Input("session-scroll-state", "data"),
+     Input("heatmap-colorscale-state", "data")],
+    [State({"type": "session-card", "index": ALL}, "id")]
+)
+def update_percentile_heatmap_with_highlighting(selected_subject_data, n_clicks_list, scroll_state, colorscale_state, card_ids):
+    """Update percentile heatmap with session highlighting and colorscale mode"""
+    
+    # Extract subject_id from the store data
+    subject_id = selected_subject_data.get('subject_id') if selected_subject_data else None
+    
+    if not subject_id:
+        # Return empty heatmap if no subject selected
+        return percentile_heatmap.build()
+    
+    # Get colorscale mode from state
+    colorscale_mode = colorscale_state.get('mode', 'binned') if colorscale_state else 'binned'
+    
+    # Determine highlighted session from clicks or scroll (same logic as timeseries)
+    highlighted_session = None
+    
+    # Check for card clicks first (priority over scroll)
+    if n_clicks_list and any(n_clicks_list):
+        max_clicks = max(n_clicks_list)
+        if max_clicks > 0:
+            clicked_idx = n_clicks_list.index(max_clicks)
+            if clicked_idx < len(card_ids):
+                card_id = card_ids[clicked_idx]
+                session_str = card_id.get('index', '').split('-')[-1]
+                try:
+                    highlighted_session = int(float(session_str))
+                except (ValueError, IndexError):
+                    pass
+    
+    # Check scroll state if no click detected
+    elif scroll_state and scroll_state.get('visible_session'):
+        visible_session = scroll_state.get('visible_session')
+        if '-' in visible_session:
+            session_str = visible_session.split('-')[-1]
+            try:
+                highlighted_session = int(float(session_str))
+            except (ValueError, IndexError):
+                pass
+    
+    # Build heatmap with highlighting and colorscale mode
+    return percentile_heatmap.build(
+        subject_id=subject_id, 
+        app_utils=app_utils,
+        highlighted_session=highlighted_session,
+        colorscale_mode=colorscale_mode
+    )
+
+# Callback to handle heatmap colorscale toggle button
+@callback(
+    [Output("heatmap-colorscale-state", "data"),
+     Output("heatmap-colorscale-toggle", "children"),
+     Output("heatmap-colorscale-toggle", "color")],
+    [Input("heatmap-colorscale-toggle", "n_clicks")],
+    [State("heatmap-colorscale-state", "data")]
+)
+def toggle_heatmap_colorscale(n_clicks, current_state):
+    """Toggle between binned and continuous colorscale modes"""
+    
+    # If button hasn't been clicked, return current state
+    if not n_clicks:
+        current_mode = current_state.get('mode', 'binned') if current_state else 'binned'
+        button_text = "Binned" if current_mode == 'binned' else "Continuous" 
+        button_color = "outline-secondary" if current_mode == 'binned' else "outline-primary"
+        return current_state or {"mode": "binned"}, button_text, button_color
+    
+    # Toggle the mode
+    current_mode = current_state.get('mode', 'binned') if current_state else 'binned'
+    new_mode = 'continuous' if current_mode == 'binned' else 'binned'
+    
+    # Update button appearance based on new mode
+    button_text = "Continuous" if new_mode == 'continuous' else "Binned"
+    button_color = "outline-primary" if new_mode == 'continuous' else "outline-secondary"
+    
+    print(f"🎨 Heatmap colorscale toggled from {current_mode} to {new_mode}")
+    
+    return {"mode": new_mode}, button_text, button_color
+
+# Tooltip Callbacks
+
+# Responsive Table Page Size Calculation
+clientside_callback(
+    """
+    function(table_data, time_window, dummy_trigger) {
+        // Calculate optimal page size based on viewport dimensions
+        const viewportHeight = window.innerHeight;
+        
+        // Account for fixed elements (estimated heights)
+        const topBarHeight = 50;        // Top navigation bar
+        const filterHeight = 170;       // Filter section
+        const tableHeaderHeight = 60;   // Table header (fixed)
+        const paddingMargin = 50;       // Various padding and margins
+        
+        // Calculate available height for table rows
+        const availableHeight = viewportHeight - topBarHeight - filterHeight - tableHeaderHeight - paddingMargin;
+        
+        // Each table row is approximately 48px (from style_cell height)
+        const rowHeight = 48;
+        
+        // Calculate number of rows that can fit
+        const calculatedRows = Math.floor(availableHeight / rowHeight);
+        
+        // Set reasonable bounds
+        const minRows = 8;   // Minimum rows to show
+        const maxRows = 50;  // Maximum rows (don't make it too large)
+        
+        const optimalRows = Math.max(minRows, Math.min(maxRows, calculatedRows));
+        
+        console.log(`📐 Responsive table: viewport ${viewportHeight}px → showing ${optimalRows} rows`);
+        
+        return optimalRows;
+    }
+    """,
+    Output("session-table", "page_size"),
+    [Input("session-table", "data"),
+     Input("time-window-filter", "value"),
+     Input("resize-interval", "n_intervals")]
+)
+
+# Simple window resize detection
+clientside_callback(
+    """
+    function(table_id) {
+        // Set up a simple window resize listener
+        let resizeTimeout;
+        
+        function handleResize() {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                // Force a refresh of the table data to trigger page_size recalculation
+                const tableElement = document.getElementById('session-table');
+                if (tableElement) {
+                    // Trigger a minor update to force callback refresh
+                    tableElement.style.minHeight = window.innerHeight > 1000 ? '400px' : '300px';
+                }
+            }, 400);
+        }
+        
+        // Clean up previous listener
+        if (window.dashResizeHandler) {
+            window.removeEventListener('resize', window.dashResizeHandler);
+        }
+        
+        // Add new listener
+        window.dashResizeHandler = handleResize;
+        window.addEventListener('resize', handleResize, { passive: true });
+        
+        return 'setup-complete';
+    }
+    """,
+    Output("resize-trigger", "data"),
+    [Input("session-table", "id")]
+)
+
+# Server callback to update tooltip content
+@callback(
+    Output("subject-hover-tooltip", "children"),
+    [Input("session-table", "active_cell")],
+    [State("session-table", "data")]
+)
+def update_tooltip_content(active_cell, table_data):
+    """
+    Update tooltip content when hovering over subject ID cells
+    We'll use the active_cell as a proxy since it's triggered by cell interactions
+    
+    Returns empty tooltip since we'll handle the actual tooltip display via clientside
+    """
+    return app_tooltip.get_empty_tooltip()
+
+# Clientside callback for complete tooltip functionality
+clientside_callback(
+    """
+    function(table_data, app_utils_placeholder) {
+        // Initialize tooltip functionality
+        console.log('Setting up tooltip functionality...');
+        
+        const table = document.getElementById('session-table');
+        const tooltip = document.getElementById('subject-hover-tooltip');
+        
+        if (!table || !tooltip) {
+            console.log('Table or tooltip not found');
+            return window.dash_clientside.no_update;
+        }
+        
+        let currentHoveredSubject = null;
+        let hideTimeout = null;
+        
+        // Cache for tooltip data to avoid repeated server calls
+        const tooltipDataCache = {};
+        
+        // Function to get alert color based on category
+        function getAlertColor(category) {
+            const colors = {
+                'SB': '#FF6B35',  // Dark orange (Severely Below)
+                'B': '#FFB366',   // Light orange (Below)  
+                'G': '#4A90E2',   // Light blue (Good)
+                'SG': '#2E5A87',  // Dark blue (Severely Good)
+                'T': '#795548'    // Brown (Threshold alerts)
+            };
+            return colors[category] || null;
+        }
+        
+        // Function to create tooltip HTML content
+        function createTooltipContent(subjectData) {
+            if (!subjectData) return '';
+            
+            let html = '<div class="tooltip-content">';
+            
+            // Header
+            html += '<div class="tooltip-header">';
+            html += `<div class="tooltip-subject-id">${subjectData.subject_id}</div>`;
+            html += `<div class="tooltip-strata">Strata: ${subjectData.strata_abbr || 'N/A'}</div>`;
+            html += '</div>';
+            
+            // Overall percentile
+            const overallPercentile = subjectData.session_overall_percentile || subjectData.overall_percentile;
+            const overallCategory = subjectData.overall_percentile_category || 'NS';
+            
+            html += '<div class="tooltip-overall">';
+            html += '<span class="tooltip-label">Overall: </span>';
+            
+            if (overallPercentile != null && !isNaN(overallPercentile)) {
+                const color = getAlertColor(overallCategory);
+                const colorStyle = color ? `color: ${color}; font-weight: 600;` : 'font-weight: 600;';
+                html += `<span class="tooltip-value" style="${colorStyle}">${overallPercentile.toFixed(1)}%</span>`;
+            } else {
+                html += '<span class="tooltip-value tooltip-ns">Not Scored</span>';
+            }
+            html += '</div>';
+            
+            // Active feature alerts
+            const features = ['finished_trials', 'ignore_rate', 'total_trials', 'foraging_performance', 'abs(bias_naive)'];
+            const featureNames = {
+                'finished_trials': 'Finished Trials',
+                'ignore_rate': 'Ignore Rate',
+                'total_trials': 'Total Trials',
+                'foraging_performance': 'Foraging Performance',
+                'abs(bias_naive)': 'Bias'
+            };
+            
+            let activeFeatures = [];
+            features.forEach(feature => {
+                const category = subjectData[feature + '_category'];
+                const percentile = subjectData[feature + '_session_percentile'];
+                
+                if (category && category !== 'N' && category !== 'NS') {
+                    activeFeatures.push({
+                        name: featureNames[feature],
+                        category: category,
+                        percentile: percentile
+                    });
+                }
+            });
+            
+            if (activeFeatures.length > 0) {
+                html += '<div class="tooltip-features">';
+                activeFeatures.forEach(feature => {
+                    html += '<div class="tooltip-feature-item">';
+                    html += `<span class="tooltip-feature-label">${feature.name}: </span>`;
+                    
+                    const percentileText = (feature.percentile != null && !isNaN(feature.percentile)) 
+                        ? feature.percentile.toFixed(1) + '%' 
+                        : 'N/A';
+                    const color = getAlertColor(feature.category);
+                    const colorStyle = color ? `color: ${color}; font-weight: 600;` : 'font-weight: 600;';
+                    
+                    html += `<span class="tooltip-feature-value" style="${colorStyle}">${percentileText}</span>`;
+                    html += '</div>';
+                });
+                html += '</div>';
+            }
+            
+            // Threshold alerts
+            const thresholdAlert = subjectData.threshold_alert;
+            if (thresholdAlert === 'T') {
+                let thresholdAlerts = [];
+                
+                // Check specific threshold types
+                const totalSessionsAlert = subjectData.total_sessions_alert || '';
+                const stageSessionsAlert = subjectData.stage_sessions_alert || '';
+                const waterDayAlert = subjectData.water_day_total_alert || '';
+                
+                if (totalSessionsAlert.includes('T |')) {
+                    const value = totalSessionsAlert.split('|')[1]?.trim();
+                    thresholdAlerts.push({
+                        type: 'Total Sessions',
+                        value: `${value} sessions`
+                    });
+                }
+                
+                if (stageSessionsAlert.includes('T |')) {
+                    const parts = stageSessionsAlert.split('|');
+                    const stage = parts[1]?.trim();
+                    const sessions = parts[2]?.trim();
+                    thresholdAlerts.push({
+                        type: 'Stage Sessions',
+                        value: `${stage}: ${sessions}`
+                    });
+                }
+                
+                if (waterDayAlert.includes('T |')) {
+                    const value = waterDayAlert.split('|')[1]?.trim();
+                    thresholdAlerts.push({
+                        type: 'Water Day Total',
+                        value: `${value} mL`
+                    });
+                }
+                
+                if (thresholdAlerts.length > 0) {
+                    html += '<div class="tooltip-thresholds">';
+                    thresholdAlerts.forEach(alert => {
+                        html += '<div class="tooltip-threshold-item">';
+                        html += `<span class="tooltip-threshold-label">${alert.type}: </span>`;
+                        html += `<span class="tooltip-threshold-value" style="color: #795548; font-weight: 600;">${alert.value}</span>`;
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                }
+            }
+            
+            html += '</div>';
+            return html;
+        }
+        
+        // Function to show tooltip
+        function showTooltip(subjectId, mouseX, mouseY) {
+            if (!tooltip) return;
+            
+            // Clear any hide timeout
+            if (hideTimeout) {
+                clearTimeout(hideTimeout);
+                hideTimeout = null;
+            }
+            
+            // Find subject data in table
+            const subjectData = table_data.find(row => row.subject_id === subjectId);
+            if (!subjectData) return;
+            
+            // Create tooltip content
+            const content = createTooltipContent(subjectData);
+            tooltip.innerHTML = content;
+            
+            // Position tooltip near cursor but avoid edges
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const tooltipWidth = 220;
+            const tooltipHeight = 150;
+            
+            let left = mouseX + 10;
+            let top = mouseY - 10;
+            
+            if (left + tooltipWidth > viewportWidth) {
+                left = mouseX - tooltipWidth - 10;
+            }
+            if (top + tooltipHeight > viewportHeight) {
+                top = mouseY - tooltipHeight - 10;
+            }
+            if (left < 0) left = 10;
+            if (top < 0) top = 10;
+            
+            // Set position and show
+            tooltip.style.left = left + 'px';
+            tooltip.style.top = top + 'px';
+            tooltip.style.opacity = '1';
+            tooltip.classList.remove('hidden');
+            
+            currentHoveredSubject = subjectId;
+        }
+        
+        // Function to hide tooltip
+        function hideTooltip() {
+            if (!tooltip) return;
+            
+            hideTimeout = setTimeout(() => {
+                tooltip.style.opacity = '0';
+                tooltip.classList.add('hidden');
+                currentHoveredSubject = null;
+            }, 100);
+        }
+        
+        // Setup hover listeners
+        function setupHoverListeners() {
+            const cells = table.querySelectorAll('td[data-dash-column="subject_id"]');
+            
+            cells.forEach(cell => {
+                // Remove existing listeners
+                if (cell._tooltipMouseEnter) cell.removeEventListener('mouseenter', cell._tooltipMouseEnter);
+                if (cell._tooltipMouseLeave) cell.removeEventListener('mouseleave', cell._tooltipMouseLeave);
+                if (cell._tooltipMouseMove) cell.removeEventListener('mousemove', cell._tooltipMouseMove);
+                
+                // Add new listeners
+                cell._tooltipMouseEnter = function(e) {
+                    const subjectId = this.textContent.trim();
+                    if (subjectId && subjectId !== currentHoveredSubject) {
+                        showTooltip(subjectId, e.clientX, e.clientY);
+                    }
+                };
+                
+                cell._tooltipMouseLeave = function(e) {
+                    hideTooltip();
+                };
+                
+                cell._tooltipMouseMove = function(e) {
+                    const subjectId = this.textContent.trim();
+                    if (subjectId === currentHoveredSubject && tooltip.style.opacity === '1') {
+                        // Update position to follow cursor
+                        const viewportWidth = window.innerWidth;
+                        const viewportHeight = window.innerHeight;
+                        const tooltipWidth = 220;
+                        const tooltipHeight = 150;
+                        
+                        let left = e.clientX + 10;
+                        let top = e.clientY - 10;
+                        
+                        if (left + tooltipWidth > viewportWidth) {
+                            left = e.clientX - tooltipWidth - 10;
+                        }
+                        if (top + tooltipHeight > viewportHeight) {
+                            top = e.clientY - tooltipHeight - 10;
+                        }
+                        if (left < 0) left = 10;
+                        if (top < 0) top = 10;
+                        
+                        tooltip.style.left = left + 'px';
+                        tooltip.style.top = top + 'px';
+                    }
+                };
+                
+                cell.addEventListener('mouseenter', cell._tooltipMouseEnter);
+                cell.addEventListener('mouseleave', cell._tooltipMouseLeave);
+                cell.addEventListener('mousemove', cell._tooltipMouseMove);
+            });
+        }
+        
+        // Setup listeners when table data changes
+        setupHoverListeners();
+        
+        console.log('Tooltip setup complete');
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("tooltip-setup-complete", "data"),
+    [Input("session-table", "data"),
+     Input("session-table", "id")]  # This acts as a trigger for setup
+)
 

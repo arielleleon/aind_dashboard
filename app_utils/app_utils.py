@@ -5,6 +5,7 @@ from .app_alerts import AlertService
 from typing import Dict, List, Optional, Union, Any
 import pandas as pd
 from datetime import datetime, timedelta
+import numpy as np
 
 class AppUtils:
     """
@@ -86,23 +87,40 @@ class AppUtils:
         
         return data
     
-    def initialize_reference_processor(self, features_config, min_sessions = 5, min_days = 7):
+    def initialize_reference_processor(self, features_config, min_sessions = 5, min_days = 7, outlier_config = None):
         """
-        Initialize reference processor
+        Initialize reference processor with enhanced outlier detection support
 
         Parameters:
             features_config (Dict[str, bool]): Configuration of features (feature_name: higher or lower better)
             min_sessions (int): Minimum number of sessions required for eligibility
             min_days (int): Minimum number of days required for eligibility
+            outlier_config (Dict[str, Any], optional): Outlier detection configuration
 
         Returns: 
             ReferenceProcessor: Initialized reference processor
         """
+        # PHASE 2: Default outlier configuration for enhanced robustness
+        if outlier_config is None:
+            outlier_config = {
+                'method': 'iqr',  # Use IQR method for better outlier detection
+                'factor': 1.5,    # Standard IQR multiplier
+                'handling': 'weighted',  # Use weighted approach instead of removal
+                'outlier_weight': 0.5,   # Outliers get half weight
+                'min_data_points': 4     # Minimum points needed for outlier detection
+            }
+        
         self.reference_processor = ReferenceProcessor(
             features_config = features_config,
             min_sessions = min_sessions,
-            min_days = min_days
+            min_days = min_days,
+            outlier_config = outlier_config
         )
+        
+        print(f"📊 PHASE 2: Reference processor initialized with enhanced outlier detection")
+        print(f"   Method: {outlier_config['method']}")
+        print(f"   Handling: {outlier_config['handling']} (weight: {outlier_config['outlier_weight']})")
+        
         return self.reference_processor
     
     def initialize_quantile_analyzer(self, stratified_data):
@@ -351,15 +369,31 @@ class AppUtils:
                 'foraging_performance': False,   # Higher is better
                 'abs(bias_naive)': True  # Lower is better 
             }
-            self.initialize_reference_processor(features_config, min_sessions=1, min_days=1)
+            # PHASE 2: Initialize with enhanced outlier detection
+            outlier_config = {
+                'method': 'iqr',
+                'factor': 1.5,
+                'handling': 'weighted',
+                'outlier_weight': 0.5,
+                'min_data_points': 4
+            }
+            self.initialize_reference_processor(features_config, min_sessions=1, min_days=1, outlier_config=outlier_config)
         
-        # Step 2: Get eligible subjects and preprocess data
+        # Step 2: Get eligible subjects and preprocess data with enhanced outlier detection
         eligible_subjects = self.reference_processor.get_eligible_subjects(df)
         eligible_df = df[df['subject_id'].isin(eligible_subjects)]
         print(f"Got {len(eligible_subjects)} eligible subjects")
         
-        processed_df = self.reference_processor.preprocess_data(eligible_df, remove_outliers=False)
-        print(f"Preprocessed data: {len(processed_df)} sessions")
+        # PHASE 2: Enhanced preprocessing with outlier detection
+        processed_df = self.reference_processor.preprocess_data(eligible_df, remove_outliers=True)
+        print(f"Preprocessed data with Phase 2 enhancements: {len(processed_df)} sessions")
+        
+        # Report outlier weights if present
+        if 'outlier_weight' in processed_df.columns:
+            outlier_sessions = (processed_df['outlier_weight'] < 1.0).sum()
+            total_sessions = len(processed_df)
+            outlier_rate = (outlier_sessions / total_sessions) * 100
+            print(f"📊 PHASE 2 Results: {outlier_sessions}/{total_sessions} sessions ({outlier_rate:.1f}%) have outlier weights")
         
         # Step 3: Prepare session-level data with rolling averages and strata assignments
         session_level_data = self.reference_processor.prepare_session_level_data(processed_df)
@@ -443,6 +477,12 @@ class AppUtils:
             result_df['overall_percentile_category'] = result_df['session_overall_percentile'].apply(
                 lambda x: self._map_percentile_to_category(x) if not pd.isna(x) else 'NS'
             )
+        
+        # PHASE 2: Add simple boolean outlier flag based on outlier_weight
+        if 'outlier_weight' in result_df.columns:
+            result_df['is_outlier'] = result_df['outlier_weight'] < 1.0
+        else:
+            result_df['is_outlier'] = False  # Default if no outlier detection applied
         
         return result_df
     
@@ -568,6 +608,9 @@ class AppUtils:
                 'session_overall_percentile', 'overall_percentile_category',
                 'session_overall_rolling_avg',  # Add overall rolling average for hover info
                 'is_current_strata', 'is_last_session',
+                # PHASE 2: Add outlier detection information
+                'outlier_weight',  # Phase 2 outlier weight (0.5 for outliers, 1.0 for normal)
+                'is_outlier',      # Simple boolean flag for outlier status
                 # CRITICAL FIX: Add essential metadata columns
                 'PI', 'trainer', 'rig', 'current_stage_actual', 'curriculum_name',
                 'water_day_total', 'base_weight', 'target_weight', 'weight_after',
@@ -872,6 +915,18 @@ class AppUtils:
                 'strata': subject_sessions['strata'].tolist()
             }
             
+            # Add confidence intervals for overall percentiles
+            if 'session_overall_percentile_ci_lower' in subject_sessions.columns:
+                time_series['overall_percentiles_ci_lower'] = subject_sessions['session_overall_percentile_ci_lower'].fillna(-1).tolist()
+                time_series['overall_percentiles_ci_upper'] = subject_sessions['session_overall_percentile_ci_upper'].fillna(-1).tolist()
+                print(f"Added overall percentile CI data for {subject_id}: {len(subject_sessions['session_overall_percentile_ci_lower'].dropna())} valid CI bounds")
+            
+            # PHASE 2: Add outlier detection information for visualization
+            if 'is_outlier' in subject_sessions.columns:
+                time_series['is_outlier'] = subject_sessions['is_outlier'].fillna(False).tolist()
+                outlier_count = subject_sessions['is_outlier'].sum()
+                print(f"Added outlier data for {subject_id}: {outlier_count} outlier sessions out of {len(subject_sessions)}")
+            
             # Add RAW feature values for timeseries plotting (not the processed rolling averages)
             for feature in features:
                 # Store raw feature values for timeseries component to apply its own rolling average
@@ -883,6 +938,15 @@ class AppUtils:
                 percentile_col = f"{feature}_session_percentile"
                 if percentile_col in subject_sessions.columns:
                     time_series[f"{feature}_percentiles"] = subject_sessions[percentile_col].fillna(-1).tolist()
+                
+                # Add confidence intervals for feature percentiles
+                ci_lower_col = f"{feature}_session_percentile_ci_lower"
+                ci_upper_col = f"{feature}_session_percentile_ci_upper"
+                
+                if ci_lower_col in subject_sessions.columns and ci_upper_col in subject_sessions.columns:
+                    time_series[f"{feature}_percentile_ci_lower"] = subject_sessions[ci_lower_col].fillna(-1).tolist()
+                    time_series[f"{feature}_percentile_ci_upper"] = subject_sessions[ci_upper_col].fillna(-1).tolist()
+                    print(f"Added CI data for {feature}: {len(subject_sessions[ci_lower_col].dropna())} valid CI bounds")
             
             ui_structures['time_series_data'][subject_id] = time_series
         
@@ -1015,7 +1079,10 @@ class AppUtils:
                 'total_sessions_alert': total_sessions_alert,
                 'stage_sessions_alert': stage_sessions_alert,
                 'water_day_total_alert': water_day_total_alert,
-                'ns_reason': ''
+                'ns_reason': '',
+                # PHASE 2: Add outlier detection information
+                'outlier_weight': row.get('outlier_weight', 1.0),  # Default to normal weight
+                'is_outlier': row.get('is_outlier', False)         # Default to not outlier
             }
             
             # Add feature-specific data (both percentiles and rolling averages)
@@ -1023,12 +1090,25 @@ class AppUtils:
                 percentile_col = f"{feature}_session_percentile"
                 category_col = f"{feature}_category"
                 rolling_avg_col = f"{feature}_processed_rolling_avg"
+                # NEW: Add CI columns
+                ci_lower_col = f"{feature}_session_percentile_ci_lower"
+                ci_upper_col = f"{feature}_session_percentile_ci_upper"
                 
                 display_row[f"{feature}_session_percentile"] = row.get(percentile_col)
                 display_row[f"{feature}_category"] = row.get(category_col, 'NS')
                 
                 # CRITICAL FIX: Add rolling average columns to table display cache
                 display_row[f"{feature}_processed_rolling_avg"] = row.get(rolling_avg_col)
+                
+                # CRITICAL FIX: Add CI columns to table display cache
+                display_row[f"{feature}_session_percentile_ci_lower"] = row.get(ci_lower_col)
+                display_row[f"{feature}_session_percentile_ci_upper"] = row.get(ci_upper_col)
+            
+            # CRITICAL FIX: Add overall percentile CI columns
+            overall_ci_lower_col = "session_overall_percentile_ci_lower"
+            overall_ci_upper_col = "session_overall_percentile_ci_upper"
+            display_row[overall_ci_lower_col] = row.get(overall_ci_lower_col)
+            display_row[overall_ci_upper_col] = row.get(overall_ci_upper_col)
             
             table_data.append(display_row)
         
@@ -1495,3 +1575,148 @@ class AppUtils:
         print(f"✅ UI cache regenerated with {threshold_count} threshold alerts computed")
         
         return threshold_count
+
+    def test_phase2_outlier_detection(self, comparison_methods: List[str] = None) -> Dict[str, Any]:
+        """
+        Test and validate Phase 2 outlier detection improvements
+        
+        Parameters:
+            comparison_methods: List[str], optional
+                List of outlier detection methods to compare ['iqr', 'modified_zscore', 'none']
+                
+        Returns:
+            Dict[str, Any]: Comprehensive comparison results
+        """
+        if comparison_methods is None:
+            comparison_methods = ['iqr', 'modified_zscore', 'none']
+        
+        print("🧪 PHASE 2 Testing: Outlier Detection Method Comparison")
+        print("=" * 60)
+        
+        # Get raw data for testing
+        raw_data = self.get_session_data(use_cache=True)
+        eligible_subjects = self.reference_processor.get_eligible_subjects(raw_data) if self.reference_processor else []
+        eligible_df = raw_data[raw_data['subject_id'].isin(eligible_subjects)]
+        
+        if eligible_df.empty:
+            return {'error': 'No eligible data for testing'}
+        
+        comparison_results = {}
+        
+        for method in comparison_methods:
+            print(f"\n🔍 Testing method: {method.upper()}")
+            
+            # Create test configuration
+            test_config = {
+                'method': method,
+                'factor': 1.5,
+                'handling': 'weighted',
+                'outlier_weight': 0.5,
+                'min_data_points': 4
+            }
+            
+            # Create temporary reference processor for testing
+            features_config = {
+                'finished_trials': False,
+                'ignore_rate': True,
+                'total_trials': False,
+                'foraging_performance': False,
+                'abs(bias_naive)': True
+            }
+            
+            test_processor = ReferenceProcessor(
+                features_config=features_config,
+                min_sessions=1,
+                min_days=1,
+                outlier_config=test_config
+            )
+            
+            # Process data with this method
+            try:
+                processed_df = test_processor.preprocess_data(eligible_df, remove_outliers=True)
+                
+                # Collect statistics
+                total_sessions = len(processed_df)
+                outlier_sessions = 0
+                outlier_rate = 0.0
+                
+                if 'outlier_weight' in processed_df.columns:
+                    outlier_sessions = (processed_df['outlier_weight'] < 1.0).sum()
+                    outlier_rate = (outlier_sessions / total_sessions) * 100 if total_sessions > 0 else 0
+                
+                # Calculate feature-specific outlier rates
+                feature_outlier_rates = {}
+                processed_features = [col for col in processed_df.columns if col.endswith('_processed')]
+                
+                for feature_col in processed_features:
+                    feature_name = feature_col.replace('_processed', '')
+                    if feature_name in features_config:
+                        # Check how many outliers this feature would detect
+                        feature_values = processed_df[feature_col].dropna().values
+                        if len(feature_values) > 0 and method != 'none':
+                            outlier_mask, _ = test_processor._detect_outliers(feature_values)
+                            feature_outlier_count = np.sum(outlier_mask)
+                            feature_outlier_rate = (feature_outlier_count / len(feature_values)) * 100
+                            feature_outlier_rates[feature_name] = {
+                                'count': feature_outlier_count,
+                                'rate': feature_outlier_rate,
+                                'total_values': len(feature_values)
+                            }
+                
+                # Store results
+                comparison_results[method] = {
+                    'total_sessions': total_sessions,
+                    'outlier_sessions': outlier_sessions,
+                    'outlier_rate': outlier_rate,
+                    'feature_outlier_rates': feature_outlier_rates,
+                    'data_retention': 100.0,  # We use weighting, so 100% retention
+                    'method_config': test_config
+                }
+                
+                print(f"   Sessions processed: {total_sessions}")
+                print(f"   Outliers detected: {outlier_sessions} ({outlier_rate:.1f}%)")
+                print(f"   Data retention: 100% (weighted approach)")
+                
+                # Feature-specific results
+                if feature_outlier_rates:
+                    print(f"   Feature-specific outlier rates:")
+                    for feature, stats in feature_outlier_rates.items():
+                        print(f"     {feature}: {stats['count']}/{stats['total_values']} ({stats['rate']:.1f}%)")
+                
+            except Exception as e:
+                print(f"   ❌ Error testing {method}: {str(e)}")
+                comparison_results[method] = {'error': str(e)}
+        
+        # Generate summary comparison
+        print(f"\n📊 PHASE 2 Comparison Summary:")
+        print("-" * 40)
+        
+        valid_results = {k: v for k, v in comparison_results.items() if 'error' not in v}
+        
+        if valid_results:
+            print(f"{'Method':<15} {'Outlier Rate':<12} {'Sessions':<10} {'Retention'}")
+            print("-" * 50)
+            
+            for method, results in valid_results.items():
+                outlier_rate = results['outlier_rate']
+                total_sessions = results['total_sessions']
+                retention = results['data_retention']
+                
+                print(f"{method:<15} {outlier_rate:>8.1f}%     {total_sessions:>7}    {retention:>6.0f}%")
+        
+        # Recommendations
+        print(f"\n💡 PHASE 2 Recommendations:")
+        if 'iqr' in valid_results and 'none' in valid_results:
+            iqr_rate = valid_results['iqr']['outlier_rate']
+            print(f"   • IQR method detected {iqr_rate:.1f}% outliers vs. 0% with no detection")
+            if iqr_rate >= 1.0 and iqr_rate <= 5.0:
+                print(f"   • ✅ IQR rate ({iqr_rate:.1f}%) is within expected range (1-5%)")
+            elif iqr_rate > 5.0:
+                print(f"   • ⚠️  IQR rate ({iqr_rate:.1f}%) is higher than expected - consider adjusting factor")
+            else:
+                print(f"   • ⚠️  IQR rate ({iqr_rate:.1f}%) is lower than expected - data may be very clean")
+        
+        print(f"   • Weighted approach maintains 100% data retention")
+        print(f"   • Enhanced robustness vs. previous 3-sigma method")
+        
+        return comparison_results

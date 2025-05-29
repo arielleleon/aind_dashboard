@@ -21,17 +21,7 @@ class AppSessionList:
             
             # Scrollable container for session cards
             html.Div([
-                html.Div(id="session-list-container", className="session-list-container"),
-                
-                # Load more button
-                html.Div([
-                    dbc.Button(
-                        "Load More Sessions",
-                        id="load-more-sessions-btn",
-                        color="secondary",
-                        className="load-more-btn"
-                    )
-                ], className="load-more-container")
+                html.Div(id="session-list-container", className="session-list-container")
             ], id="session-list-scroll-container", className="session-list-scroll-container"),
             
             # Store component to track session loading state
