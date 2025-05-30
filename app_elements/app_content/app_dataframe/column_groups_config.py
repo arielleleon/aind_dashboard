@@ -26,7 +26,7 @@ COLUMN_GROUPS = {
     'percentiles': {
         'label': 'Percentiles & Confidence Intervals',
         'collapsible': True,
-        'default_expanded': True,
+        'default_expanded': False,
         'icon': 'fas fa-chart-line',
         'columns': [
             # Core percentile columns (always shown when group is expanded)
