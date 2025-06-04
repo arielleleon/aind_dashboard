@@ -1632,7 +1632,7 @@ class AppUtils:
                                         reference_data=reference_values,
                                         target_value=rolling_avg_value,
                                         confidence_level=0.95,
-                                        n_bootstrap=500,  # Fewer bootstrap samples for efficiency
+                                        n_bootstrap=500,
                                         random_state=42
                                     )
                                     
