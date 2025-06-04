@@ -164,20 +164,28 @@ class AppDataFrame:
             recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=True)
             print(f"Selected most recent session for {len(recent_sessions)} subjects")
         else:
-            print("⚠️  No cached data available - this should not happen after app initialization")
-            print("🔄 Unified pipeline not run yet - processing now to ensure data availability...")
-            app_utils.process_data_pipeline(original_df, use_cache=False)
-            print("✅ Unified pipeline complete - UI structures now available")
-            
-            # Now get the UI-optimized data
-            table_data = app_utils.get_table_display_data(use_cache=True)
-            if table_data:
-                recent_sessions = pd.DataFrame(table_data)
-                print(f"Loaded {len(recent_sessions)} subjects from UI cache")
-            else:
-                # Final fallback
+            # FIXED: Check if pipeline is already running or recently completed
+            # Only re-run pipeline if absolutely necessary to avoid expensive duplication
+            session_level_data = app_utils._cache.get('session_level_data')
+            if session_level_data is not None:
+                print("✅ Session-level data found in cache - using cached data")
                 recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=True)
                 print(f"Selected most recent session for {len(recent_sessions)} subjects")
+            else:
+                print("⚠️  No cached data available - this should not happen after app initialization")
+                print("🔄 Unified pipeline not run yet - processing now to ensure data availability...")
+                app_utils.process_data_pipeline(original_df, use_cache=False)
+                print("✅ Unified pipeline complete - UI structures now available")
+                
+                # Now get the UI-optimized data
+                table_data = app_utils.get_table_display_data(use_cache=True)
+                if table_data:
+                    recent_sessions = pd.DataFrame(table_data)
+                    print(f"Loaded {len(recent_sessions)} subjects from UI cache")
+                else:
+                    # Final fallback
+                    recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=True)
+                    print(f"Selected most recent session for {len(recent_sessions)} subjects")
         
         # Step 3: Apply alerts and prepare output
         # Initialize alert service if needed
@@ -503,14 +511,41 @@ class AppDataFrame:
             # NEW: Session-level metrics (from unified pipeline)
             formatted_column_names[f'{feature}_session_percentile'] = f'{feature_display}\nSession %ile'
             formatted_column_names[f'{feature}_processed_rolling_avg'] = f'{feature_display}\nRolling Avg'
-            
+            # Wilson CIs for percentiles
+            formatted_column_names[f'{feature}_session_percentile_ci_lower'] = f'{feature_display}\nWilson CI Lower'
+            formatted_column_names[f'{feature}_session_percentile_ci_upper'] = f'{feature_display}\nWilson CI Upper'
+            # PHASE 3: Bootstrap enhancement indicators
+            formatted_column_names[f'{feature}_bootstrap_enhanced'] = f'{feature_display}\nBootstrap Enhanced'
+            # NEW: Bootstrap CIs for raw rolling averages
+            formatted_column_names[f'{feature}_bootstrap_ci_lower'] = f'{feature_display}\nBootstrap CI Lower'
+            formatted_column_names[f'{feature}_bootstrap_ci_upper'] = f'{feature_display}\nBootstrap CI Upper'
+            # NEW: Bootstrap CI width
+            formatted_column_names[f'{feature}_bootstrap_ci_width'] = f'{feature_display}\nBootstrap CI Width'
+            # NEW: Bootstrap CI certainty
+            formatted_column_names[f'{feature}_bootstrap_ci_certainty'] = f'{feature_display}\nCI Certainty'
+        
         # Add overall percentile columns (both session and strata versions)
         formatted_column_names['session_overall_percentile'] = 'Session Overall\nPercentile'
         formatted_column_names['overall_percentile'] = 'Strata Overall\nPercentile'
         
+        # Wilson CIs for overall percentiles
+        formatted_column_names['session_overall_percentile_ci_lower'] = 'Overall Percentile\nWilson CI Lower'
+        formatted_column_names['session_overall_percentile_ci_upper'] = 'Overall Percentile\nWilson CI Upper'
+        
         # PHASE 2: Add outlier detection column names
         formatted_column_names['outlier_weight'] = 'Outlier\nWeight'
         formatted_column_names['is_outlier'] = 'Is\nOutlier'
+
+        # PHASE 3: Add bootstrap enhancement indicator column names
+        formatted_column_names['session_overall_bootstrap_enhanced'] = 'Overall\nBootstrap Enhanced'
+        
+        # NEW: Bootstrap CIs for overall rolling averages
+        formatted_column_names['session_overall_bootstrap_ci_lower'] = 'Overall Rolling Avg\nBootstrap CI Lower'
+        formatted_column_names['session_overall_bootstrap_ci_upper'] = 'Overall Rolling Avg\nBootstrap CI Upper'
+        # NEW: Bootstrap CI width for overall
+        formatted_column_names['session_overall_bootstrap_ci_width'] = 'Overall Rolling Avg\nBootstrap CI Width'
+        # NEW: Overall bootstrap CI certainty
+        formatted_column_names['session_overall_bootstrap_ci_certainty'] = 'Overall Rolling Avg\nCI Certainty'
 
         # Create columns with formatted names and custom numeric formatting
         # Create ALL column definitions (for switching between)
@@ -863,6 +898,220 @@ class AppDataFrame:
                             'column_id': 'subject_id'
                         },
                         'borderRight': '3px solid #9C27B0'  # Purple right border on subject_id for outliers
+                    },
+                    # PHASE 3: Bootstrap enhancement styling
+                    # Highlight bootstrap enhanced overall percentile in green
+                    {
+                        'if': {
+                            'filter_query': '{session_overall_bootstrap_enhanced} = true',
+                            'column_id': 'session_overall_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#4CAF50',  # Green for bootstrap enhanced
+                        'color': '#ffffff',
+                        'fontWeight': '600'
+                    },
+                    # Subtle styling for non-bootstrap enhanced overall percentile
+                    {
+                        'if': {
+                            'filter_query': '{session_overall_bootstrap_enhanced} = false',
+                            'column_id': 'session_overall_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#F5F5F5',  # Light gray for non-bootstrap
+                        'color': '#666666',
+                        'fontStyle': 'italic'
+                    },
+                    # Feature-specific bootstrap enhancement styling
+                    # Finished trials bootstrap enhanced
+                    {
+                        'if': {
+                            'filter_query': '{finished_trials_bootstrap_enhanced} = true',
+                            'column_id': 'finished_trials_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#4CAF50',
+                        'color': '#ffffff',
+                        'fontWeight': '600'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{finished_trials_bootstrap_enhanced} = false',
+                            'column_id': 'finished_trials_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#F5F5F5',
+                        'color': '#666666',
+                        'fontStyle': 'italic'
+                    },
+                    # Ignore rate bootstrap enhanced
+                    {
+                        'if': {
+                            'filter_query': '{ignore_rate_bootstrap_enhanced} = true',
+                            'column_id': 'ignore_rate_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#4CAF50',
+                        'color': '#ffffff',
+                        'fontWeight': '600'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{ignore_rate_bootstrap_enhanced} = false',
+                            'column_id': 'ignore_rate_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#F5F5F5',
+                        'color': '#666666',
+                        'fontStyle': 'italic'
+                    },
+                    # Total trials bootstrap enhanced
+                    {
+                        'if': {
+                            'filter_query': '{total_trials_bootstrap_enhanced} = true',
+                            'column_id': 'total_trials_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#4CAF50',
+                        'color': '#ffffff',
+                        'fontWeight': '600'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{total_trials_bootstrap_enhanced} = false',
+                            'column_id': 'total_trials_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#F5F5F5',
+                        'color': '#666666',
+                        'fontStyle': 'italic'
+                    },
+                    # Foraging performance bootstrap enhanced
+                    {
+                        'if': {
+                            'filter_query': '{foraging_performance_bootstrap_enhanced} = true',
+                            'column_id': 'foraging_performance_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#4CAF50',
+                        'color': '#ffffff',
+                        'fontWeight': '600'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{foraging_performance_bootstrap_enhanced} = false',
+                            'column_id': 'foraging_performance_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#F5F5F5',
+                        'color': '#666666',
+                        'fontStyle': 'italic'
+                    },
+                    # Bias naive bootstrap enhanced
+                    {
+                        'if': {
+                            'filter_query': '{abs(bias_naive)_bootstrap_enhanced} = true',
+                            'column_id': 'abs(bias_naive)_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#4CAF50',
+                        'color': '#ffffff',
+                        'fontWeight': '600'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{abs(bias_naive)_bootstrap_enhanced} = false',
+                            'column_id': 'abs(bias_naive)_bootstrap_enhanced'
+                        },
+                        'backgroundColor': '#F5F5F5',
+                        'color': '#666666',
+                        'fontStyle': 'italic'
+                    },
+                    # NEW: CI Certainty border styling
+                    # Overall percentile - certain (narrow CI)
+                    {
+                        'if': {
+                            'filter_query': '{session_overall_bootstrap_ci_certainty} = certain',
+                            'column_id': ['session_overall_rolling_avg', 'session_overall_percentile']
+                        },
+                        'borderLeft': '4px solid #4CAF50'  # Green for certain
+                    },
+                    # Overall percentile - uncertain (wide CI) 
+                    {
+                        'if': {
+                            'filter_query': '{session_overall_bootstrap_ci_certainty} = uncertain',
+                            'column_id': ['session_overall_rolling_avg', 'session_overall_percentile']
+                        },
+                        'borderLeft': '4px solid #FF5722'  # Red-orange for uncertain
+                    },
+                    # Finished trials - certain
+                    {
+                        'if': {
+                            'filter_query': '{finished_trials_bootstrap_ci_certainty} = certain',
+                            'column_id': ['finished_trials', 'finished_trials_processed_rolling_avg']
+                        },
+                        'borderLeft': '4px solid #4CAF50'
+                    },
+                    # Finished trials - uncertain
+                    {
+                        'if': {
+                            'filter_query': '{finished_trials_bootstrap_ci_certainty} = uncertain',
+                            'column_id': ['finished_trials', 'finished_trials_processed_rolling_avg']
+                        },
+                        'borderLeft': '4px solid #FF5722'
+                    },
+                    # Ignore rate - certain
+                    {
+                        'if': {
+                            'filter_query': '{ignore_rate_bootstrap_ci_certainty} = certain',
+                            'column_id': ['ignore_rate', 'ignore_rate_processed_rolling_avg']
+                        },
+                        'borderLeft': '4px solid #4CAF50'
+                    },
+                    # Ignore rate - uncertain
+                    {
+                        'if': {
+                            'filter_query': '{ignore_rate_bootstrap_ci_certainty} = uncertain',
+                            'column_id': ['ignore_rate', 'ignore_rate_processed_rolling_avg']
+                        },
+                        'borderLeft': '4px solid #FF5722'
+                    },
+                    # Total trials - certain
+                    {
+                        'if': {
+                            'filter_query': '{total_trials_bootstrap_ci_certainty} = certain',
+                            'column_id': ['total_trials', 'total_trials_processed_rolling_avg']
+                        },
+                        'borderLeft': '4px solid #4CAF50'
+                    },
+                    # Total trials - uncertain
+                    {
+                        'if': {
+                            'filter_query': '{total_trials_bootstrap_ci_certainty} = uncertain',
+                            'column_id': ['total_trials', 'total_trials_processed_rolling_avg']
+                        },
+                        'borderLeft': '4px solid #FF5722'
+                    },
+                    # Foraging performance - certain
+                    {
+                        'if': {
+                            'filter_query': '{foraging_performance_bootstrap_ci_certainty} = certain',
+                            'column_id': ['foraging_performance', 'foraging_performance_processed_rolling_avg']
+                        },
+                        'borderLeft': '4px solid #4CAF50'
+                    },
+                    # Foraging performance - uncertain
+                    {
+                        'if': {
+                            'filter_query': '{foraging_performance_bootstrap_ci_certainty} = uncertain',
+                            'column_id': ['foraging_performance', 'foraging_performance_processed_rolling_avg']
+                        },
+                        'borderLeft': '4px solid #FF5722'
+                    },
+                    # Bias naive - certain
+                    {
+                        'if': {
+                            'filter_query': '{abs(bias_naive)_bootstrap_ci_certainty} = certain',
+                            'column_id': ['abs(bias_naive)', 'abs(bias_naive)_processed_rolling_avg']
+                        },
+                        'borderLeft': '4px solid #4CAF50'
+                    },
+                    # Bias naive - uncertain
+                    {
+                        'if': {
+                            'filter_query': '{abs(bias_naive)_bootstrap_ci_certainty} = uncertain',
+                            'column_id': ['abs(bias_naive)', 'abs(bias_naive)_processed_rolling_avg']
+                        },
+                        'borderLeft': '4px solid #FF5722'
                     }
                 ] + self._get_percentile_formatting_rules(),
                 style_table={

@@ -349,4 +349,425 @@ class StatisticalUtils:
             "coverage_difference": coverage_rate - confidence_level,
             "avg_ci_width": avg_ci_width,
             "n_valid": np.sum(valid_mask)
-        } 
+        }
+
+    # PHASE 3: Bootstrap Enhancement Methods
+    
+    @staticmethod
+    def generate_bootstrap_reference_distribution(
+        reference_data: np.ndarray,
+        reference_weights: Optional[np.ndarray] = None,
+        n_bootstrap: int = 2000,
+        percentile_grid: Optional[np.ndarray] = None,
+        random_state: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate bootstrap reference distribution using pre-computed percentile grids
+        
+        This creates a more robust reference distribution for percentile calculations
+        by generating bootstrap samples and computing percentile statistics.
+        
+        Parameters:
+            reference_data: np.ndarray
+                Original reference distribution values
+            reference_weights: Optional[np.ndarray]
+                Weights for reference data (from outlier detection)
+            n_bootstrap: int
+                Number of bootstrap samples to generate
+            percentile_grid: Optional[np.ndarray]
+                Percentiles to compute (default: 1, 2, 3, ..., 99)
+            random_state: Optional[int]
+                Random seed for reproducibility
+                
+        Returns:
+            Dict[str, Any]
+                Bootstrap reference distribution with percentile grid and metadata
+        """
+        if len(reference_data) < 3:
+            return {
+                'percentile_grid': np.array([]),
+                'percentile_values': np.array([]),
+                'bootstrap_enabled': False,
+                'error': 'Insufficient reference data'
+            }
+        
+        # Set default percentile grid (1st to 99th percentiles)
+        if percentile_grid is None:
+            percentile_grid = np.arange(1, 100)
+        
+        # Set random seed if provided
+        if random_state is not None:
+            np.random.seed(random_state)
+        
+        # Clean reference data
+        valid_mask = ~np.isnan(reference_data)
+        clean_data = reference_data[valid_mask]
+        
+        if reference_weights is not None:
+            clean_weights = reference_weights[valid_mask]
+        else:
+            clean_weights = np.ones(len(clean_data))
+        
+        if len(clean_data) < 3:
+            return {
+                'percentile_grid': np.array([]),
+                'percentile_values': np.array([]),
+                'bootstrap_enabled': False,
+                'error': 'Insufficient clean reference data'
+            }
+        
+        # Generate bootstrap samples and compute percentile grid
+        bootstrap_percentiles = []
+        successful_samples = 0
+        
+        for _ in range(n_bootstrap):
+            try:
+                # Weighted bootstrap sampling
+                if np.any(clean_weights != 1.0):
+                    # Use weighted sampling
+                    normalized_weights = clean_weights / np.sum(clean_weights)
+                    bootstrap_indices = np.random.choice(
+                        len(clean_data), 
+                        size=len(clean_data), 
+                        replace=True, 
+                        p=normalized_weights
+                    )
+                    bootstrap_sample = clean_data[bootstrap_indices]
+                else:
+                    # Standard bootstrap sampling
+                    bootstrap_sample = np.random.choice(clean_data, size=len(clean_data), replace=True)
+                
+                # Compute percentiles for this bootstrap sample
+                sample_percentiles = np.percentile(bootstrap_sample, percentile_grid)
+                bootstrap_percentiles.append(sample_percentiles)
+                successful_samples += 1
+                
+            except Exception as e:
+                # Skip failed bootstrap samples
+                continue
+        
+        if successful_samples < max(10, n_bootstrap * 0.1):  # Need at least 10% successful samples
+            return {
+                'percentile_grid': np.array([]),
+                'percentile_values': np.array([]),
+                'bootstrap_enabled': False,
+                'error': f'Too few successful bootstrap samples: {successful_samples}/{n_bootstrap}'
+            }
+        
+        # Convert to numpy array and compute statistics
+        bootstrap_percentiles = np.array(bootstrap_percentiles)
+        
+        # Compute mean percentile values across all bootstrap samples
+        mean_percentiles = np.mean(bootstrap_percentiles, axis=0)
+        
+        # Compute confidence intervals for each percentile
+        percentile_cis = {}
+        for i, p in enumerate(percentile_grid):
+            ci_lower = np.percentile(bootstrap_percentiles[:, i], 2.5)
+            ci_upper = np.percentile(bootstrap_percentiles[:, i], 97.5)
+            percentile_cis[int(p)] = (ci_lower, ci_upper)
+        
+        return {
+            'percentile_grid': percentile_grid,
+            'percentile_values': mean_percentiles,
+            'percentile_cis': percentile_cis,
+            'bootstrap_samples': successful_samples,
+            'bootstrap_enabled': True,
+            'original_data_size': len(clean_data),
+            'generation_timestamp': pd.Timestamp.now(),
+            'random_state': random_state
+        }
+    
+    @staticmethod
+    def calculate_bootstrap_raw_value_ci(
+        reference_data: np.ndarray,
+        target_value: float,
+        confidence_level: float = 0.95,
+        n_bootstrap: int = 1000,
+        random_state: Optional[int] = None
+    ) -> Tuple[float, float]:
+        """
+        Calculate bootstrap confidence interval for a raw rolling average value
+        
+        This calculates uncertainty in the actual measurement value itself,
+        not the percentile ranking. Uses bootstrap resampling of reference
+        distribution to estimate CI bounds for the target value.
+        
+        Parameters:
+            reference_data: np.ndarray
+                Reference distribution of raw values (same feature, same strata)
+            target_value: float
+                The rolling average value for which to calculate CI
+            confidence_level: float
+                Confidence level (default: 0.95)
+            n_bootstrap: int
+                Number of bootstrap samples
+            random_state: Optional[int]
+                Random seed for reproducibility
+                
+        Returns:
+            Tuple[float, float]
+                (lower_bound, upper_bound) for the raw value uncertainty
+        """
+        if len(reference_data) < 5 or pd.isna(target_value):
+            return (np.nan, np.nan)
+        
+        # Set random seed if provided
+        if random_state is not None:
+            np.random.seed(random_state)
+        
+        # Clean reference data
+        clean_reference = reference_data[~np.isnan(reference_data)]
+        
+        if len(clean_reference) < 5:
+            return (np.nan, np.nan)
+        
+        # Calculate the sample standard deviation as a proxy for uncertainty
+        sample_std = np.std(clean_reference, ddof=1)
+        sample_mean = np.mean(clean_reference)
+        
+        # For bootstrap CI of raw values, we estimate the uncertainty
+        # in our target value based on the reference distribution variance
+        
+        # Bootstrap the reference distribution to estimate sampling variability
+        bootstrap_means = []
+        bootstrap_stds = []
+        
+        for _ in range(n_bootstrap):
+            # Bootstrap sample from reference
+            bootstrap_sample = np.random.choice(clean_reference, size=len(clean_reference), replace=True)
+            bootstrap_means.append(np.mean(bootstrap_sample))
+            bootstrap_stds.append(np.std(bootstrap_sample, ddof=1))
+        
+        # Estimate the standard error of the measurement
+        mean_of_bootstrap_stds = np.mean(bootstrap_stds)
+        
+        # Calculate CI bounds for the target value using the estimated uncertainty
+        # This represents "how uncertain are we about this measurement value"
+        alpha = 1 - confidence_level
+        z_score = stats.norm.ppf(1 - alpha/2)
+        
+        # Use the bootstrap-estimated standard error
+        margin_of_error = z_score * mean_of_bootstrap_stds / np.sqrt(len(clean_reference))
+        
+        lower_bound = target_value - margin_of_error
+        upper_bound = target_value + margin_of_error
+        
+        return (lower_bound, upper_bound)
+    
+    @staticmethod
+    def validate_percentile_monotonicity(
+        percentile_values: np.ndarray,
+        percentile_grid: np.ndarray,
+        key_percentiles: Optional[List[float]] = None
+    ) -> Dict[str, Any]:
+        """
+        Validate percentile monotonicity (25th < 50th < 75th percentiles)
+        
+        Ensures that percentile distributions maintain proper ordering,
+        which is critical for statistical validity.
+        
+        Parameters:
+            percentile_values: np.ndarray
+                Computed percentile values
+            percentile_grid: np.ndarray
+                Corresponding percentile ranks
+            key_percentiles: Optional[List[float]]
+                Key percentiles to check (default: [25, 50, 75])
+                
+        Returns:
+            Dict[str, Any]
+                Validation results with pass/fail status and details
+        """
+        if key_percentiles is None:
+            key_percentiles = [25.0, 50.0, 75.0]
+        
+        validation_result = {
+            'monotonicity_valid': True,
+            'violations': [],
+            'key_percentile_values': {},
+            'overall_monotonic': True
+        }
+        
+        try:
+            # Check overall monotonicity
+            if len(percentile_values) > 1:
+                is_monotonic = np.all(np.diff(percentile_values) >= 0)
+                validation_result['overall_monotonic'] = is_monotonic
+                
+                if not is_monotonic:
+                    # Find specific violations
+                    violations_indices = np.where(np.diff(percentile_values) < 0)[0]
+                    for idx in violations_indices:
+                        validation_result['violations'].append({
+                            'percentile_1': float(percentile_grid[idx]),
+                            'value_1': float(percentile_values[idx]),
+                            'percentile_2': float(percentile_grid[idx + 1]),
+                            'value_2': float(percentile_values[idx + 1]),
+                            'violation_type': 'general_monotonicity'
+                        })
+            
+            # Check key percentiles specifically
+            key_values = []
+            for p in key_percentiles:
+                # Find closest percentile in grid
+                if len(percentile_grid) > 0:
+                    closest_idx = np.argmin(np.abs(percentile_grid - p))
+                    key_value = percentile_values[closest_idx]
+                    key_values.append(key_value)
+                    validation_result['key_percentile_values'][f'p{int(p)}'] = float(key_value)
+            
+            # Check key percentile ordering
+            if len(key_values) >= 2:
+                for i in range(len(key_values) - 1):
+                    if key_values[i] >= key_values[i + 1]:
+                        validation_result['monotonicity_valid'] = False
+                        validation_result['violations'].append({
+                            'percentile_1': key_percentiles[i],
+                            'value_1': float(key_values[i]),
+                            'percentile_2': key_percentiles[i + 1],
+                            'value_2': float(key_values[i + 1]),
+                            'violation_type': 'key_percentile_ordering'
+                        })
+        
+        except Exception as e:
+            validation_result.update({
+                'monotonicity_valid': False,
+                'overall_monotonic': False,
+                'error': str(e)
+            })
+        
+        return validation_result
+    
+    @staticmethod
+    def compare_bootstrap_vs_standard(
+        reference_data: np.ndarray,
+        bootstrap_distribution: Dict[str, Any],
+        test_percentiles: Optional[List[float]] = None,
+        reference_weights: Optional[np.ndarray] = None
+    ) -> Dict[str, Any]:
+        """
+        Compare bootstrap-enhanced vs standard percentile calculations
+        
+        Provides quality metrics to assess the value of bootstrap enhancement
+        and detect potential issues with bootstrap distributions.
+        
+        Parameters:
+            reference_data: np.ndarray
+                Original reference distribution values
+            bootstrap_distribution: Dict[str, Any]
+                Bootstrap reference distribution
+            test_percentiles: Optional[List[float]]
+                Percentiles to compare (default: [10, 25, 50, 75, 90])
+            reference_weights: Optional[np.ndarray]
+                Weights for reference data
+                
+        Returns:
+            Dict[str, Any]
+                Comparison statistics and quality metrics
+        """
+        if test_percentiles is None:
+            test_percentiles = [10.0, 25.0, 50.0, 75.0, 90.0]
+        
+        comparison_result = {
+            'bootstrap_available': bootstrap_distribution.get('bootstrap_enabled', False),
+            'percentile_comparisons': {},
+            'quality_metrics': {},
+            'recommendation': 'standard'  # Default to standard method
+        }
+        
+        if not comparison_result['bootstrap_available']:
+            comparison_result['error'] = 'Bootstrap distribution not available'
+            return comparison_result
+        
+        try:
+            # Clean reference data
+            valid_mask = ~np.isnan(reference_data)
+            clean_data = reference_data[valid_mask]
+            
+            if reference_weights is not None:
+                clean_weights = reference_weights[valid_mask]
+            else:
+                clean_weights = np.ones(len(clean_data))
+            
+            # Calculate standard percentiles
+            if np.any(clean_weights != 1.0):
+                # Weighted percentiles (more complex calculation)
+                standard_percentiles = {}
+                for p in test_percentiles:
+                    # Simple weighted percentile approximation
+                    sorted_indices = np.argsort(clean_data)
+                    sorted_data = clean_data[sorted_indices]
+                    sorted_weights = clean_weights[sorted_indices]
+                    cumsum_weights = np.cumsum(sorted_weights)
+                    total_weight = cumsum_weights[-1]
+                    target_weight = (p / 100.0) * total_weight
+                    percentile_idx = np.searchsorted(cumsum_weights, target_weight)
+                    percentile_idx = min(percentile_idx, len(sorted_data) - 1)
+                    standard_percentiles[p] = sorted_data[percentile_idx]
+            else:
+                # Standard percentiles
+                standard_percentiles = {p: np.percentile(clean_data, p) for p in test_percentiles}
+            
+            # Get bootstrap percentiles
+            bootstrap_grid = bootstrap_distribution.get('percentile_grid', np.array([]))
+            bootstrap_values = bootstrap_distribution.get('percentile_values', np.array([]))
+            
+            # Compare percentiles
+            differences = []
+            relative_differences = []
+            
+            for p in test_percentiles:
+                standard_val = standard_percentiles[p]
+                
+                # Find closest bootstrap percentile
+                if len(bootstrap_grid) > 0:
+                    closest_idx = np.argmin(np.abs(bootstrap_grid - p))
+                    bootstrap_val = bootstrap_values[closest_idx]
+                    
+                    diff = abs(bootstrap_val - standard_val)
+                    rel_diff = diff / abs(standard_val) if standard_val != 0 else 0
+                    
+                    differences.append(diff)
+                    relative_differences.append(rel_diff)
+                    
+                    comparison_result['percentile_comparisons'][f'p{int(p)}'] = {
+                        'standard': float(standard_val),
+                        'bootstrap': float(bootstrap_val),
+                        'absolute_diff': float(diff),
+                        'relative_diff': float(rel_diff)
+                    }
+            
+            # Calculate quality metrics
+            if differences:
+                comparison_result['quality_metrics'] = {
+                    'mean_absolute_difference': float(np.mean(differences)),
+                    'max_absolute_difference': float(np.max(differences)),
+                    'mean_relative_difference': float(np.mean(relative_differences)),
+                    'max_relative_difference': float(np.max(relative_differences)),
+                    'bootstrap_samples': bootstrap_distribution.get('bootstrap_samples', 0),
+                    'original_data_size': len(clean_data)
+                }
+                
+                # Make recommendation based on quality metrics
+                max_rel_diff = np.max(relative_differences)
+                mean_rel_diff = np.mean(relative_differences)
+                
+                if max_rel_diff < 0.05 and mean_rel_diff < 0.02:
+                    # Good agreement, bootstrap provides value
+                    comparison_result['recommendation'] = 'bootstrap'
+                elif max_rel_diff < 0.10 and mean_rel_diff < 0.05:
+                    # Reasonable agreement, bootstrap acceptable
+                    comparison_result['recommendation'] = 'bootstrap_with_caution'
+                else:
+                    # Poor agreement, stick with standard
+                    comparison_result['recommendation'] = 'standard'
+                    comparison_result['warning'] = f'High disagreement: max_rel_diff={max_rel_diff:.3f}'
+        
+        except Exception as e:
+            comparison_result.update({
+                'error': str(e),
+                'recommendation': 'standard'
+            })
+        
+        return comparison_result 

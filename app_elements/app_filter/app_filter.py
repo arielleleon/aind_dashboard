@@ -1,12 +1,11 @@
 from dash import html, dcc, Input, Output, State, callback
 import dash_bootstrap_components as dbc
-from app_utils import AppUtils
+from shared_utils import app_utils
 from app_elements.app_content.app_dataframe.column_groups_config import COLUMN_GROUPS
 
 class AppFilter:
     def __init__(self):
-        # Initialize app utilities to get data for dropdowns
-        app_utils = AppUtils()
+        # Use shared app utils instance instead of creating a new one
         df = app_utils.get_session_data()
         
         # Get unique values for each filter dropdown
@@ -15,6 +14,14 @@ class AppFilter:
         self.rig_options = sorted(df['rig'].dropna().unique().tolist())
         self.trainer_options = sorted(df['trainer'].dropna().unique().tolist())
         self.pi_options = sorted(df['PI'].dropna().unique().tolist())
+        # NEW: Add subject ID options - sorted numerically if possible, otherwise alphabetically
+        subject_ids = df['subject_id'].dropna().unique().tolist()
+        try:
+            # Try to sort numerically if all subject IDs are numeric
+            self.subject_id_options = sorted(subject_ids, key=lambda x: int(x) if str(x).isdigit() else float('inf'))
+        except (ValueError, TypeError):
+            # Fall back to string sorting if numeric sorting fails
+            self.subject_id_options = sorted(subject_ids, key=str)
 
         # Define time window options
         self.time_window_options = [
@@ -102,9 +109,9 @@ class AppFilter:
             # Active filters display
             html.Div(id="active-filters", className="active-filters mb-2"),
             
-            # Six column layout for filters to make it more compact
+            # Updated filter layout - now using multiple rows to accommodate subject ID filter
             dbc.Row([
-                # Column 1: Sorting
+                # Row 1: Core filters
                 dbc.Col([
                     html.Label("Sort By", className="filter-label"),
                     dcc.Dropdown(
@@ -116,7 +123,6 @@ class AppFilter:
                     )
                 ], width=2, className="filter-column"),
                 
-                # Column 2: Alert filtering
                 dbc.Col([
                     html.Label("Filter by Alert", className="filter-label"),
                     dcc.Dropdown(
@@ -128,7 +134,6 @@ class AppFilter:
                     )
                 ], width=2, className="filter-column"),
                 
-                # Column 3: Time Window
                 dbc.Col([
                     html.Label("Time Window", className="filter-label"),
                     dcc.Dropdown(
@@ -140,7 +145,44 @@ class AppFilter:
                     )
                 ], width=2, className="filter-column"),
                 
-                # Column 4: Trainer/PI
+                # NEW: Subject ID filter with searchable multi-select
+                dbc.Col([
+                    html.Label("Subject ID", className="filter-label"),
+                    dcc.Dropdown(
+                        id="subject-id-filter",
+                        options=[{"label": str(sid), "value": str(sid)} for sid in self.subject_id_options],
+                        placeholder="Type or select subject IDs...",
+                        clearable=True,
+                        multi=True,
+                        searchable=True,
+                        className="filter-dropdown",
+                        style={
+                            'minWidth': '200px',  # Ensure enough width for multiple selections
+                            'width': '100%'       # Take full width of column
+                        },
+                        # NEW: Add persistence to help with multi-select behavior
+                        persistence=True,
+                        persistence_type='session'
+                    )
+                ], width=3, className="filter-column"),
+                
+                # Rig filter (moved to make space)
+                dbc.Col([
+                    html.Label("Rig", className="filter-label"),
+                    dcc.Dropdown(
+                        id="rig-filter",
+                        options=[{"label": opt, "value": opt} for opt in self.rig_options],
+                        placeholder="Select rig",
+                        clearable=True,
+                        multi=True,
+                        className="filter-dropdown"
+                    )
+                ], width=3, className="filter-column")
+            ], className="mb-2"),
+            
+            # Row 2: Secondary filters  
+            dbc.Row([
+                # Trainer/PI
                 dbc.Col([
                     html.Label("Trainer/PI", className="filter-label"),
                     dbc.Row([
@@ -165,22 +207,9 @@ class AppFilter:
                             )
                         ], width=6, className="ps-1")
                     ], className="g-0")
-                ], width=2, className="filter-column"),
+                ], width=4, className="filter-column"),
                 
-                # Column 5: Rig
-                dbc.Col([
-                    html.Label("Rig", className="filter-label"),
-                    dcc.Dropdown(
-                        id="rig-filter",
-                        options=[{"label": opt, "value": opt} for opt in self.rig_options],
-                        placeholder="Select rig",
-                        clearable=True,
-                        multi=True,
-                        className="filter-dropdown"
-                    )
-                ], width=2, className="filter-column"),
-                
-                # Column 6: Stage/Curriculum
+                # Stage/Curriculum
                 dbc.Col([
                     html.Label("Stage/Curriculum", className="filter-label"),
                     dbc.Row([
@@ -205,10 +234,13 @@ class AppFilter:
                             )
                         ], width=6, className="ps-1")
                     ], className="g-0")
-                ], width=2, className="filter-column")
+                ], width=4, className="filter-column"),
+                
+                # Empty column for spacing/future expansion
+                dbc.Col(width=4)
             ]),
             
-            # Column visibility section (new addition)
+            # Column visibility section (unchanged)
             html.Hr(className="my-3"),
             html.Div([
                 html.Div([
@@ -232,4 +264,4 @@ class AppFilter:
                 
             ], className="column-toggle-section")
             
-        ], className="filter-container mb-2", style={"height": "auto", "min-height": "160px"})
+        ], className="filter-container mb-2", style={"height": "auto", "min-height": "200px"})  # Increased min-height for two rows

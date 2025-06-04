@@ -43,11 +43,12 @@ compact_info = AppSubjectCompactInfo()
      Input("pi-filter", "value"),
      Input("sort-option", "value"),
      Input("alert-category-filter", "value"),
+     Input("subject-id-filter", "value"),
      Input("clear-filters", "n_clicks")]
 )
 def update_active_filters(
     time_window_value, stage_value, curriculum_value, rig_value, trainer_value, pi_value, sort_option, 
-    alert_category, clear_clicks
+    alert_category, subject_id_value, clear_clicks
 ):
     # Initialize active filters
     active_filters = []
@@ -92,6 +93,14 @@ def update_active_filters(
                 return f"{', '.join(value[:2])}, +{len(value)-2} more"
         else:
             return str(value)
+    
+    # NEW: Add subject ID filter
+    if subject_id_value:
+        formatted_value = format_multi_value(subject_id_value)
+        key_value = subject_id_value[0] if isinstance(subject_id_value, list) else subject_id_value
+        active_filters.append(
+            create_filter_badge(f"Subject ID: {formatted_value}", "subject-id-filter", key_value)
+        )
     
     # Add each active filter - now handling multi-select
     if stage_value:
@@ -158,7 +167,8 @@ def create_filter_badge(label, filter_type, filter_value):
      Output("trainer-filter", "value"),
      Output("pi-filter", "value"),
      Output("sort-option", "value"),
-     Output("alert-category-filter", "value")],
+     Output("alert-category-filter", "value"),
+     Output("subject-id-filter", "value")],
     [Input({"type": "remove-filter", "index": ALL}, "n_clicks"),
      Input("clear-filters", "n_clicks")],
     [State("time-window-filter", "value"),
@@ -169,15 +179,16 @@ def create_filter_badge(label, filter_type, filter_value):
      State("trainer-filter", "value"),
      State("pi-filter", "value"),
      State("sort-option", "value"),
-     State("alert-category-filter", "value")],
+     State("alert-category-filter", "value"),
+     State("subject-id-filter", "value")],
     prevent_initial_call=True
 )
 def remove_filter(remove_clicks, clear_clicks, time_window_value, remove_ids, 
                  stage_value, curriculum_value, rig_value, trainer_value, 
-                 pi_value, sort_value, alert_category_value):
+                 pi_value, sort_value, alert_category_value, subject_id_value):
     # Initialize return values with current state
     outputs = [time_window_value, stage_value, curriculum_value, rig_value, trainer_value, pi_value, 
-              sort_value, alert_category_value]
+              sort_value, alert_category_value, subject_id_value]
     
     # Add debugging to track clear button clicks
     print(f"remove_filter callback triggered. ctx.triggered_id: {ctx.triggered_id}")
@@ -187,7 +198,7 @@ def remove_filter(remove_clicks, clear_clicks, time_window_value, remove_ids,
     # If clear button was clicked, clear all filters
     if ctx.triggered_id == "clear-filters":
         print("🧹 CLEAR ALL FILTERS button pressed - resetting all values")
-        return [30, None, None, None, None, None, "none", "all"]  # Reset to default time window (30 days)
+        return [30, None, None, None, None, None, "none", "all", None]
     
     # Find which filter was clicked to be removed
     for i, clicks in enumerate(remove_clicks):
@@ -217,6 +228,8 @@ def remove_filter(remove_clicks, clear_clicks, time_window_value, remove_ids,
                 outputs[6] = "none"  # Reset to default sort
             elif filter_type == "alert-category-filter":
                 outputs[7] = "all"   # Reset to show all alerts
+            elif filter_type == "subject-id-filter":
+                outputs[8] = None  # Clear entire subject ID filter
             
             # Only process one removal at a time
             break
@@ -234,11 +247,12 @@ def remove_filter(remove_clicks, clear_clicks, time_window_value, remove_ids,
      Input("pi-filter", "value"),
      Input("sort-option", "value"),
      Input("alert-category-filter", "value"),
+     Input("subject-id-filter", "value"),
      Input("clear-filters", "n_clicks")]
 )
 def update_table_data(time_window_value, stage_value, curriculum_value, 
                      rig_value, trainer_value, pi_value, sort_option, 
-                     alert_category, clear_clicks):
+                     alert_category, subject_id_value, clear_clicks):
     print(f"Updating table with time window: {time_window_value} days")
     
     # CRITICAL FIX: Use UI-optimized table display data from the shared app_utils instance
@@ -267,6 +281,19 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
         time_filtered = time_filtered.sort_values('session_date', ascending=False)
         formatted_df = time_filtered.drop_duplicates(subset=['subject_id'], keep='first')
         print(f"Applied {time_window_value} day window filter: {len(formatted_df)} subjects")
+
+    # Apply subject ID filter if specified
+    if subject_id_value:
+        if isinstance(subject_id_value, list):
+            # Convert subject IDs to strings for consistent comparison
+            subject_id_strings = [str(sid) for sid in subject_id_value]
+            formatted_df = formatted_df[formatted_df["subject_id"].astype(str).isin(subject_id_strings)]
+            print(f"Applied subject ID filter for {len(subject_id_value)} subjects: {len(formatted_df)} subjects remaining")
+        else:
+            # Single subject ID
+            subject_id_string = str(subject_id_value)
+            formatted_df = formatted_df[formatted_df["subject_id"].astype(str) == subject_id_string]
+            print(f"Applied subject ID filter for {subject_id_string}: {len(formatted_df)} subjects remaining")
 
     # Apply each filter if it has a value - now handling multi-select
     if stage_value:

@@ -199,10 +199,15 @@ class AppSubjectPercentileTimeseries:
             if has_ci_data:
                 print(f"CI data available for {feature}")
             
+            # Get bootstrap indicator data for this feature
+            bootstrap_indicator_key = f"{feature}_bootstrap_enhanced"
+            bootstrap_data = subject_data.get(bootstrap_indicator_key, [])
+            
             # Filter out invalid percentile values (-1 represents missing data)
             valid_data = []
             valid_ci_lower = []
             valid_ci_upper = []
+            valid_bootstrap_indicators = []
             
             for j, (session, percentile) in enumerate(zip(sessions, percentile_data)):
                 if percentile is not None and not pd.isna(percentile) and percentile != -1:
@@ -220,6 +225,12 @@ class AppSubjectPercentileTimeseries:
                         else:
                             valid_ci_lower.append(None)
                             valid_ci_upper.append(None)
+                    
+                    # Add bootstrap indicator if available
+                    if j < len(bootstrap_data):
+                        valid_bootstrap_indicators.append(bootstrap_data[j])
+                    else:
+                        valid_bootstrap_indicators.append(False)
             
             if len(valid_data) < 2:
                 print(f"Insufficient valid percentile data for {feature}: {len(valid_data)} points")
@@ -276,44 +287,42 @@ class AppSubjectPercentileTimeseries:
                 
                 # Enhanced hover template with CI information
                 if has_ci_data and len(valid_ci_lower) == len(valid_sessions):
+                    # Determine CI method indicator for each session
+                    ci_method_indicators = ['Bootstrap' if bootstrap else 'Wilson' for bootstrap in valid_bootstrap_indicators]
+                    
                     hover_template = (f"<b>Strata: %{{customdata[1]}}</b><br><br>" +
                                     f"<b>{feature.replace('_', ' ').title()}</b><br>" +
                                     "Percentile: %{y:.1f}%<br>" +
                                     "95% CI: %{customdata[2]:.1f}% - %{customdata[3]:.1f}%<br>" +
-                                    "CI Width: %{customdata[4]:.1f}%<br>" +
-                                    "Session: %{x}<extra></extra>")
+                                    "CI Method: %{customdata[4]}<extra></extra>")
                     
-                    # Calculate CI widths and create custom data
-                    ci_widths = [upper - lower if (lower is not None and upper is not None) else 0 
-                               for lower, upper in zip(valid_ci_lower, valid_ci_upper)]
+                    # Create custom data with bootstrap/Wilson indicators
                     custom_data = list(zip(valid_percentiles, strata_hover_info, 
                                          [ci or 0 for ci in valid_ci_lower],
                                          [ci or 0 for ci in valid_ci_upper],
-                                         ci_widths))
+                                         ci_method_indicators))
                 else:
                     hover_template = (f"<b>Strata: %{{customdata[1]}}</b><br><br>" +
                                     f"<b>{feature.replace('_', ' ').title()}</b><br>" +
-                                    "Percentile: %{y:.1f}%<br>" +
-                                    "Session: %{x}<extra></extra>")
+                                    "Percentile: %{y:.1f}%<extra></extra>")
                     custom_data = list(zip(valid_percentiles, strata_hover_info))
             else:  # Subsequent traces don't include strata
                 if has_ci_data and len(valid_ci_lower) == len(valid_sessions):
+                    # Determine CI method indicator for each session
+                    ci_method_indicators = ['Bootstrap' if bootstrap else 'Wilson' for bootstrap in valid_bootstrap_indicators]
+                    
                     hover_template = (f"<b>{feature.replace('_', ' ').title()}</b><br>" +
                                     "Percentile: %{y:.1f}%<br>" +
                                     "95% CI: %{customdata[1]:.1f}% - %{customdata[2]:.1f}%<br>" +
-                                    "CI Width: %{customdata[3]:.1f}%<br>" +
-                                    "Session: %{x}<extra></extra>")
+                                    "CI Method: %{customdata[3]}<extra></extra>")
                     
-                    ci_widths = [upper - lower if (lower is not None and upper is not None) else 0 
-                               for lower, upper in zip(valid_ci_lower, valid_ci_upper)]
                     custom_data = list(zip(valid_percentiles,
                                          [ci or 0 for ci in valid_ci_lower],
                                          [ci or 0 for ci in valid_ci_upper],
-                                         ci_widths))
+                                         ci_method_indicators))
                 else:
                     hover_template = (f"<b>{feature.replace('_', ' ').title()}</b><br>" +
-                                    "Percentile: %{y:.1f}%<br>" +
-                                    "Session: %{x}<extra></extra>")
+                                    "Percentile: %{y:.1f}%<extra></extra>")
                     custom_data = list(zip(valid_percentiles))
             
             # Create trace for feature percentiles (main line)
@@ -345,10 +354,14 @@ class AppSubjectPercentileTimeseries:
                             len(overall_ci_upper) == len(overall_percentiles) and
                             show_confidence_intervals)
             
+            # Get overall bootstrap indicator data
+            overall_bootstrap_data = subject_data.get('overall_bootstrap_enhanced', [])
+            
             # Filter out invalid values
             valid_overall_data = []
             valid_overall_ci_lower = []
             valid_overall_ci_upper = []
+            valid_overall_bootstrap_indicators = []
             
             for j, (session, percentile) in enumerate(zip(sessions, overall_percentiles)):
                 if percentile is not None and not pd.isna(percentile) and percentile != -1:
@@ -365,6 +378,12 @@ class AppSubjectPercentileTimeseries:
                         else:
                             valid_overall_ci_lower.append(None)
                             valid_overall_ci_upper.append(None)
+                    
+                    # Add overall bootstrap indicator if available
+                    if j < len(overall_bootstrap_data):
+                        valid_overall_bootstrap_indicators.append(overall_bootstrap_data[j])
+                    else:
+                        valid_overall_bootstrap_indicators.append(False)
             
             if valid_overall_data:
                 valid_sessions_overall, valid_percentiles_overall = zip(*valid_overall_data)
@@ -418,43 +437,41 @@ class AppSubjectPercentileTimeseries:
                 # Create enhanced hover template with CI info
                 if is_only_trace or not features_to_plot:  # If overall percentile is the only thing selected
                     if has_overall_ci and len(valid_overall_ci_lower) == len(valid_sessions_overall):
+                        # Determine CI method indicator for each session
+                        overall_ci_method_indicators = ['Bootstrap' if bootstrap else 'Wilson' for bootstrap in valid_overall_bootstrap_indicators]
+                        
                         hover_template = (f"<b>Strata: %{{customdata[1]}}</b><br><br>" +
                                         "<b>Overall Percentile</b><br>" +
                                         "Percentile: %{y:.1f}%<br>" +
                                         "95% CI: %{customdata[2]:.1f}% - %{customdata[3]:.1f}%<br>" +
-                                        "CI Width: %{customdata[4]:.1f}%<br>" +
-                                        "Session: %{x}<extra></extra>")
+                                        "CI Method: %{customdata[4]}<extra></extra>")
                         
-                        ci_widths_overall = [upper - lower if (lower is not None and upper is not None) else 0 
-                                           for lower, upper in zip(valid_overall_ci_lower, valid_overall_ci_upper)]
                         custom_data = list(zip(valid_percentiles_overall, strata_hover_info_overall,
                                              [ci or 0 for ci in valid_overall_ci_lower],
                                              [ci or 0 for ci in valid_overall_ci_upper],
-                                             ci_widths_overall))
+                                             overall_ci_method_indicators))
                     else:
                         hover_template = (f"<b>Strata: %{{customdata[1]}}</b><br><br>" +
                                         "<b>Overall Percentile</b><br>" +
-                                        "Percentile: %{y:.1f}%<br>" +
-                                        "Session: %{x}<extra></extra>")
+                                        "Percentile: %{y:.1f}%<extra></extra>")
                         custom_data = list(zip(valid_percentiles_overall, strata_hover_info_overall))
                 else:  # If there are other features, don't repeat strata info
                     if has_overall_ci and len(valid_overall_ci_lower) == len(valid_sessions_overall):
+                        # Determine CI method indicator for each session
+                        overall_ci_method_indicators = ['Bootstrap' if bootstrap else 'Wilson' for bootstrap in valid_overall_bootstrap_indicators]
+                        
                         hover_template = ("<b>Overall Percentile</b><br>" +
                                         "Percentile: %{y:.1f}%<br>" +
                                         "95% CI: %{customdata[1]:.1f}% - %{customdata[2]:.1f}%<br>" +
-                                        "CI Width: %{customdata[3]:.1f}%<br>" +
-                                        "Session: %{x}<extra></extra>")
+                                        "CI Method: %{customdata[3]}<extra></extra>")
                         
-                        ci_widths_overall = [upper - lower if (lower is not None and upper is not None) else 0 
-                                           for lower, upper in zip(valid_overall_ci_lower, valid_overall_ci_upper)]
                         custom_data = list(zip(valid_percentiles_overall,
                                              [ci or 0 for ci in valid_overall_ci_lower],
                                              [ci or 0 for ci in valid_overall_ci_upper],
-                                             ci_widths_overall))
+                                             overall_ci_method_indicators))
                     else:
                         hover_template = ("<b>Overall Percentile</b><br>" +
-                                        "Percentile: %{y:.1f}%<br>" +
-                                        "Session: %{x}<extra></extra>")
+                                        "Percentile: %{y:.1f}%<extra></extra>")
                         custom_data = list(zip(valid_percentiles_overall))
                 
                 # Add overall percentile trace with distinctive styling

@@ -13,8 +13,7 @@ from app_elements.app_content.app_dataframe import AppDataFrame
      Output({'type': 'column-group-toggle', 'group': ALL}, "color")],
     [Input({'type': 'column-group-toggle', 'group': ALL}, "n_clicks")],
     [State("column-groups-state", "data"),
-     State({'type': 'column-group-toggle', 'group': ALL}, "id")],
-    prevent_initial_call=True
+     State({'type': 'column-group-toggle', 'group': ALL}, "id")]
 )
 def toggle_column_groups(n_clicks_list, current_state, button_ids):
     """
@@ -23,6 +22,10 @@ def toggle_column_groups(n_clicks_list, current_state, button_ids):
     This callback updates the state of expanded/collapsed column groups
     and returns the updated state plus button colors.
     """
+    print(f"🔘 Column toggle callback triggered. n_clicks: {n_clicks_list}")
+    print(f"   Current state: {current_state}")
+    print(f"   Button IDs: {[btn['group'] for btn in button_ids]}")
+    
     # Initialize state if empty - ALL GROUPS START COLLAPSED
     if not current_state:
         current_state = {}
@@ -33,10 +36,10 @@ def toggle_column_groups(n_clicks_list, current_state, button_ids):
             else:
                 current_state[group_id] = True  # Non-collapsible groups stay visible
     
-    # Find which button was clicked
+    # Find which button was clicked (only if any clicks occurred)
     from dash import callback_context
     
-    if callback_context.triggered:
+    if callback_context.triggered and any(n_clicks_list or []):
         triggered_prop_id = callback_context.triggered[0]['prop_id']
         
         # Parse the button ID from the triggered property
@@ -49,7 +52,9 @@ def toggle_column_groups(n_clicks_list, current_state, button_ids):
                 
                 # Toggle the state for this group
                 current_state[group_id] = not current_state.get(group_id, False)
+                print(f"   Toggled group '{group_id}' to: {current_state[group_id]}")
             except (json.JSONDecodeError, KeyError, IndexError):
+                print(f"   Error parsing button ID: {triggered_prop_id}")
                 pass
     
     # Generate button colors based on current state
@@ -65,8 +70,7 @@ def toggle_column_groups(n_clicks_list, current_state, button_ids):
 
 @callback(
     Output("session-table", "columns"),
-    [Input("column-groups-state", "data")],
-    prevent_initial_call=True
+    [Input("column-groups-state", "data")]
 )
 def update_table_columns(column_groups_state):
     """
@@ -75,13 +79,18 @@ def update_table_columns(column_groups_state):
     This callback is triggered when the column groups state changes and
     rebuilds the table column definitions accordingly.
     """
+    print(f"📊 Updating table columns. State: {column_groups_state}")
+    
     if not column_groups_state:
         # Use default visible columns if no state
         visible_column_ids = get_default_visible_columns()
+        print(f"   Using default columns: {len(visible_column_ids)} columns")
     else:
         # Get expanded groups
         expanded_groups = [group_id for group_id, is_expanded in column_groups_state.items() if is_expanded]
         visible_column_ids = get_columns_for_groups(expanded_groups)
+        print(f"   Expanded groups: {expanded_groups}")
+        print(f"   Visible columns: {len(visible_column_ids)} columns")
     
     # Get all available data to create column definitions
     raw_data = app_utils.get_session_data(use_cache=True)
@@ -183,5 +192,8 @@ def update_table_columns(column_groups_state):
                 column_def['format'] = {"specifier": ".5~g"}
             
             visible_columns.append(column_def)
+        else:
+            print(f"   WARNING: Column '{col_id}' not found in data!")
     
+    print(f"   Final visible columns: {[col['id'] for col in visible_columns]}")
     return visible_columns 
