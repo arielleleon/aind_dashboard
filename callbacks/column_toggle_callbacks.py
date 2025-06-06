@@ -1,4 +1,5 @@
-from dash import Input, Output, State, callback, MATCH, ALL
+from dash import Input, Output, State, callback, ALL, ctx
+from dash import html
 import pandas as pd
 from shared_utils import app_utils
 from app_elements.app_content.app_dataframe.column_groups_config import (
@@ -22,7 +23,7 @@ def toggle_column_groups(n_clicks_list, current_state, button_ids):
     This callback updates the state of expanded/collapsed column groups
     and returns the updated state plus button colors.
     """
-    print(f"🔘 Column toggle callback triggered. n_clicks: {n_clicks_list}")
+    print(f" Column toggle callback triggered. n_clicks: {n_clicks_list}")
     print(f"   Current state: {current_state}")
     print(f"   Button IDs: {[btn['group'] for btn in button_ids]}")
     

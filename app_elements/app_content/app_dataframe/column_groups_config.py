@@ -152,13 +152,6 @@ COLUMN_GROUPS = {
     }
 }
 
-def get_all_columns():
-    """Get all columns from all groups"""
-    all_columns = []
-    for group in COLUMN_GROUPS.values():
-        all_columns.extend(group['columns'])
-    return all_columns
-
 def get_default_visible_columns():
     """Get default visible columns (core only)"""
     visible = []

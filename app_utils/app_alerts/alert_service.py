@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple
 from ..app_analysis.overall_percentile_calculator import OverallPercentileCalculator
 
 class AlertService:
@@ -42,7 +42,6 @@ class AlertService:
 
         # Initialize alert caches
         self._quantile_alerts = {}
-        self._last_update_time = None
 
     def _update_config(self, config: Dict[str, Any]) -> None:
         """
@@ -57,15 +56,6 @@ class AlertService:
 
         if "feature_config" in config:
             self.config["feature_config"].update(config["feature_config"])
-
-    def set_app_utils(self, app_utils) -> None:
-        """
-        Set the AppUtils instance
-
-        Parameters:
-            app_utils (AppUtils): The AppUtils instance
-        """
-        self.app_utils = app_utils
 
     def map_percentile_to_category(self, percentile: float) -> str:
         """
@@ -238,168 +228,6 @@ class AlertService:
                 result[subject_id] = self._quantile_alerts[subject_id]
         
         return result
-    
-    def get_subjects_with_quantile_alerts(self, features: Optional[List[str]] = None, 
-                                        categories: Optional[List[str]] = None) -> List[str]:
-        """
-        Get a list of subjects that have quantile alerts matching specified criteria
-        
-        Parameters:
-            features: Optional list of features to check for alerts
-                    If None, checks for alerts on any feature
-            categories: Optional list of categories to filter by (SB, B, N, G, SG)
-                    If None, includes all categories
-        
-        Returns:
-            List of subject IDs with matching quantile alerts
-        """
-        # Ensure alerts are calculated
-        if not self._quantile_alerts:
-            self.calculate_quantile_alerts()
-        
-        # Initialize results
-        subjects_with_alerts = []
-        
-        # Process each subject
-        for subject_id, subject_alerts in self._quantile_alerts.items():
-            # Check only current strata
-            current_strata_alerts = subject_alerts.get('current', {})
-            
-            # Flag to track if this subject matches criteria
-            subject_matches = False
-            
-            # Check each strata in current alerts
-            for strata, strata_alerts in current_strata_alerts.items():
-                # Skip if no matching strata alerts
-                if not strata_alerts:
-                    continue
-                
-                # Process each feature alert
-                for feature, alert in strata_alerts.items():
-                    # Skip if filtering by features and this one isn't included
-                    if features is not None and feature not in features:
-                        continue
-                    
-                    # Skip if filtering by categories and this one isn't included
-                    if categories is not None and alert['category'] not in categories:
-                        continue
-                    
-                    # If we get here, we have a match
-                    subject_matches = True
-                    break
-                
-                # Break strata loop if we found a match
-                if subject_matches:
-                    break
-            
-            # Add subject if it matches criteria
-            if subject_matches:
-                subjects_with_alerts.append(subject_id)
-        
-        return subjects_with_alerts
-
-    def get_quantile_alert_summary(self, subject_id: str, current_only: bool = True) -> str:
-        """
-        Get a summary of quantile alerts for a given subject
-
-        Parameters:
-            subject_id (str): The subject ID to get alerts for
-            current_only (bool): Whether to only include current strata alerts
-
-        Returns:
-            str: Summary of quantile alerts
-        """
-        # Ensure alerts are calculated
-        if not self._quantile_alerts:
-            self.calculate_quantile_alerts()
-
-        # Check if subject has alerts
-        if subject_id not in self._quantile_alerts:
-            return "No quantile alerts"
-        
-        # Get subject's alerts
-        subject_alerts = self._quantile_alerts[subject_id]
-
-        # Current strata first
-        current_strata_alerts = subject_alerts.get('current', {})
-        if not current_strata_alerts:
-            return "No current strata alerts"
-        
-        # Count alerts by category
-        category_counts = {'SB': 0, 'B': 0, 'N': 0, 'G': 0, 'SG': 0}
-
-        # Track features by category
-        features_by_category = {'SB': [], 'B': [], 'N': [], 'G': [], 'SG': []}
-
-        # Process current strata
-        for strata, strata_alerts in current_strata_alerts.items():
-            for feature, alert in strata_alerts.items():
-                category = alert['category']
-                category_counts[category] += 1
-                features_by_category[category].append(feature)
-
-        # Build summary
-        summary_parts = []
-
-        # Report non-normal categories first
-        for category in ['SB', 'B', 'G', 'SG']:
-            count = category_counts[category]
-            if count > 0:
-                features = features_by_category[category]
-                category_text = self.get_category_description(category)
-                summary_parts.append(f"{count} {category_text}: {', '.join(features)}")
-
-        # Only include normal if it's the only category or we have fewwer features in other categories
-        if category_counts['N'] > 0 and (len(summary_parts) == 0 or category_counts['N'] > 3):
-            normal_count = category_counts['N']
-            summary_parts.append(f"{normal_count} Average features")
-
-        # Add current strata information
-        strata_names = list(current_strata_alerts.keys())
-        if len(strata_names) == 1:
-            summary_parts.append(f"in strata: {strata_names[0]}")
-
-        # Combine all parts
-        if summary_parts:
-            return " | ".join(summary_parts)
-        else:
-            return "No notable quantile alerts"
-        
-    def get_alert_counts(self) -> Dict[str, Any]:
-        """
-        Get counts of alerts across all subjects
-
-        Returns:
-            Dict[str, Any]: Dictionary with alert counts and statistics
-        """
-        # Get all alerts
-        quantile_alerts = self.get_quantile_alerts()
-
-        # Calculate counts
-        results = {
-            'quantile': {
-                'subjects_with_alerts': len(quantile_alerts),
-                'category_counts': {
-                    'SB': 0,
-                    'B': 0,
-                    'N': 0,
-                    'G': 0,
-                    'SG': 0
-                }
-            }
-        }
-        
-        # Count quantile categories
-        for subject_id, subject_alerts in quantile_alerts.items():
-            current_strata = subject_alerts.get('current', {})
-
-            for strata, features in current_strata.items():
-                for feature, details in features.items():
-                    category = details['category']
-                    if category in results['quantile']['category_counts']:
-                        results['quantile']['category_counts'][category] += 1
-        
-        return results
     
     def map_overall_percentile_to_category(self, overall_percentile):
         """

@@ -14,4 +14,7 @@ factory-boy>=3.2.0
 freezegun>=1.2.0
 
 # Development and debugging
-pytest-xdist>=3.0.0 
+pytest-xdist>=3.0.0
+
+# Dead code analysis
+vulture>=2.7 

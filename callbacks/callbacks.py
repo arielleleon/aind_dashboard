@@ -1,4 +1,4 @@
-from dash import Input, Output, State, callback, ALL, MATCH, ctx, clientside_callback
+from dash import Input, Output, State, callback, ALL, ctx, clientside_callback
 from dash import html
 from dash import dcc
 import dash_bootstrap_components as dbc
@@ -472,10 +472,9 @@ def update_subject_detail(active_cell, table_data, page_current, page_size):
     [Output("session-list-container", "children"),
      Output("session-list-state", "data"),
      Output("session-count", "children")],
-    [Input("selected-subject-store", "data")],  # Removed load-more-sessions-btn input
-    [State("session-list-state", "data")]
+    [Input("selected-subject-store", "data")]  # Removed load-more-sessions-btn input
 )
-def update_session_list(selected_subject_data, session_list_state):
+def update_session_list(selected_subject_data):
     # Extract subject_id from the store data
     subject_id = selected_subject_data.get('subject_id') if selected_subject_data else None
     

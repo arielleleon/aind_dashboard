@@ -3,7 +3,6 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
-from scipy.interpolate import interp1d
 
 class AppSubjectTimeseries:
     def __init__(self):
@@ -116,7 +115,6 @@ class AppSubjectTimeseries:
             return self._create_empty_figure()
             
         sessions = subject_data['sessions']
-        dates = subject_data.get('dates', [])
         strata_data = subject_data.get('strata', [])
         
         if not sessions:

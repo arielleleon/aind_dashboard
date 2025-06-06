@@ -1,20 +1,10 @@
 import plotly.graph_objects as go
-import plotly.express as px
 from dash import dcc
 import pandas as pd
 import numpy as np
 
 class AppSubjectPercentileHeatmap:
     def __init__(self):
-        # Color mapping consistent with feature chart
-        self.color_map = {
-            'B': '#FF8C40',   # Orange - Bad
-            'SB': '#FF8C40',  # Orange - Severely Bad
-            'G': '#4D94DA',   # Blue - Good
-            'SG': '#4D94DA',  # Blue - Severely Good
-            'N': '#CCCCCC',   # Grey - Normal
-            'NS': '#CCCCCC'   # Grey - Not Scored
-        }
         
         # Features configuration
         self.features_config = {
@@ -38,9 +28,8 @@ class AppSubjectPercentileHeatmap:
         Returns:
             dcc.Graph: Heatmap showing percentile progression over time
         """
-        print(f"🎯 Building percentile heatmap for subject: {subject_id} (colorscale: {colorscale_mode})")
         if highlighted_session:
-            print(f"🔍 Highlighting session: {highlighted_session}")
+            print(f"Highlighting session: {highlighted_session}")
         
         if not subject_id or not app_utils:
             return self._create_empty_heatmap("No subject selected")
@@ -53,7 +42,6 @@ class AppSubjectPercentileHeatmap:
         
         # Extract session data
         sessions = time_series_data['sessions']
-        dates = time_series_data['dates']
         
         # Build heatmap data matrix
         heatmap_data = []
@@ -142,11 +130,9 @@ class AppSubjectPercentileHeatmap:
                     fillcolor="rgba(74, 144, 226, 0.1)",  # Very light blue fill
                     layer="above"
                 )
-                
-                print(f"✅ Added highlighting for session {highlighted_session} at index {session_idx}")
-                
+                                
             except ValueError:
-                print(f"⚠️  Session {highlighted_session} not found in session list")
+                print(f" Session {highlighted_session} not found in session list")
         
         # Add strata boundaries
         self._add_strata_boundaries(fig, sessions, time_series_data.get('strata', []), len(feature_names))

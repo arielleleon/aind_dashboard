@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Tuple, Optional, Union, Any
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
 from sklearn.preprocessing import StandardScaler
 from scipy import stats

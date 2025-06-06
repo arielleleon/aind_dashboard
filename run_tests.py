@@ -36,18 +36,50 @@ def run_command(cmd, description=""):
         return False
 
 
-def check_dependencies():
-    """Check if testing dependencies are installed"""
-    try:
-        import pytest
-        import selenium
-        print("Core testing dependencies found")
-        return True
-    except ImportError as e:
-        print(f"Missing testing dependencies: {e}")
-        print("Please install testing dependencies:")
-        print("pip install -r requirements-test.txt")
-        return False
+def check_environment():
+    """Check if the current environment is ready for testing"""
+    print("\n" + "="*60)
+    print("🔍 ENVIRONMENT CHECK")
+    print("="*60)
+    
+    # Check if we're in a conda environment
+    conda_env = os.environ.get('CONDA_DEFAULT_ENV')
+    if conda_env:
+        print(f"✅ Conda environment: {conda_env}")
+    else:
+        print("⚠️  Not in a conda environment")
+    
+    # Check Python version
+    python_version = sys.version.split()[0]
+    print(f"🐍 Python version: {python_version}")
+    
+    # Check current working directory
+    cwd = os.getcwd()
+    print(f"📁 Working directory: {cwd}")
+    
+    # Check if test directories exist
+    test_dirs = ['tests', 'tests/unit', 'tests/e2e']
+    for test_dir in test_dirs:
+        if os.path.exists(test_dir):
+            print(f"✅ {test_dir}/ directory found")
+        else:
+            print(f"❌ {test_dir}/ directory NOT found")
+    
+    # Try importing some critical modules to check dependencies
+    critical_imports = [
+        'dash',
+        'pandas', 
+        'numpy',
+        'plotly'
+    ]
+    
+    print("\n📦 Checking critical dependencies:")
+    for module in critical_imports:
+        try:
+            __import__(module)
+            print(f"✅ {module}")
+        except ImportError:
+            print(f"❌ {module} - NOT FOUND")
 
 
 def main():
@@ -119,7 +151,7 @@ Examples:
             return 1
     
     # Check dependencies
-    if not check_dependencies():
+    if not check_environment():
         return 1
     
     # Build pytest command based on arguments

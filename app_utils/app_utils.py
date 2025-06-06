@@ -2,10 +2,11 @@ from .app_data_load import AppLoadData
 from .app_analysis import ReferenceProcessor, QuantileAnalyzer, ThresholdAnalyzer, BootstrapManager
 from .app_analysis.overall_percentile_calculator import OverallPercentileCalculator
 from .app_alerts import AlertService
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Any, Tuple
 import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
+import traceback
 
 class AppUtils:
     """
@@ -160,21 +161,6 @@ class AppUtils:
         
         return self.quantile_analyzer
     
-    def get_subject_percentiles(self, subject_id):
-        """
-        Get percentile data for specific subject
-
-        Parameters:
-            subject_id (str): subject ID to get percentile data for
-
-        Returns:
-            pd.DataFrame: Dataframe with percentile data for the subject
-        """
-        if self.quantile_analyzer is None:
-            raise ValueError("Quantile analyzer not initialized. Process data first.")
-        
-        return self.quantile_analyzer.get_subject_history(subject_id)
-    
     def get_session_overall_percentiles(self, subject_ids=None, use_cache=True, feature_weights=None):
         """
         Get overall percentile scores for subjects using the session-level pipeline
@@ -236,33 +222,6 @@ class AppUtils:
         """
         return self.alert_service.get_quantile_alerts(subject_ids)
 
-    def get_alerts(self, subject_ids=None):
-        """
-        Alias for get_quantile_alerts for backward compatibility
-        
-        Parameters:
-            subject_ids (List[str], optional): List of subject IDs to get alerts for
-        
-        Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping subject IDs to their quantile alerts
-        """
-        return self.get_quantile_alerts(subject_ids)
-
-    def initialize_threshold_analyzer(self, threshold_config: Optional[Dict[str, Any]] = None) -> ThresholdAnalyzer:
-        """
-        Initialize threshold analyzer
-        
-        Parameters:
-            threshold_config: Optional[Dict[str, Any]]
-                Configuration for threshold alerts
-                
-        Returns:
-            ThresholdAnalyzer: Initialized threshold analyzer
-        """
-        
-        self.threshold_analyzer = ThresholdAnalyzer(threshold_config)
-        return self.threshold_analyzer
-
     def get_unified_alerts(self, subject_ids = None, use_cache = True):
         """ 
         Get unified alerts
@@ -289,40 +248,6 @@ class AppUtils:
             self._cache['unified_alerts'] = alerts
             
         return alerts
-        
-    def get_formatted_data(self, window_days=30, reference_date=None, use_cache=True):
-        """
-        Get formatted data for display using the unified session-level pipeline
-        
-        Parameters:
-            window_days (int): Number of days to include in sliding window
-            reference_date (datetime, optional): Reference date for sliding window
-            use_cache (bool): Whether to use cached data if available
-            
-        Returns:
-            pd.DataFrame: Formatted data for display
-        """
-        # Get all session data from the unified pipeline
-        if use_cache and self._cache['session_level_data'] is not None:
-            session_data = self._cache['session_level_data']
-        else:
-            # Process all data to get session-level data
-            raw_data = self.get_session_data(use_cache=True)
-            session_data = self.process_data_pipeline(raw_data, use_cache=True)
-        
-        # Apply time window filter
-        if reference_date is None:
-            reference_date = session_data['session_date'].max()
-        
-        start_date = reference_date - timedelta(days=window_days)
-        time_filtered_df = session_data[session_data['session_date'] >= start_date]
-        
-        # Get most recent session for each subject in the window
-        time_filtered_df = time_filtered_df.sort_values('session_date', ascending=False)
-        result_df = time_filtered_df.drop_duplicates(subset=['subject_id'], keep='first')
-        
-        print(f"Applied {window_days} day window filter: {len(result_df)} subjects")
-        return result_df
     
     def get_subject_sessions(self, subject_id):
         """
@@ -633,41 +558,6 @@ class AppUtils:
         else:
             return 'SG'  # Severely Good: > 93.5%
 
-    def get_subject_session_level_percentiles(self, subject_id: str) -> pd.DataFrame:
-        """
-        Get session-level percentiles for a specific subject using the unified pipeline
-        
-        Parameters:
-            subject_id: str
-                The subject ID to get session-level percentiles for
-                
-        Returns:
-            pd.DataFrame
-                DataFrame containing session-level percentiles for the subject
-        """
-        # Get all session data from the unified pipeline
-        if self._cache['session_level_data'] is not None:
-            session_data = self._cache['session_level_data']
-        else:
-            # Process all data to get session-level data
-            raw_data = self.get_session_data(use_cache=True)
-            session_data = self.process_data_pipeline(raw_data, use_cache=True)
-        
-        # Filter for the requested subject
-        subject_data = session_data[session_data['subject_id'] == subject_id]
-        
-        if subject_data.empty:
-            print(f"No session-level data found for subject {subject_id}")
-            return pd.DataFrame()
-        
-        # Sort by session date or index
-        if 'session_date' in subject_data.columns:
-            subject_data = subject_data.sort_values('session_date')
-        elif 'session_index' in subject_data.columns:
-            subject_data = subject_data.sort_values('session_index')
-        
-        return subject_data
-
     def get_most_recent_subject_sessions(self, use_cache: bool = True) -> pd.DataFrame:
         """
         Get the most recent session for each subject with all session-level metrics
@@ -895,108 +785,6 @@ class AppUtils:
         data_str = f"{len(df)}_{df['subject_id'].nunique()}_{df['session_date'].max()}"
         return hashlib.md5(data_str.encode()).hexdigest()[:8]
     
-    def get_subject_optimized_data(self, subject_id: str, use_cache: bool = True) -> Dict[str, Any]:
-        """
-        Get optimized subject data using the new storage format
-        
-        Parameters:
-            subject_id: str
-                Subject ID to retrieve data for
-            use_cache: bool
-                Whether to use cached optimized storage
-                
-        Returns:
-            Dict[str, Any]: Optimized subject data
-        """
-        # Check if we have optimized storage cached
-        if use_cache and 'optimized_storage' in self._cache and self._cache['optimized_storage'] is not None:
-            optimized_storage = self._cache['optimized_storage']
-            return optimized_storage['subjects'].get(subject_id, {})
-        
-        # If not cached, create optimized storage
-        if self._cache['session_level_data'] is not None:
-            optimized_storage = self.optimize_session_data_storage(self._cache['session_level_data'])
-            self._cache['optimized_storage'] = optimized_storage
-            return optimized_storage['subjects'].get(subject_id, {})
-        
-        # Fallback to processing data
-        raw_data = self.get_session_data(use_cache=True)
-        session_data = self.process_data_pipeline(raw_data, use_cache=True)
-        optimized_storage = self.optimize_session_data_storage(session_data)
-        self._cache['optimized_storage'] = optimized_storage
-        
-        return optimized_storage['subjects'].get(subject_id, {})
-    
-    def get_strata_reference_data(self, strata: str, use_cache: bool = True) -> Dict[str, Any]:
-        """
-        Get reference distribution data for a specific strata
-        
-        Parameters:
-            strata: str
-                Strata to get reference data for
-            use_cache: bool
-                Whether to use cached data
-                
-        Returns:
-            Dict[str, Any]: Reference distribution data
-        """
-        # Check for optimized storage
-        if use_cache and 'optimized_storage' in self._cache and self._cache['optimized_storage'] is not None:
-            optimized_storage = self._cache['optimized_storage']
-            return optimized_storage['strata_reference'].get(strata, {})
-        
-        # Create optimized storage if needed
-        if self._cache['session_level_data'] is not None:
-            optimized_storage = self.optimize_session_data_storage(self._cache['session_level_data'])
-            self._cache['optimized_storage'] = optimized_storage
-            return optimized_storage['strata_reference'].get(strata, {})
-        
-        return {}
-
-    def get_storage_summary(self) -> Dict[str, Any]:
-        """
-        Get a summary of the current storage optimization
-        
-        Returns:
-            Dict[str, Any]: Storage summary statistics with Phase 3 bootstrap information
-        """
-        summary = {
-            'raw_data_cached': self._cache['raw_data'] is not None,
-            'session_level_cached': self._cache['session_level_data'] is not None,
-            'optimized_storage_cached': 'optimized_storage' in self._cache and self._cache['optimized_storage'] is not None,
-            'formatted_data_cached': self._cache.get('formatted_data') is not None,
-            # PHASE 3: Bootstrap cache status
-            'bootstrap_coverage_cached': self._cache['bootstrap_coverage_stats'] is not None,
-            'bootstrap_enabled_strata_cached': self._cache['bootstrap_enabled_strata'] is not None
-        }
-        
-        # Add size information if available
-        if summary['optimized_storage_cached']:
-            storage = self._cache['optimized_storage']
-            summary.update({
-                'subjects_count': len(storage['subjects']),
-                'strata_count': len(storage['strata_reference']),
-                'total_sessions': storage['metadata']['total_sessions'],
-                'storage_timestamp': storage['metadata']['storage_timestamp']
-            })
-            
-            # PHASE 3: Add bootstrap storage information
-            metadata = storage.get('metadata', {})
-            if metadata.get('phase3_enhanced', False):
-                summary.update({
-                    'bootstrap_enabled_strata_count': metadata.get('bootstrap_enabled_strata_count', 0),
-                    'bootstrap_enabled_strata_list': metadata.get('bootstrap_enabled_strata_list', []),
-                    'phase3_enhanced': True
-                })
-        
-        if summary['session_level_cached']:
-            summary['session_level_rows'] = len(self._cache['session_level_data'])
-        
-        if summary['formatted_data_cached']:
-            summary['formatted_data_rows'] = len(self._cache.get('formatted_data', []))
-        
-        return summary
-    
     def get_bootstrap_coverage_stats(self, use_cache: bool = True) -> Dict[str, Any]:
         """
         Get bootstrap coverage statistics for all strata
@@ -1050,38 +838,6 @@ class AppUtils:
         
         # No enabled strata found
         return set()
-    
-    def is_bootstrap_enabled_for_strata(self, strata: str, use_cache: bool = True) -> bool:
-        """
-        Check if a specific strata has bootstrap enhancement enabled
-        
-        Parameters:
-            strata: str
-                Strata name to check
-            use_cache: bool
-                Whether to use cached data
-                
-        Returns:
-            bool: True if bootstrap is enabled for this strata
-        """
-        enabled_strata = self.get_bootstrap_enabled_strata(use_cache)
-        return strata in enabled_strata
-    
-    def get_strata_bootstrap_coverage(self, strata: str, use_cache: bool = True) -> Dict[str, Any]:
-        """
-        Get detailed bootstrap coverage information for a specific strata
-        
-        Parameters:
-            strata: str
-                Strata name to get coverage for
-            use_cache: bool
-                Whether to use cached data
-                
-        Returns:
-            Dict[str, Any]: Coverage statistics for the strata
-        """
-        coverage_stats = self.get_bootstrap_coverage_stats(use_cache)
-        return coverage_stats.get(strata, {})
     
     def generate_bootstrap_distributions(self, 
                                        force_regenerate: bool = False,
@@ -1864,32 +1620,6 @@ class AppUtils:
             return f"{curriculum_abbr}{stage_abbr}{version_abbr}"
         
         return strata.replace(" ", "")
-
-    def get_feature_rank_data(self, subject_id: str, use_cache: bool = True) -> Dict[str, Any]:
-        """
-        Get optimized feature rank data for the feature rank plot
-        
-        Parameters:
-            subject_id: str
-                Subject ID to get feature rank data for
-            use_cache: bool
-                Whether to use cached UI structures
-                
-        Returns:
-            Dict[str, Any]: Feature rank data optimized for UI rendering
-        """
-        # Check for UI-optimized cache
-        if use_cache and 'ui_structures' in self._cache and self._cache['ui_structures'] is not None:
-            ui_structures = self._cache['ui_structures']
-            return ui_structures['feature_rank_data'].get(subject_id, {})
-        
-        # Fallback to creating UI structures
-        if self._cache['session_level_data'] is not None:
-            ui_structures = self.create_ui_optimized_structures(self._cache['session_level_data'])
-            self._cache['ui_structures'] = ui_structures
-            return ui_structures['feature_rank_data'].get(subject_id, {})
-        
-        return {}
     
     def get_subject_display_data(self, subject_id: str, use_cache: bool = True) -> Dict[str, Any]:
         """
@@ -2107,174 +1837,6 @@ class AppUtils:
                         print(f"  Failed to compress {cache_key}: {str(e)}")
         
         return results
-    
-    def decompress_cache_data(self, cache_key: str) -> Any:
-        """
-        Decompress cached data when needed
-        
-        Parameters:
-            cache_key: str
-                Cache key to decompress
-                
-        Returns:
-            Any: Decompressed data
-        """
-        compressed_key = f'{cache_key}_compressed'
-        
-        if compressed_key in self._cache and self._cache[compressed_key] is not None:
-            try:
-                import pickle
-                import gzip
-                
-                compressed_info = self._cache[compressed_key]
-                compressed_data = compressed_info['data']
-                
-                # Decompress
-                decompressed_data = pickle.loads(gzip.decompress(compressed_data))
-                
-                # Cache the decompressed data temporarily
-                self._cache[cache_key] = decompressed_data
-                
-                print(f"Decompressed {cache_key} ({compressed_info['compression_ratio']:.1f}x)")
-                
-                return decompressed_data
-                
-            except Exception as e:
-                print(f"Failed to decompress {cache_key}: {str(e)}")
-                return None
-        
-        # Return regular cached data if not compressed
-        return self._cache.get(cache_key)
-    
-    def optimize_memory_usage(self, aggressive: bool = False) -> Dict[str, Any]:
-        """
-        Optimize memory usage by compressing caches and cleaning up unused data
-        
-        Parameters:
-            aggressive: bool
-                Whether to use aggressive optimization (may impact performance)
-                
-        Returns:
-            Dict[str, Any]: Optimization results
-        """
-        print("Optimizing memory usage...")
-        
-        # Get initial memory state
-        initial_memory = self.get_memory_usage_summary()
-        initial_memory_mb = initial_memory.get('process_memory_mb', 0)
-        
-        optimization_results = {
-            'initial_memory_mb': initial_memory_mb,
-            'final_memory_mb': 0,
-            'memory_saved_mb': 0,
-            'optimizations_applied': []
-        }
-        
-        # 1. Compress large cache objects
-        compression_results = self.compress_cache_data(force=aggressive)
-        if compression_results['compressed_caches']:
-            optimization_results['optimizations_applied'].append('cache_compression')
-            optimization_results['compression_details'] = compression_results
-        
-        # 2. Clean up redundant caches (aggressive mode)
-        if aggressive:
-            # Remove raw data cache if processed data exists
-            if (self._cache.get('session_level_data') is not None and 
-                self._cache.get('raw_data') is not None):
-                self._cache['raw_data'] = None
-                optimization_results['optimizations_applied'].append('raw_data_cleanup')
-            
-            # Remove stratified data if UI structures exist
-            if (self._cache.get('ui_structures') is not None and 
-                self._cache.get('stratified_data') is not None):
-                self._cache['stratified_data'] = None
-                optimization_results['optimizations_applied'].append('stratified_data_cleanup')
-        
-        # 3. Force garbage collection
-        import gc
-        gc.collect()
-        optimization_results['optimizations_applied'].append('garbage_collection')
-        
-        # Get final memory state
-        final_memory = self.get_memory_usage_summary()
-        final_memory_mb = final_memory.get('process_memory_mb', 0)
-        
-        optimization_results['final_memory_mb'] = final_memory_mb
-        optimization_results['memory_saved_mb'] = initial_memory_mb - final_memory_mb
-        
-        print(f"Memory optimization complete:")
-        print(f"  Initial memory: {initial_memory_mb:.1f}MB")
-        print(f"  Final memory: {final_memory_mb:.1f}MB")
-        print(f"  Memory saved: {optimization_results['memory_saved_mb']:.1f}MB")
-        print(f"  Optimizations: {', '.join(optimization_results['optimizations_applied'])}")
-        
-        return optimization_results
-
-    def clear_ui_cache(self):
-        """
-        Clear UI-optimized caches to force regeneration with updated column structure
-        Call this after modifying the columns in create_ui_optimized_structures
-        """
-        print("Clearing UI caches to force regeneration with new columns...")
-        self._cache['ui_structures'] = None
-        self._cache['optimized_storage'] = None
-        print(" UI caches cleared - new columns will be included on next data access")
-        
-    def force_reload_with_new_columns(self):
-        """
-        Force complete reload of data with new column structure
-        This clears all caches and reprocesses data to include new columns
-        """
-        print("🔄 Force reloading data with new column structure...")
-        
-        # Clear all caches
-        self._invalidate_derived_caches()
-        
-        # Reload raw data
-        raw_data = self.reload_data()
-        print(f"Reloaded {len(raw_data)} sessions")
-        
-        # Reprocess pipeline with new column structure  
-        session_data = self.process_data_pipeline(raw_data, use_cache=False)
-        print(f"Reprocessed {len(session_data)} sessions with new columns")
-        
-        # Get sample of new table data to verify columns
-        table_data = self.get_table_display_data(use_cache=False)
-        if table_data:
-            print(f"✅ Table display cache regenerated with {len(table_data[0])} columns")
-        
-        return session_data
-
-    def force_regenerate_ui_cache_with_threshold_alerts(self):
-        """
-        Force regeneration of UI cache with threshold alerts included
-        This clears the UI cache and ensures threshold alerts are computed
-        """
-        print("🔄 Force regenerating UI cache with threshold alerts...")
-        
-        # Clear UI-related caches
-        self._cache['ui_structures'] = None
-        self._cache['optimized_storage'] = None
-        
-        # Get session-level data (this should be available)
-        if self._cache['session_level_data'] is not None:
-            session_data = self._cache['session_level_data']
-        else:
-            # Process data if needed
-            raw_data = self.get_session_data(use_cache=True)
-            session_data = self.process_data_pipeline(raw_data, use_cache=True)
-        
-        # Force create new UI structures with threshold analysis
-        ui_structures = self.create_ui_optimized_structures(session_data)
-        self._cache['ui_structures'] = ui_structures
-        
-        # Verify threshold alerts were computed
-        table_data = ui_structures.get('table_display_cache', [])
-        threshold_count = sum(1 for row in table_data if row.get('threshold_alert') == 'T')
-        
-        print(f" UI cache regenerated with {threshold_count} threshold alerts computed")
-        
-        return threshold_count
 
     def initialize_bootstrap_manager(self, bootstrap_config: Optional[Dict[str, Any]] = None) -> BootstrapManager:
         """
@@ -2450,61 +2012,6 @@ class AppUtils:
         }
         
         return summary
-
-    def force_regenerate_bootstrap_indicators(self):
-        """
-        Force regeneration of bootstrap indicators in cached data
-        
-        This method clears caches and reprocesses data to ensure bootstrap
-        indicators are calculated and included in all data structures.
-        
-        Returns:
-            Dict[str, Any]: Summary of regeneration results
-        """
-        print("🔄 Force regenerating data with bootstrap indicators...")
-        
-        # Clear all caches to ensure fresh calculation
-        self._invalidate_derived_caches()
-        
-        # Reload and reprocess data to include bootstrap indicators
-        raw_data = self.reload_data()
-        print(f"Reloaded {len(raw_data)} sessions")
-        
-        # Process pipeline with bootstrap indicators
-        session_data = self.process_data_pipeline(raw_data, use_cache=False)
-        print(f"Reprocessed {len(session_data)} sessions")
-        
-        # Verify bootstrap indicator columns are present
-        bootstrap_cols = [col for col in session_data.columns if col.endswith('_bootstrap_enhanced')]
-        print(f"✅ Generated {len(bootstrap_cols)} bootstrap indicator columns")
-        
-        # Get table display data to verify UI structures include bootstrap indicators
-        table_data = self.get_table_display_data(use_cache=False)
-        if table_data:
-            table_df = pd.DataFrame(table_data)
-            table_bootstrap_cols = [col for col in table_df.columns if 'bootstrap_enhanced' in col]
-            print(f"✅ Table display includes {len(table_bootstrap_cols)} bootstrap indicator columns")
-        
-        # Generate bootstrap enhancement summary
-        summary = self.get_bootstrap_enhancement_summary(use_cache=False)
-        
-        if 'error' not in summary:
-            enhancement_count = summary['enhancement_statistics']['total_actual_feature_enhancements']
-            total_possible = summary['enhancement_statistics']['total_possible_feature_enhancements']
-            enhancement_rate = summary['enhancement_statistics']['overall_enhancement_rate']
-            
-            print(f"📊 Bootstrap enhancement statistics:")
-            print(f"   - Enhanced sessions: {enhancement_count}/{total_possible} ({enhancement_rate}%)")
-            print(f"   - Subjects with enhancement: {summary['enhancement_statistics']['subjects_with_any_enhancement']}")
-            print(f"   - Strata with enhancement: {summary['enhancement_statistics']['strata_with_any_enhancement']}")
-        
-        print("✅ Bootstrap indicators regeneration complete!")
-        
-        return {
-            'bootstrap_columns_generated': len(bootstrap_cols),
-            'table_bootstrap_columns': len(table_bootstrap_cols) if table_data else 0,
-            'enhancement_summary': summary
-        }
 
     def calculate_session_bootstrap_cis(self, session_data: pd.DataFrame) -> pd.DataFrame:
         """

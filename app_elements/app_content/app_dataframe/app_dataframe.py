@@ -439,9 +439,6 @@ class AppDataFrame:
         default_visible_columns = get_default_visible_columns()
         formatted_data = self.format_dataframe(raw_data, visible_columns=default_visible_columns)
         
-        # Identify float columns for formatting
-        float_columns = [col for col in formatted_data.columns if formatted_data[col].dtype == 'float64']
-        
         # Improve column header display
         formatted_column_names = {
             'subject_id': 'Subject ID',

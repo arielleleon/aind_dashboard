@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.vulture]
+# Start with conservative settings for initial analysis
+min_confidence = 80
+paths = [
+    "app.py",
+    "shared_utils.py", 
+    "app_elements/",
+    "app_utils/",
+    "callbacks/"
+]
+exclude = [
+    "tests/",
+    "__pycache__/",
+    "*.pyc",
+    ".pytest_cache/",
+    ".git/"
+]
+# Generate detailed output with file locations
+verbose = true
+# Sort by size to prioritize larger dead code chunks
+sort_by_size = true 

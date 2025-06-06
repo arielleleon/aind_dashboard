@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Tuple, Optional, Union, Any
+from typing import Dict, List, Optional, Any, Tuple
 from scipy import stats
-import warnings
+from sklearn.preprocessing import StandardScaler
 
 class StatisticalUtils:
     """
@@ -66,73 +66,6 @@ class StatisticalUtils:
         
         lower_bound = max(0, center - margin) * 100
         upper_bound = min(100, center + margin) * 100
-        
-        return (lower_bound, upper_bound)
-    
-    @staticmethod
-    def calculate_bootstrap_ci(
-        data: np.ndarray, 
-        statistic_func: callable,
-        n_bootstrap: int = 1000,
-        confidence_level: float = 0.95,
-        random_state: Optional[int] = None
-    ) -> Tuple[float, float]:
-        """
-        Calculate confidence interval using bootstrap resampling
-        
-        Parameters:
-            data: np.ndarray
-                Input data for bootstrap sampling
-            statistic_func: callable
-                Function to calculate statistic (e.g., np.mean, np.median)
-            n_bootstrap: int
-                Number of bootstrap samples
-            confidence_level: float
-                Confidence level (default: 0.95)
-            random_state: Optional[int]
-                Random seed for reproducibility
-                
-        Returns:
-            Tuple[float, float]
-                (lower_bound, upper_bound) of confidence interval
-        """
-        if len(data) < 3:
-            return (np.nan, np.nan)
-        
-        # Set random seed if provided
-        if random_state is not None:
-            np.random.seed(random_state)
-        
-        # Remove NaN values
-        clean_data = data[~np.isnan(data)]
-        
-        if len(clean_data) < 3:
-            return (np.nan, np.nan)
-        
-        # Perform bootstrap sampling
-        bootstrap_stats = []
-        
-        for _ in range(n_bootstrap):
-            # Sample with replacement
-            bootstrap_sample = np.random.choice(clean_data, size=len(clean_data), replace=True)
-            
-            try:
-                stat = statistic_func(bootstrap_sample)
-                if not np.isnan(stat):
-                    bootstrap_stats.append(stat)
-            except:
-                continue
-        
-        if len(bootstrap_stats) < 10:  # Need minimum successful bootstrap samples
-            return (np.nan, np.nan)
-        
-        # Calculate percentiles for CI
-        alpha = 1 - confidence_level
-        lower_percentile = (alpha/2) * 100
-        upper_percentile = (1 - alpha/2) * 100
-        
-        lower_bound = np.percentile(bootstrap_stats, lower_percentile)
-        upper_bound = np.percentile(bootstrap_stats, upper_percentile)
         
         return (lower_bound, upper_bound)
     
@@ -293,65 +226,6 @@ class StatisticalUtils:
             percentile_rank = (weight_below + weight_at / 2.0) / total_weight * 100
         
         return percentile_rank
-    
-    @staticmethod
-    def validate_ci_coverage(
-        true_percentiles: np.ndarray,
-        estimated_percentiles: np.ndarray,
-        ci_lower: np.ndarray,
-        ci_upper: np.ndarray,
-        confidence_level: float = 0.95
-    ) -> Dict[str, float]:
-        """
-        Validate confidence interval coverage for testing purposes
-        
-        Parameters:
-            true_percentiles: np.ndarray
-                True percentile values (for validation)
-            estimated_percentiles: np.ndarray
-                Estimated percentile values
-            ci_lower: np.ndarray
-                Lower CI bounds
-            ci_upper: np.ndarray
-                Upper CI bounds
-            confidence_level: float
-                Expected confidence level
-                
-        Returns:
-            Dict[str, float]
-                Coverage statistics
-        """
-        # Remove NaN values
-        valid_mask = (
-            ~np.isnan(true_percentiles) & 
-            ~np.isnan(estimated_percentiles) & 
-            ~np.isnan(ci_lower) & 
-            ~np.isnan(ci_upper)
-        )
-        
-        if np.sum(valid_mask) == 0:
-            return {"coverage_rate": np.nan, "avg_ci_width": np.nan, "n_valid": 0}
-        
-        true_vals = true_percentiles[valid_mask]
-        ci_low = ci_lower[valid_mask]
-        ci_high = ci_upper[valid_mask]
-        
-        # Check if true values fall within CI bounds
-        within_ci = (true_vals >= ci_low) & (true_vals <= ci_high)
-        coverage_rate = np.mean(within_ci)
-        
-        # Calculate average CI width
-        avg_ci_width = np.mean(ci_high - ci_low)
-        
-        return {
-            "coverage_rate": coverage_rate,
-            "expected_coverage": confidence_level,
-            "coverage_difference": coverage_rate - confidence_level,
-            "avg_ci_width": avg_ci_width,
-            "n_valid": np.sum(valid_mask)
-        }
-
-    # PHASE 3: Bootstrap Enhancement Methods
     
     @staticmethod
     def generate_bootstrap_reference_distribution(
@@ -521,10 +395,6 @@ class StatisticalUtils:
         
         if len(clean_reference) < 5:
             return (np.nan, np.nan)
-        
-        # Calculate the sample standard deviation as a proxy for uncertainty
-        sample_std = np.std(clean_reference, ddof=1)
-        sample_mean = np.mean(clean_reference)
         
         # For bootstrap CI of raw values, we estimate the uncertainty
         # in our target value based on the reference distribution variance

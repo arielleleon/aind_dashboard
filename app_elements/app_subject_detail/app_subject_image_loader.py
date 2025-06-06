@@ -1,5 +1,4 @@
 import requests
-import base64
 import pandas as pd
 import numpy as np
 import sys
@@ -39,51 +38,3 @@ class AppSubjectImageLoader:
             import traceback
             print(traceback.format_exc(), file=sys.stderr)
             raise
-
-    def get_session_image(self, subject_id, session_date, nwb_suffix, figure_suffix="choice_history.png"):
-        """
-        Fetches an image from S3 based on subject and session information
-        """
-        print(f"\n=== IMAGE REQUEST DEBUG ===")
-        print(f"Requesting image for subject={subject_id}, date={session_date}, suffix={figure_suffix}")
-        
-        try:
-            # Generate the S3 URL
-            url = self.get_s3_public_url(
-                subject_id=subject_id,
-                session_date=session_date,
-                nwb_suffix=nwb_suffix,
-                figure_suffix=figure_suffix
-            )
-            
-            # Verify URL is valid for debugging
-            print(f"Testing URL accessibility: {url}")
-            try:
-                # Just do a HEAD request to check if the URL is valid without downloading the image
-                head_response = requests.head(url, timeout=1)
-                if head_response.status_code == 200:
-                    print(f"URL is accessible (status code 200)")
-                else:
-                    print(f"URL may not be accessible - status code: {head_response.status_code}")
-            except Exception as req_err:
-                print(f"Warning: Could not verify URL accessibility: {str(req_err)}")
-            
-            # Return the direct URL for the image
-            return {
-                'success': True,
-                'image_src': url,
-                'url': url,
-                'error': None
-            }
-                
-        except Exception as e:
-            error_msg = f"Error generating image URL: {str(e)}"
-            print(f"ERROR: {error_msg}", file=sys.stderr)
-            import traceback
-            print(traceback.format_exc(), file=sys.stderr)
-            return {
-                'success': False,
-                'image_src': None,
-                'url': None,
-                'error': error_msg
-            }

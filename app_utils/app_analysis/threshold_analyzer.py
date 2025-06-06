@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 class ThresholdAnalyzer:
     """
@@ -23,16 +23,6 @@ class ThresholdAnalyzer:
                 }
         """
         self.threshold_config = threshold_config or {}
-        
-    def set_threshold_config(self, threshold_config: Dict[str, Any]):
-        """
-        Update threshold configuration
-        
-        Parameters:
-            threshold_config: Dict[str, Any]
-                Dictionary of feature thresholds and conditions
-        """
-        self.threshold_config = threshold_config
         
     def evaluate_condition(self, value: Any, condition: str, threshold: Any) -> bool:
         """
@@ -124,88 +114,6 @@ class ThresholdAnalyzer:
                     if self.evaluate_condition(row[feature], condition, threshold):
                         df_result.at[idx, 'threshold_alert'] = 'T'
                         
-        return df_result
-    
-    def get_stage_based_thresholds(self, stage_thresholds: Dict[str, int]) -> Dict[str, Any]:
-        """
-        Generate threshold configuration for sessions by stage
-        
-        Parameters:
-            stage_thresholds: Dict[str, int]
-                Dictionary mapping stage names to their session thresholds
-                
-        Returns:
-            Dict[str, Any]: Properly formatted threshold config for analyze_thresholds
-        """
-        config = {}
-        
-        for stage, threshold in stage_thresholds.items():
-            config[f"stage_{stage}_sessions"] = {
-                'condition': 'gt',
-                'value': threshold,
-                'context': {
-                    'column': 'current_stage_actual',
-                    'values': [stage]
-                }
-            }
-            
-        return config
-    
-    def apply_standard_thresholds(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Apply standard session thresholds based on stages as specified:
-        
-        Parameters:
-            df: pd.DataFrame
-                Input dataframe with session data
-                
-        Returns:
-            pd.DataFrame: DataFrame with threshold_alert column added
-        """
-        # Define the standard thresholds
-        stage_thresholds = {
-            'STAGE_1': 5,
-            'STAGE_2': 5,
-            'STAGE_3': 6,
-            'STAGE_4': 10,
-            'STAGE_FINAL': 10,
-            'GRADUATED': 20
-        }
-        
-        # Create combined threshold config
-        threshold_config = {
-            'session': {
-                'condition': 'gt',
-                'value': 40  # Total sessions threshold
-            },
-            'water_day_total': {
-                'condition': 'gt',
-                'value': 3.5  # Water day total threshold (ml)
-            }
-        }
-        
-        # Process each row to check the stage and apply the appropriate threshold
-        df_result = df.copy()
-        df_result['threshold_alert'] = 'N'  # Default to Normal
-        
-        for idx, row in df_result.iterrows():
-            # Check total sessions threshold
-            if 'session' in row and not pd.isna(row['session']) and row['session'] > 40:
-                df_result.at[idx, 'threshold_alert'] = 'T'
-                continue
-            
-            # Check water_day_total threshold
-            if 'water_day_total' in row and not pd.isna(row['water_day_total']) and row['water_day_total'] > 3.5:
-                df_result.at[idx, 'threshold_alert'] = 'T'
-                continue
-                
-            # Check stage-specific thresholds
-            stage = row.get('current_stage_actual')
-            if stage in stage_thresholds:
-                threshold = stage_thresholds[stage]
-                if 'session' in row and not pd.isna(row['session']) and row['session'] > threshold:
-                    df_result.at[idx, 'threshold_alert'] = 'T'
-                    
         return df_result
 
     def generate_alert(self, condition_met, alert_type, value=None, stage=None):

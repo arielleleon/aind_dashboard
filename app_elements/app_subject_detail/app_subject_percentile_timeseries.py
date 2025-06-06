@@ -136,7 +136,6 @@ class AppSubjectPercentileTimeseries:
             return self._create_empty_figure()
             
         sessions = subject_data['sessions']
-        dates = subject_data.get('dates', [])
         strata_data = subject_data.get('strata', [])
         
         if not sessions:

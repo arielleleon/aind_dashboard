@@ -1,8 +1,7 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Tuple, Optional, Union, Any
+from typing import Dict, List, Tuple, Optional, Any
 from datetime import datetime, timedelta
-import warnings
 from .statistical_utils import StatisticalUtils
 
 
@@ -67,12 +66,6 @@ class BootstrapManager:
         
         # Bootstrap cache for generated distributions
         self._bootstrap_cache = {}
-        self._last_update_check = None
-        
-        print(f"BootstrapManager initialized with tiered strategy:")
-        print(f"  Large strata (≥{self.config['large_strata']['threshold']} subjects): {self.config['large_strata']['bootstrap_samples']} samples")
-        print(f"  Medium strata (≥{self.config['medium_strata']['threshold']} subjects): {self.config['medium_strata']['bootstrap_samples']} samples") 
-        print(f"  Small strata (<{self.config['medium_strata']['threshold']} subjects): Skip bootstrap")
     
     def _update_config_recursive(self, base_config: Dict, update_config: Dict) -> None:
         """Recursively update nested configuration dictionaries"""
@@ -490,51 +483,6 @@ class BootstrapManager:
         """
         bootstrap_dist = self.get_bootstrap_distribution(strata_name, feature_name)
         return bootstrap_dist is not None and bootstrap_dist.get('bootstrap_enabled', False)
-    
-    def get_cache_summary(self) -> Dict[str, Any]:
-        """
-        Get summary of cached bootstrap distributions
-        
-        Returns:
-            Dict[str, Any]
-                Summary of bootstrap cache status
-        """
-        summary = {
-            'total_strata_cached': len(self._bootstrap_cache),
-            'bootstrap_enabled_strata': 0,
-            'total_features_cached': 0,
-            'cache_size_mb': 0,
-            'oldest_generation': None,
-            'newest_generation': None,
-            'strata_details': {}
-        }
-        
-        generation_times = []
-        
-        for strata_name, cached_result in self._bootstrap_cache.items():
-            strata_detail = {
-                'bootstrap_enabled': cached_result.get('bootstrap_enabled', False),
-                'feature_count': len(cached_result.get('bootstrap_distributions', {})),
-                'generation_timestamp': cached_result.get('generation_timestamp'),
-                'subject_count': cached_result.get('subject_count', 0),
-                'strata_tier': cached_result.get('strata_tier', 'unknown')
-            }
-            
-            if strata_detail['bootstrap_enabled']:
-                summary['bootstrap_enabled_strata'] += 1
-                summary['total_features_cached'] += strata_detail['feature_count']
-                
-                if strata_detail['generation_timestamp']:
-                    generation_times.append(strata_detail['generation_timestamp'])
-            
-            summary['strata_details'][strata_name] = strata_detail
-        
-        # Calculate timestamp range
-        if generation_times:
-            summary['oldest_generation'] = min(generation_times)
-            summary['newest_generation'] = max(generation_times)
-        
-        return summary
     
     def clear_cache(self, strata_names: Optional[List[str]] = None) -> None:
         """
