@@ -13,6 +13,9 @@ class StatisticalUtils:
     - Bootstrap methods for uncertainty quantification
     - Outlier detection using multiple methods
     - Weighted statistical operations
+    - Session-level bootstrap CI calculations
+    - Bootstrap distribution generation and management
+    - Coverage statistics and enhancement summaries
     """
     
     @staticmethod
@@ -640,4 +643,452 @@ class StatisticalUtils:
                 'recommendation': 'standard'
             })
         
-        return comparison_result 
+        return comparison_result
+    
+    @staticmethod
+    def calculate_session_bootstrap_cis(session_data: pd.DataFrame, 
+                                      bootstrap_manager=None,
+                                      reference_processor=None,
+                                      quantile_analyzer=None) -> pd.DataFrame:
+        """
+        Calculate bootstrap CIs for all session rolling averages during pipeline processing
+        
+        This pre-computes bootstrap CIs once and stores them in session data to avoid
+        expensive real-time calculations during UI creation.
+        
+        Parameters:
+            session_data: pd.DataFrame
+                Session-level data with rolling averages and percentiles
+            bootstrap_manager: BootstrapManager
+                Bootstrap manager instance for statistical utilities
+            reference_processor: ReferenceProcessor
+                Reference processor for feature configuration
+            quantile_analyzer: QuantileAnalyzer
+                Quantile analyzer for reference data access
+                
+        Returns:
+            pd.DataFrame
+                Session data with bootstrap CI columns added
+        """
+        print("Pre-computing bootstrap CIs during pipeline...")
+        
+        if bootstrap_manager is None:
+            print("Bootstrap manager not available - skipping bootstrap CI calculation")
+            return session_data
+        
+        if reference_processor is None:
+            print("Reference processor not available - skipping bootstrap CI calculation")
+            return session_data
+        
+        result_df = session_data.copy()
+        features = list(reference_processor.features_config.keys())
+        
+        # Counters for reporting
+        total_ci_calculations = 0
+        successful_ci_calculations = 0
+        strata_processed = set()
+        
+        # Process by strata for efficiency (shared reference data)
+        for strata, strata_sessions in result_df.groupby('strata'):
+            strata_processed.add(strata)
+            
+            # Get reference data for this strata once
+            if quantile_analyzer is not None:
+                strata_data = quantile_analyzer.percentile_data.get(strata)
+                
+                if strata_data is None:
+                    print(f"  No reference data for strata {strata} - skipping")
+                    continue
+                
+                print(f"  Processing {len(strata_sessions)} sessions for strata {strata}")
+                
+                # Process each feature for this strata
+                for feature in features:
+                    reference_col = f"{feature}_processed"
+                    rolling_avg_col = f"{feature}_processed_rolling_avg"
+                    ci_lower_col = f"{feature}_bootstrap_ci_lower"
+                    ci_upper_col = f"{feature}_bootstrap_ci_upper"
+                    
+                    # Get reference values for this feature/strata combination
+                    if reference_col not in strata_data.columns:
+                        continue
+                    
+                    reference_values = strata_data[reference_col].dropna().values
+                    
+                    if len(reference_values) < 5:
+                        # Not enough reference data for bootstrap CI
+                        continue
+                    
+                    # Calculate bootstrap CI for each session in this strata
+                    for idx, row in strata_sessions.iterrows():
+                        total_ci_calculations += 1
+                        
+                        rolling_avg_value = row.get(rolling_avg_col)
+                        
+                        if pd.isna(rolling_avg_value):
+                            result_df.loc[idx, ci_lower_col] = np.nan
+                            result_df.loc[idx, ci_upper_col] = np.nan
+                            continue
+                        
+                        # Calculate bootstrap CI with reduced samples for efficiency
+                        ci_lower, ci_upper = StatisticalUtils.calculate_bootstrap_raw_value_ci(
+                            reference_data=reference_values,
+                            target_value=rolling_avg_value,
+                            confidence_level=0.95,
+                            n_bootstrap=150,  # Reduced from 500 for better performance
+                            random_state=42
+                        )
+                        
+                        if not pd.isna(ci_lower) and not pd.isna(ci_upper):
+                            result_df.loc[idx, ci_lower_col] = ci_lower
+                            result_df.loc[idx, ci_upper_col] = ci_upper
+                            successful_ci_calculations += 1
+                        else:
+                            result_df.loc[idx, ci_lower_col] = np.nan
+                            result_df.loc[idx, ci_upper_col] = np.nan
+                
+                # Calculate overall bootstrap CIs for this strata
+                # Collect all processed feature values for overall calculation
+                all_processed_values = []
+                for feature in features:
+                    reference_col = f"{feature}_processed"
+                    if reference_col in strata_data.columns:
+                        feature_values = strata_data[reference_col].dropna().values
+                        all_processed_values.extend(feature_values)
+                
+                if len(all_processed_values) >= 10:
+                    # Calculate overall bootstrap CI for each session
+                    for idx, row in strata_sessions.iterrows():
+                        overall_rolling_avg = row.get('session_overall_rolling_avg')
+                        
+                        if pd.isna(overall_rolling_avg):
+                            result_df.loc[idx, 'session_overall_bootstrap_ci_lower'] = np.nan
+                            result_df.loc[idx, 'session_overall_bootstrap_ci_upper'] = np.nan
+                            continue
+                        
+                        ci_lower, ci_upper = StatisticalUtils.calculate_bootstrap_raw_value_ci(
+                            reference_data=np.array(all_processed_values),
+                            target_value=overall_rolling_avg,
+                            confidence_level=0.95,
+                            n_bootstrap=150,  # Reduced from 500
+                            random_state=42
+                        )
+                        
+                        if not pd.isna(ci_lower) and not pd.isna(ci_upper):
+                            result_df.loc[idx, 'session_overall_bootstrap_ci_lower'] = ci_lower
+                            result_df.loc[idx, 'session_overall_bootstrap_ci_upper'] = ci_upper
+                        else:
+                            result_df.loc[idx, 'session_overall_bootstrap_ci_lower'] = np.nan
+                            result_df.loc[idx, 'session_overall_bootstrap_ci_upper'] = np.nan
+        
+        # Report results
+        print(f"Bootstrap CI pre-computation complete:")
+        if total_ci_calculations > 0:
+            success_rate = (successful_ci_calculations/total_ci_calculations*100)
+            print(f"   - {successful_ci_calculations}/{total_ci_calculations} successful calculations ({success_rate:.1f}%)")
+        else:
+            print(f"   - No CI calculations attempted (no suitable reference data)")
+        print(f"   - {len(strata_processed)} strata processed")
+        print(f"   - Reduced bootstrap samples from 500 to 150 for better performance")
+        
+        return result_df
+    
+    @staticmethod
+    def generate_bootstrap_distributions(bootstrap_manager=None,
+                                       quantile_analyzer=None,
+                                       reference_processor=None,
+                                       cache_manager=None,
+                                       force_regenerate: bool = False,
+                                       strata_filter: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Generate bootstrap distributions for eligible strata using the current data
+        
+        Parameters:
+            bootstrap_manager: BootstrapManager
+                Bootstrap manager instance
+            quantile_analyzer: QuantileAnalyzer  
+                Quantile analyzer for stratified data access
+            reference_processor: ReferenceProcessor
+                Reference processor for validation
+            cache_manager: CacheManager
+                Cache manager for session data access
+            force_regenerate: bool
+                Force regeneration of all bootstrap distributions
+            strata_filter: Optional[List[str]]
+                List of specific strata to process (None = all strata)
+                
+        Returns:
+            Dict[str, Any]: Bootstrap generation results
+        """
+        if bootstrap_manager is None:
+            print("Bootstrap manager not available for distribution generation")
+            return {'error': 'Bootstrap manager not available', 'bootstrap_enabled_count': 0}
+        
+        if reference_processor is None:
+            print("Reference processor not available for bootstrap distribution generation")
+            return {'error': 'Reference processor not available', 'bootstrap_enabled_count': 0}
+        
+        # Get current session data for session date checking
+        session_data = None
+        if cache_manager and cache_manager.has('session_level_data'):
+            session_data = cache_manager.get('session_level_data')
+        
+        session_dates = None
+        if session_data is not None:
+            session_dates = session_data['session_date']
+        
+        # Get stratified data directly from quantile analyzer
+        if quantile_analyzer is not None:
+            strata_data = getattr(quantile_analyzer, 'stratified_data', None)
+            if strata_data is None:
+                print("No stratified data found in quantile analyzer - bootstrap generation skipped")
+                return {'error': 'No stratified data available for bootstrap generation', 'bootstrap_enabled_count': 0}
+        else:
+            print("Quantile analyzer not available - bootstrap generation skipped")
+            return {'error': 'Quantile analyzer not available', 'bootstrap_enabled_count': 0}
+        
+        # Filter strata if requested
+        if strata_filter is not None:
+            strata_data = {k: v for k, v in strata_data.items() if k in strata_filter}
+        
+        # Generate bootstrap distributions
+        print(f"Generating bootstrap distributions for {len(strata_data)} strata...")
+        result = bootstrap_manager.generate_bootstrap_for_all_strata(
+            strata_data=strata_data,
+            session_dates=session_dates,
+            force_regenerate=force_regenerate
+        )
+        
+        return result
+    
+    @staticmethod
+    def get_bootstrap_coverage_stats(cache_manager=None, use_cache: bool = True) -> Dict[str, Any]:
+        """
+        Get bootstrap coverage statistics for all strata
+        
+        Parameters:
+            cache_manager: CacheManager
+                Cache manager for accessing stored data
+            use_cache: bool
+                Whether to use cached coverage statistics
+                
+        Returns:
+            Dict[str, Any]: Bootstrap coverage statistics by strata
+        """
+        if cache_manager is None:
+            return {}
+            
+        # Check cache first
+        if use_cache and cache_manager.has('bootstrap_coverage_stats'):
+            return cache_manager.get('bootstrap_coverage_stats')
+        
+        # Check optimized storage
+        if cache_manager.has('optimized_storage'):
+            optimized_storage = cache_manager.get('optimized_storage')
+            bootstrap_coverage = optimized_storage.get('bootstrap_coverage', {})
+            if bootstrap_coverage:
+                cache_manager.set('bootstrap_coverage_stats', bootstrap_coverage)
+                return bootstrap_coverage
+        
+        # No coverage statistics available
+        return {}
+    
+    @staticmethod
+    def get_bootstrap_enabled_strata(cache_manager=None, use_cache: bool = True) -> set:
+        """
+        Get set of strata names that have bootstrap enhancement enabled
+        
+        Parameters:
+            cache_manager: CacheManager
+                Cache manager for accessing stored data
+            use_cache: bool
+                Whether to use cached strata set
+                
+        Returns:
+            set: Set of strata names with bootstrap enhancement
+        """
+        if cache_manager is None:
+            return set()
+            
+        # Check cache first  
+        if use_cache and cache_manager.has('bootstrap_enabled_strata'):
+            return cache_manager.get('bootstrap_enabled_strata')
+        
+        # Check optimized storage metadata
+        if cache_manager.has('optimized_storage'):
+            optimized_storage = cache_manager.get('optimized_storage')
+            metadata = optimized_storage.get('metadata', {})
+            strata_list = metadata.get('bootstrap_enabled_strata_list', [])
+            if strata_list:
+                strata_set = set(strata_list)
+                cache_manager.set('bootstrap_enabled_strata', strata_set)
+                return strata_set
+        
+        # No enabled strata found
+        return set()
+    
+    @staticmethod
+    def get_bootstrap_enhancement_summary(cache_manager=None,
+                                        bootstrap_manager=None,
+                                        reference_processor=None,
+                                        use_cache: bool = True) -> Dict[str, Any]:
+        """
+        Generate a comprehensive summary of bootstrap enhancement coverage
+        
+        Parameters:
+            cache_manager: CacheManager
+                Cache manager for session data access
+            bootstrap_manager: BootstrapManager
+                Bootstrap manager instance for validation
+            reference_processor: ReferenceProcessor
+                Reference processor for feature configuration
+            use_cache: bool
+                Whether to use cached data if available
+                
+        Returns:
+            Dict[str, Any]
+                Bootstrap enhancement summary with statistics and subject details
+        """
+        # Get session-level data
+        session_data = None
+        if use_cache and cache_manager and cache_manager.has('session_level_data'):
+            session_data = cache_manager.get('session_level_data')
+        
+        if session_data is None or session_data.empty:
+            return {'error': 'No session data available'}
+        
+        summary = {
+            'total_sessions': len(session_data),
+            'total_subjects': session_data['subject_id'].nunique(),
+            'total_strata': session_data['strata'].nunique(),
+            'bootstrap_manager_available': bootstrap_manager is not None,
+            'feature_enhancement': {},
+            'overall_enhancement': {},
+            'strata_breakdown': {},
+            'subject_breakdown': {},
+            'enhancement_statistics': {}
+        }
+        
+        if not summary['bootstrap_manager_available']:
+            summary['error'] = 'Bootstrap manager not available'
+            return summary
+        
+        if reference_processor is None:
+            summary['error'] = 'Reference processor not available'
+            return summary
+        
+        # Get feature list
+        feature_list = list(reference_processor.features_config.keys())
+        
+        # Analyze feature-specific bootstrap enhancement
+        for feature in feature_list:
+            bootstrap_col = f"{feature}_bootstrap_enhanced"
+            percentile_col = f"{feature}_session_percentile"
+            
+            if bootstrap_col in session_data.columns and percentile_col in session_data.columns:
+                # Count sessions with valid percentiles
+                valid_percentiles = session_data[percentile_col].notna().sum()
+                
+                # Count bootstrap enhanced sessions
+                bootstrap_enhanced = session_data[bootstrap_col].sum()
+                
+                # Calculate coverage rate
+                coverage_rate = (bootstrap_enhanced / valid_percentiles * 100) if valid_percentiles > 0 else 0
+                
+                summary['feature_enhancement'][feature] = {
+                    'valid_percentiles': int(valid_percentiles),
+                    'bootstrap_enhanced': int(bootstrap_enhanced),
+                    'coverage_rate': round(coverage_rate, 1),
+                    'subjects_with_enhancement': int(session_data[session_data[bootstrap_col] == True]['subject_id'].nunique()),
+                    'strata_with_enhancement': list(session_data[session_data[bootstrap_col] == True]['strata'].unique())
+                }
+        
+        # Analyze overall percentile bootstrap enhancement
+        overall_bootstrap_col = "session_overall_bootstrap_enhanced"
+        overall_percentile_col = "session_overall_percentile"
+        
+        if overall_bootstrap_col in session_data.columns and overall_percentile_col in session_data.columns:
+            valid_overall = session_data[overall_percentile_col].notna().sum()
+            bootstrap_overall = session_data[overall_bootstrap_col].sum()
+            overall_coverage = (bootstrap_overall / valid_overall * 100) if valid_overall > 0 else 0
+            
+            summary['overall_enhancement'] = {
+                'valid_percentiles': int(valid_overall),
+                'bootstrap_enhanced': int(bootstrap_overall),
+                'coverage_rate': round(overall_coverage, 1),
+                'subjects_with_enhancement': int(session_data[session_data[overall_bootstrap_col] == True]['subject_id'].nunique()),
+                'strata_with_enhancement': list(session_data[session_data[overall_bootstrap_col] == True]['strata'].unique())
+            }
+        
+        # Strata-level breakdown
+        for strata, strata_sessions in session_data.groupby('strata'):
+            strata_summary = {
+                'total_sessions': len(strata_sessions),
+                'subjects': strata_sessions['subject_id'].nunique(),
+                'features_with_bootstrap': {},
+                'overall_bootstrap_sessions': 0,
+                'any_bootstrap_sessions': 0
+            }
+            
+            # Check each feature for this strata
+            for feature in feature_list:
+                bootstrap_col = f"{feature}_bootstrap_enhanced"
+                if bootstrap_col in strata_sessions.columns:
+                    bootstrap_count = strata_sessions[bootstrap_col].sum()
+                    strata_summary['features_with_bootstrap'][feature] = int(bootstrap_count)
+            
+            # Overall bootstrap count for this strata
+            if overall_bootstrap_col in strata_sessions.columns:
+                strata_summary['overall_bootstrap_sessions'] = int(strata_sessions[overall_bootstrap_col].sum())
+            
+            # Any bootstrap enhancement for this strata
+            bootstrap_cols = [f"{feature}_bootstrap_enhanced" for feature in feature_list]
+            bootstrap_cols = [col for col in bootstrap_cols if col in strata_sessions.columns]
+            
+            if bootstrap_cols:
+                any_bootstrap = strata_sessions[bootstrap_cols].any(axis=1).sum()
+                strata_summary['any_bootstrap_sessions'] = int(any_bootstrap)
+            
+            summary['strata_breakdown'][strata] = strata_summary
+        
+        # Subject-level breakdown (most recent session only)
+        most_recent = session_data.sort_values('session_date').groupby('subject_id').last().reset_index()
+        
+        for _, row in most_recent.iterrows():
+            subject_id = row['subject_id']
+            subject_summary = {
+                'strata': row['strata'],
+                'session_date': row['session_date'],
+                'features_with_bootstrap': [],
+                'overall_bootstrap_enhanced': False
+            }
+            
+            # Check each feature
+            for feature in feature_list:
+                bootstrap_col = f"{feature}_bootstrap_enhanced"
+                if bootstrap_col in row and row[bootstrap_col]:
+                    subject_summary['features_with_bootstrap'].append(feature)
+            
+            # Check overall
+            if overall_bootstrap_col in row:
+                subject_summary['overall_bootstrap_enhanced'] = bool(row[overall_bootstrap_col])
+            
+            summary['subject_breakdown'][subject_id] = subject_summary
+        
+        # Enhancement statistics
+        total_possible_enhancements = len(session_data) * len(feature_list)
+        total_actual_enhancements = sum(
+            session_data[f"{feature}_bootstrap_enhanced"].sum() 
+            for feature in feature_list 
+            if f"{feature}_bootstrap_enhanced" in session_data.columns
+        )
+        
+        summary['enhancement_statistics'] = {
+            'total_possible_feature_enhancements': total_possible_enhancements,
+            'total_actual_feature_enhancements': int(total_actual_enhancements),
+            'overall_enhancement_rate': round((total_actual_enhancements / total_possible_enhancements * 100) if total_possible_enhancements > 0 else 0, 1),
+            'strata_with_any_enhancement': len([s for s in summary['strata_breakdown'].values() if s['any_bootstrap_sessions'] > 0]),
+            'subjects_with_any_enhancement': len([s for s in summary['subject_breakdown'].values() if s['features_with_bootstrap'] or s['overall_bootstrap_enhanced']])
+        }
+        
+        return summary 

@@ -1,223 +1,219 @@
-# AIND Dashboard Testing Infrastructure
+# AIND Dashboard Test Suite
 
-This directory contains the testing infrastructure for the AIND Dashboard, designed to support large-scale refactoring while maintaining code quality and functionality.
+## Overview
+This directory contains the complete test suite for the AIND Dashboard application, featuring comprehensive unit, integration, and end-to-end tests.
 
-## 🧪 Test Organization
+## Updated Test Architecture (2024-12-20)
 
-The tests are organized by **functionality** rather than **file structure** to support future refactoring:
+### **New: Realistic Test Fixtures**
+The test suite now uses **realistic sample data extracted from the actual app** instead of synthetic test data. This ensures tests accurately reflect production behavior.
+
+#### Key Improvements:
+- **Real strata formats**: `"Uncoupled Without Baiting_BEGINNER_v1"` → `"UWBB1"`
+- **Actual column structures**: All columns match production data
+- **Correct data types**: Real timestamps, subject IDs, and metrics
+- **Proper abbreviations**: Tests use actual strata abbreviation logic
+
+## Test Structure
 
 ```
 tests/
-├── conftest.py                    # Shared fixtures and configuration
-├── unit/                          # Unit tests for individual functions
-│   ├── test_data_operations/      # Data loading and processing
-│   ├── test_statistical_analysis/ # Statistical functions and analysis
-│   ├── test_ui_components/        # UI component logic
-│   ├── test_callback_logic/       # Callback function logic
-│   └── test_utilities/            # Shared utility functions
-└── e2e/                          # End-to-end tests
-    ├── test_app_smoke.py         # Basic functionality verification
-    ├── test_user_workflows/      # Complete user interaction flows
-    └── test_integration/         # Component integration tests
+├── fixtures/                    # Centralized realistic test data
+│   ├── __init__.py
+│   └── sample_data.py          # Real app data for all tests
+├── unit/
+│   ├── test_ui_components/     # UI layer tests with real data
+│   ├── test_data_operations/   # Data loading and processing
+│   ├── test_utilities/         # Helper functions
+│   ├── test_callback_logic/    # Dash callback tests
+│   └── test_statistical_analysis/
+├── e2e/                        # End-to-end browser tests
+├── conftest.py                 # 🔄 Updated pytest fixtures
+└── README.md                   # This file
 ```
 
-## 🚀 Quick Start
+## Using Test Fixtures
 
-### 1. Install Testing Dependencies
+### Available Fixtures
 
-```bash
-# Install testing dependencies
-pip install -r requirements-test.txt
-
-# Or use the test runner to install automatically
-python run_tests.py --install-deps
-```
-
-### 2. Run Tests
-
-```bash
-# Quick baseline verification (recommended first step)
-python run_tests.py --smoke
-
-# Run unit tests only
-python run_tests.py --unit
-
-# Run end-to-end tests
-python run_tests.py --e2e
-
-# Run all tests
-python run_tests.py --all
-
-# Fast tests (no E2E, good for development)
-python run_tests.py --fast
-
-# With coverage reporting
-python run_tests.py --unit --coverage
-```
-
-### 3. Alternative pytest commands
-
-```bash
-# Direct pytest usage
-pytest tests/e2e/test_app_smoke.py -v        # Smoke tests
-pytest tests/unit/ -v                        # Unit tests
-pytest tests/ -m "not e2e" -v               # Fast tests
-pytest tests/ --cov --cov-report=html       # With coverage
-```
-
-## Test Types
-
-### Smoke Tests (`--smoke`)
-**Purpose**: Verify the app works in its current state before refactoring
-- App starts without errors
-- Main UI elements render
-- Data loading completes
-- No immediate crashes
-
-**When to run**: Before starting any refactoring work, after major changes
-
-### Unit Tests (`--unit`)
-**Purpose**: Test individual functions and components in isolation
-- Data processing functions
-- Statistical calculations
-- Utility functions
-- Component logic
-
-**When to run**: During development, before commits
-
-### End-to-End Tests (`--e2e`)
-**Purpose**: Test complete user workflows through browser automation
-- User interaction flows
-- Data visualization updates
-- Error handling scenarios
-
-**When to run**: Before releases, after major feature changes
-
-### Fast Tests (`--fast`)
-**Purpose**: Quick feedback during development (unit + integration, no E2E)
-- Combines unit and integration tests
-- Skips slower browser-based tests
-
-**When to run**: Frequently during development
-
-## Test Infrastructure Design
-
-### Refactor-Friendly Organization
-- Tests are organized by **functionality**, not current file structure
-- When you refactor and move code, tests can be easily reorganized
-- Function-focused tests remain valid regardless of module restructuring
-
-### Fixture Design
-- **Reusable fixtures** in `conftest.py` for common test data
-- **Mock utilities** to test functions without full data loading
-- **Sample data** that mimics real data structure but with predictable values
-
-### Testing Patterns
-- **Isolated unit tests** for pure functions
-- **Mocked dependencies** to avoid external data requirements
-- **Integration tests** for component interactions
-- **Browser automation** for complete user workflows
-
-## Adding New Tests
-
-### For New Functionality
-1. **Identify the function type**: Data processing, statistical, UI logic, etc.
-2. **Choose the appropriate directory**: Based on functionality, not current file location
-3. **Use existing fixtures**: Leverage shared test data and utilities
-4. **Follow naming conventions**: `test_*` for functions, `Test*` for classes
-
-### Example: Testing a New Statistical Function
-
+#### Core Data Fixtures
 ```python
-# tests/unit/test_statistical_analysis/test_new_calculation.py
-import pytest
-from your_module import your_new_function
-
-def test_new_statistical_calculation(sample_statistical_data):
-    """Test the new statistical calculation function"""
-    result = your_new_function(sample_statistical_data['values'])
+@pytest.fixture
+def sample_session_data():
+    """Realistic session data with 10 sessions from 5 real subjects"""
     
-    # Test with predictable data
-    assert result is not None
-    assert isinstance(result, float)
-    assert 0 <= result <= 1  # or whatever bounds make sense
+@pytest.fixture  
+def simple_session_data():
+    """Lightweight data for basic tests"""
+
+@pytest.fixture
+def real_strata_data():
+    """Real strata names and abbreviations from production"""
 ```
 
-### For Refactored Code
-1. **Move tests** to match new organization
-2. **Update imports** in test files
-3. **Keep test logic unchanged** if function behavior is the same
-4. **Update only the import paths**, not the test assertions
+#### Mock Fixtures
+```python
+@pytest.fixture
+def mock_app_utils():
+    """Mock AppUtils with realistic return values"""
 
-## Coverage and Quality
+@pytest.fixture
+def mock_bootstrap_manager():
+    """Mock bootstrap manager for statistical tests"""
+```
 
-### Coverage Goals
-- **Minimum 50%** overall coverage (configured in `pytest.ini`)
-- **Focus on critical paths**: Data processing, statistical functions, core logic
-- **Less focus on UI rendering**: More on business logic
+### Using Real Data in Your Tests
 
-### Quality Checks
-- **No critical JavaScript errors** in smoke tests
-- **Consistent test data** using fixtures
-- **Isolated tests** that don't depend on external state
-- **Fast execution** for unit tests (< 1s per test ideal)
+#### Example: Testing Strata Abbreviations
+```python
+from tests.fixtures import get_strata_test_cases
 
-## Configuration
+def test_strata_abbreviation():
+    """Test with real app strata formats"""
+    test_cases = get_strata_test_cases()
+    for case in test_cases:
+        result = ui_manager.get_strata_abbreviation(case['input'])
+        assert result == case['expected']
+```
 
-### pytest.ini
-- Test discovery patterns
-- Coverage settings
-- Markers for test categorization
-- Timeout settings
+#### Example: Testing with Real Session Data
+```python
+def test_my_feature(sample_session_data):
+    """Test using realistic session data"""
+    # sample_session_data contains:
+    # - Real subject IDs: '690494', '690486', etc.
+    # - Real strata: 'Uncoupled Without Baiting_BEGINNER_v1'
+    # - All production columns and data types
+    
+    result = my_function(sample_session_data)
+    assert len(result) == 5  # 5 unique subjects
+```
 
-### conftest.py
-- Shared fixtures for test data
-- Mock utilities
-- App instance for E2E tests
+### Real Data Specifications
 
-### requirements-test.txt
-- Testing framework dependencies
-- Browser automation tools
-- Coverage and reporting tools
+#### Subject Data (sample_session_data)
+- **Subjects**: 5 real subjects (690494, 690486, 702200, 697929, 700708)
+- **Sessions**: 10 total sessions with real session numbers
+- **Strata**: 7 real strata formats from production
+- **Columns**: All production columns including features, metadata, percentiles
 
-## Troubleshooting
+#### Strata Formats (real_strata_data)
+- `'Uncoupled Without Baiting_BEGINNER_v1'` → `'UWBB1'`
+- `'Coupled Baiting_ADVANCED_v2'` → `'CBA2'`
+- `'Coupled Baiting_INTERMEDIATE_v1'` → `'CBI1'`
+- And 4 more real formats...
 
-### Common Issues
+## Running Tests
 
-**Import Errors**
+### All Tests
 ```bash
-# Make sure you're in the project root
-cd /path/to/aind_dashboard
-python run_tests.py --smoke
+conda activate main
+pytest tests/
 ```
 
-**Missing Dependencies**
+### Specific Test Categories
 ```bash
-# Install testing dependencies
-pip install -r requirements-test.txt
+# UI Component tests with real data
+pytest tests/unit/test_ui_components/ -v
+
+# Data operations tests
+pytest tests/unit/test_data_operations/ -v
+
+# Single test with real fixtures
+pytest tests/unit/test_ui_components/test_ui_data_manager.py::TestUIDataManager::test_get_strata_abbreviation -v
 ```
 
-**Browser Issues (E2E tests)**
+### Test Coverage
 ```bash
-# Make sure Chrome/Firefox is installed
-# E2E tests use headless browsers by default
+pytest tests/ --cov=app_utils --cov-report=html
 ```
 
-**Slow Tests**
-```bash
-# Use fast tests during development
-python run_tests.py --fast
+## Writing New Tests
 
-# Save E2E tests for major milestones
-python run_tests.py --e2e
+### Best Practices with Real Data
+
+1. **Use Real Fixtures**: Always prefer `sample_session_data` over creating synthetic data
+2. **Test Real Scenarios**: Use actual strata names and subject IDs from fixtures
+3. **Verify Production Behavior**: Tests should match how the app actually works
+4. **Use Type Hints**: New test fixtures include proper type annotations
+
+### Example Test Template
+```python
+import pytest
+from tests.fixtures import get_realistic_session_data, get_strata_test_cases
+
+class TestMyFeature:
+    def setup_method(self):
+        self.sample_data = get_realistic_session_data()
+    
+    def test_with_real_data(self, sample_session_data):
+        """Test description with real app data"""
+        # Test implementation using real production data
+        result = my_feature_function(sample_session_data)
+        
+        # Assertions should match real data expectations
+        assert '690494' in result  # Real subject ID
+        assert result['strata'] == 'Uncoupled Without Baiting_BEGINNER_v1'  # Real strata
 ```
 
-## Best Practices
+## Migration Notes
 
-1. **Start with smoke tests** before any refactoring
-2. **Write tests for new functionality** as you develop
-3. **Keep tests focused** on single responsibilities
-4. **Use mocks liberally** to isolate functionality
-5. **Run fast tests frequently** during development
-6. **Run full test suite** before major commits/releases
-7. **Update test organization** as you refactor code structure 
+### Previous vs Current Test Data
+
+#### Before (Synthetic):
+```python
+'subject_id': ['S001', 'S002', 'S003']
+'strata': ['A_B_v1', 'A_B_v2', 'A_C_v1']
+```
+
+#### After (Real):
+```python
+'subject_id': ['690494', '690486', '702200']
+'strata': ['Uncoupled Without Baiting_BEGINNER_v1', 'Coupled Baiting_ADVANCED_v1']
+```
+
+### Updated Test Expectations
+
+## Test Results
+
+### Current Status: All Passing
+- **Unit Tests**: 37/37 passing
+- **UI Data Manager**: 14/14 passing  
+- **Data Operations**: 18/18 passing
+- **Helper Functions**: 5/5 passing
+
+### Key Improvements Verified
+1. **Strata abbreviation logic** works with real formats
+2. **Session data processing** handles production data correctly
+3. **UI optimized structures** created with real subject/strata data
+4. **Error handling** graceful with realistic edge cases
+
+## Contributing
+
+When adding new tests:
+
+1. **Use existing fixtures** from `tests/fixtures/`
+2. **Add realistic test cases** to `sample_data.py` if needed
+3. **Update this README** if you add new fixture types
+4. **Ensure all tests pass** before submitting
+
+## Fixture Generation
+
+The realistic fixtures were generated using `sample_data_generator.py` which:
+1. Loads real app data via `shared_utils`
+2. Extracts actual strata names and abbreviations
+3. Creates sample data with proper structure
+4. Validates against real app behavior
+
+To regenerate fixtures (if needed):
+```python
+# In Jupyter notebook
+from sample_data_generator import main
+main()
+```
+
+---
+
+**Last Updated**: 2025-06-06
+**Real Data Source**: AIND Dashboard Production App  
+**Test Coverage**: 37 unit tests, all passing with realistic data 
