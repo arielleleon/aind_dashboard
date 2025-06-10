@@ -1,13 +1,13 @@
-from dash import Input, Output, State, callback, ALL, ctx
-from dash import html
-import pandas as pd
-from shared_utils import app_utils
+from callbacks.shared_callback_utils import (
+    Input, Output, State, callback, ALL, ctx, clientside_callback,
+    html, pd, app_utils, build_formatted_column_names
+)
 from app_elements.app_content.app_dataframe.column_groups_config import (
     COLUMN_GROUPS, get_columns_for_groups, get_default_visible_columns
 )
+from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
 
-# Import the AppDataFrame instance
-from app_elements.app_content.app_dataframe import AppDataFrame
+# Column Toggle Callbacks
 
 @callback(
     [Output("column-groups-state", "data"),
@@ -99,84 +99,13 @@ def update_table_columns(column_groups_state):
     all_table_data = app_dataframe.format_dataframe(raw_data)
     
     # Create column definitions with formatting
-    formatted_column_names = {
-        'subject_id': 'Subject ID',
-        'combined_alert': 'Alert',
-        'percentile_category': 'Percentile Alert', 
-        'ns_reason': 'Not Scored Reason',
-        'threshold_alert': 'Threshold Alert',
-        'total_sessions_alert': 'Total Sessions Alert',
-        'stage_sessions_alert': 'Stage Sessions Alert',
-        'water_day_total_alert': 'Water Day Total Alert',
-        'overall_percentile': 'Overall\nPercentile',
-        'session_overall_percentile': 'Session\nPercentile',
-        'strata': 'Strata',
-        'strata_abbr': 'Strata (Abbr)',
-        'current_stage_actual': 'Stage',
-        'curriculum_name': 'Curriculum',
-        'session_date': 'Date',
-        'session': 'Session',
-        'rig': 'Rig',
-        'trainer': 'Trainer',
-        'PI': 'PI',
-        'session_run_time': 'Run Time',
-        'total_trials': 'Total Trials',
-        'finished_trials': 'Finished Trials',
-        'finished_rate': 'Finish Rate',
-        'ignore_rate': 'Ignore Rate',
-        'water_in_session_foraging': 'Water In-Session\n(Foraging)',
-        'water_in_session_manual': 'Water In-Session\n(Manual)',
-        'water_in_session_total': 'Water In-Session\n(Total)',
-        'water_after_session': 'Water After\nSession',
-        'water_day_total': 'Water Day\nTotal',
-        'base_weight': 'Base Weight',
-        'target_weight': 'Target Weight',
-        'target_weight_ratio': 'Target Weight\nRatio',
-        'weight_after': 'Weight After',
-        'weight_after_ratio': 'Weight After\nRatio',
-        'reward_volume_left_mean': 'Reward Volume\nLeft (Mean)',
-        'reward_volume_right_mean': 'Reward Volume\nRight (Mean)',
-        'reaction_time_median': 'Reaction Time\n(Median)',
-        'reaction_time_mean': 'Reaction Time\n(Mean)',
-        'early_lick_rate': 'Early Lick\nRate',
-        'invalid_lick_ratio': 'Invalid Lick\nRatio',
-        'double_dipping_rate_finished_trials': 'Double Dipping Rate\n(Finished Trials)',
-        'double_dipping_rate_finished_reward_trials': 'Double Dipping Rate\n(Reward Trials)',
-        'double_dipping_rate_finished_noreward_trials': 'Double Dipping Rate\n(No Reward Trials)',
-        'lick_consistency_mean_finished_trials': 'Lick Consistency\n(Finished Trials)',
-        'lick_consistency_mean_finished_reward_trials': 'Lick Consistency\n(Reward Trials)',
-        'lick_consistency_mean_finished_noreward_trials': 'Lick Consistency\n(No Reward Trials)',
-        'avg_trial_length_in_seconds': 'Avg Trial Length\n(Seconds)',
-        'total_trials_with_autowater': 'Total Trials\n(Autowater)',
-        'finished_trials_with_autowater': 'Finished Trials\n(Autowater)',
-        'finished_rate_with_autowater': 'Finish Rate\n(Autowater)',
-        'ignore_rate_with_autowater': 'Ignore Rate\n(Autowater)',
-        'autowater_collected': 'Autowater\nCollected',
-        'autowater_ignored': 'Autowater\nIgnored',
-        'water_day_total_last_session': 'Water Day Total\n(Last Session)',
-        'water_after_session_last_session': 'Water After\n(Last Session)'
-    }
+    formatted_column_names = build_formatted_column_names()
     
-    # Add feature-specific column names
-    features_config = {
-        'finished_trials': False,  # Higher is better
-        'ignore_rate': True,     # Lower is better
-        'total_trials': False,   # Higher is better
-        'foraging_performance': False,   # Higher is better
-        'abs(bias_naive)': True  # Lower is better 
-    }
+    # Feature-specific columns are already included in build_formatted_column_names()
+    # Removed duplicate feature column name logic as it's now centralized
     
-    for feature in features_config.keys():
-        feature_display = feature.replace('_', ' ').replace('abs(', '|').replace(')', '|').title()
-        formatted_column_names[f'{feature}_percentile'] = f'{feature_display}\nStrata %ile'
-        formatted_column_names[f'{feature}_category'] = f'{feature_display}\nAlert'
-        formatted_column_names[f'{feature}_processed'] = f'{feature_display}\nProcessed'
-        formatted_column_names[f'{feature}_session_percentile'] = f'{feature_display}\nSession %ile'
-        formatted_column_names[f'{feature}_processed_rolling_avg'] = f'{feature_display}\nRolling Avg'
-    
-    # Add overall percentile columns
-    formatted_column_names['session_overall_percentile'] = 'Session Overall\nPercentile'
-    formatted_column_names['overall_percentile'] = 'Strata Overall\nPercentile'
+    # Overall percentile columns are already included in build_formatted_column_names()
+    # Removed duplicate overall percentile assignment
     
     # Build column definitions for visible columns only
     visible_columns = []
@@ -197,4 +126,81 @@ def update_table_columns(column_groups_state):
             print(f"   WARNING: Column '{col_id}' not found in data!")
     
     print(f"   Final visible columns: {[col['id'] for col in visible_columns]}")
-    return visible_columns 
+    return visible_columns
+
+
+# Responsive Table Callbacks
+
+# Responsive Table Page Size Calculation
+clientside_callback(
+    """
+    function(table_data, time_window, dummy_trigger) {
+        // Calculate optimal page size based on viewport dimensions
+        const viewportHeight = window.innerHeight;
+        
+        // Account for fixed elements (estimated heights)
+        const topBarHeight = 50;        // Top navigation bar
+        const filterHeight = 170;       // Filter section
+        const tableHeaderHeight = 60;   // Table header (fixed)
+        const paddingMargin = 50;       // Various padding and margins
+        
+        // Calculate available height for table rows
+        const availableHeight = viewportHeight - topBarHeight - filterHeight - tableHeaderHeight - paddingMargin;
+        
+        // Each table row is approximately 48px (from style_cell height)
+        const rowHeight = 48;
+        
+        // Calculate number of rows that can fit
+        const calculatedRows = Math.floor(availableHeight / rowHeight);
+        
+        // Set reasonable bounds
+        const minRows = 8;   // Minimum rows to show
+        const maxRows = 50;  // Maximum rows (don't make it too large)
+        
+        const optimalRows = Math.max(minRows, Math.min(maxRows, calculatedRows));
+        
+        console.log(` Responsive table: viewport ${viewportHeight}px → showing ${optimalRows} rows`);
+        
+        return optimalRows;
+    }
+    """,
+    Output("session-table", "page_size"),
+    [Input("session-table", "data"),
+     Input("time-window-filter", "value"),
+     Input("resize-interval", "n_intervals")]
+)
+
+# Simple window resize detection
+clientside_callback(
+    """
+    function(table_id) {
+        // Set up a simple window resize listener
+        let resizeTimeout;
+        
+        function handleResize() {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                // Force a refresh of the table data to trigger page_size recalculation
+                const tableElement = document.getElementById('session-table');
+                if (tableElement) {
+                    // Trigger a minor update to force callback refresh
+                    tableElement.style.minHeight = window.innerHeight > 1000 ? '400px' : '300px';
+                }
+            }, 400);
+        }
+        
+        // Clean up previous listener
+        if (window.dashResizeHandler) {
+            window.removeEventListener('resize', window.dashResizeHandler);
+        }
+        
+        // Add new listener
+        window.dashResizeHandler = handleResize;
+        window.addEventListener('resize', handleResize, { passive: true });
+        
+        return 'setup-complete';
+    }
+    """,
+    Output("resize-trigger", "data"),
+    [Input("session-table", "id")]
+) 

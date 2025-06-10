@@ -104,8 +104,7 @@ COLUMN_GROUPS = {
         'default_expanded': False,
         'icon': 'fas fa-flask',
         'columns': [
-            'strata', 'current_stage_actual', 'curriculum_name',
-            'finished_rate'
+            'strata', 'current_stage_actual', 'curriculum_name'
         ]
     },
     'weight_water': {
@@ -128,7 +127,7 @@ COLUMN_GROUPS = {
         'columns': [
             'reward_volume_left_mean', 'reward_volume_right_mean',
             'reaction_time_median', 'reaction_time_mean',
-            'early_lick_rate', 'invalid_lick_ratio',
+            'early_lick_rate', 'invalid_lick_ratio', 'finished_rate', 
             'double_dipping_rate_finished_trials',
             'double_dipping_rate_finished_reward_trials',
             'double_dipping_rate_finished_noreward_trials',
@@ -156,8 +155,6 @@ def get_default_visible_columns():
     """Get default visible columns (core only)"""
     visible = []
     visible.extend(COLUMN_GROUPS['core']['columns'])
-    # REMOVED: alerts columns are no longer included by default
-    # visible.extend(COLUMN_GROUPS['alerts']['columns'])
     return visible
 
 def get_columns_for_groups(expanded_groups):
