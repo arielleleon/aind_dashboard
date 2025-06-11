@@ -257,41 +257,226 @@ class AlertService:
         
     def get_not_scored_reason(self, subject_id: str) -> str:
         """
-        Get the reason why a subject is not scored
+        Get the reason why a subject is not scored (NS)
+
+        Parameters:
+            subject_id (str): The subject ID to check
+
+        Returns:
+            str: Reason why the subject is not scored
         """
-        # First check if subject has off-curriculum sessions
-        if hasattr(self.app_utils, 'off_curriculum_subjects') and subject_id in self.app_utils.off_curriculum_subjects:
-            info = self.app_utils.off_curriculum_subjects[subject_id]
-            percent = (info['count'] / info['total_sessions']) * 100
-            return f"Off-curriculum session: ({info['count']}, {percent:.0f}% of total)"
-        
-        # Rest of the checks...
-        if not self._validate_analyzer():
-            return "Analyzer not initialized"
-        
-        # Get min_sessions from config
-        min_sessions = self.DEFAULT_MIN_SESSIONS
-        if hasattr(self, 'config') and self.config and 'min_sessions' in self.config:
-            min_sessions = self.config['min_sessions']
-        
-        # Check if subject exists in any strata
-        analyzer = self.app_utils.quantile_analyzer
-        for strata, strata_df in analyzer.stratified_data.items():
-            if subject_id in strata_df['subject_id'].values:
-                # Check session count
-                row = strata_df[strata_df['subject_id'] == subject_id]
-                if row['session_count'].values[0] < min_sessions:
-                    return f"Insufficient sessions (< {min_sessions})"
+        try:
+            if self.app_utils is None:
+                return "No app_utils available"
+
+            # Get session data for this subject
+            session_data = self.app_utils.get_session_data(use_cache=True)
+            
+            if session_data.empty:
+                return "No session data"
+            
+            # Filter for this subject
+            subject_sessions = session_data[session_data['subject_id'] == subject_id]
+            
+            if subject_sessions.empty:
+                return "Subject not found"
                 
-                # Check overall percentiles using session-level approach
-                session_percentiles = self.app_utils.get_session_overall_percentiles([subject_id])
-                if session_percentiles.empty or pd.isna(session_percentiles['session_overall_percentile'].values[0]):
-                    return "No percentile data (strata may be too small)"
+            # Check if subject has sufficient sessions for scoring
+            total_sessions = len(subject_sessions)
+            min_sessions = self.config.get('min_sessions_for_scoring', self.DEFAULT_MIN_SESSIONS)
+            
+            if total_sessions < min_sessions:
+                return f"Insufficient sessions: {total_sessions} < {min_sessions}"
+            
+            # Check for other scoring criteria
+            most_recent = subject_sessions.sort_values('session_date', ascending=False).iloc[0]
+            
+            # Check if finished_trials is available and sufficient
+            finished_trials = most_recent.get('finished_trials')
+            if pd.isna(finished_trials) or finished_trials == 0:
+                return "No finished trials"
+            
+            # Check if required features are available
+            required_features = ['total_trials', 'finished_trials', 'ignore_rate']
+            missing_features = []
+            
+            for feature in required_features:
+                if pd.isna(most_recent.get(feature)):
+                    missing_features.append(feature)
+            
+            if missing_features:
+                return f"Missing features: {', '.join(missing_features)}"
+            
+            # Default reason
+            return "Scoring criteria not met"
+            
+        except Exception as e:
+            return f"Error determining reason: {str(e)}"
+
+    def filter_by_threshold_alerts(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Filter dataframe to show only subjects with threshold alerts
+        
+        This method implements the complex pattern matching logic for threshold alerts,
+        including both exact matches ('T') and pattern-based matches ('T |').
+        
+        Parameters:
+            df (pd.DataFrame): DataFrame to filter for threshold alerts
+            
+        Returns:
+            pd.DataFrame: Filtered DataFrame containing only subjects with threshold alerts
+        """
+        if df.empty:
+            return df
+            
+        print(" DEBUG: Checking threshold alert values...")
+        
+        # Validate alert patterns for debugging
+        validation_results = self.validate_alert_patterns(df)
+        
+        # Print debug information from validation
+        for alert_type, values in validation_results.get('value_counts', {}).items():
+            print(f"  {alert_type} values: {values}")
+        
+        # Generate threshold alert mask using the extracted logic
+        threshold_mask = self.get_alert_category_mask(df, 'T')
+        
+        # Apply the mask and log results
+        before_count = len(df)
+        filtered_df = df[threshold_mask]
+        after_count = len(filtered_df)
+        
+        print(f"Threshold filter applied: {before_count} → {after_count} subjects")
+        
+        return filtered_df
+    
+    def validate_alert_patterns(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Validate and debug alert patterns in dataframe
+        
+        This method provides comprehensive validation and debugging information
+        for alert patterns, including value counts and data quality checks.
+        
+        Parameters:
+            df (pd.DataFrame): DataFrame to validate alert patterns for
+            
+        Returns:
+            Dict[str, Any]: Validation results including value counts and quality metrics
+        """
+        validation_results = {
+            'total_subjects': len(df),
+            'value_counts': {},
+            'missing_columns': [],
+            'quality_metrics': {}
+        }
+        
+        # Expected alert columns for validation
+        alert_columns = [
+            'threshold_alert',
+            'total_sessions_alert', 
+            'stage_sessions_alert',
+            'water_day_total_alert'
+        ]
+        
+        # Check each alert column and gather value counts
+        for col in alert_columns:
+            if col in df.columns:
+                # Get value counts for this column
+                value_counts = df[col].value_counts()
+                validation_results['value_counts'][col] = value_counts.to_dict()
                 
-                return "Unknown reason"
+                # Calculate quality metrics
+                total_values = len(df)
+                missing_values = df[col].isna().sum()
+                
+                validation_results['quality_metrics'][col] = {
+                    'total_values': total_values,
+                    'missing_values': missing_values,
+                    'missing_percentage': (missing_values / total_values * 100) if total_values > 0 else 0,
+                    'unique_values': df[col].nunique()
+                }
+            else:
+                validation_results['missing_columns'].append(col)
         
-        return "No eligible sessions in analysis window"
+        # Analyze threshold patterns specifically
+        threshold_patterns = self._analyze_threshold_patterns(df)
+        validation_results['threshold_patterns'] = threshold_patterns
         
+        return validation_results
+    
+    def get_alert_category_mask(self, df: pd.DataFrame, alert_category: str) -> pd.Series:
+        """
+        Generate boolean mask for specific alert category filtering
+        
+        This method creates boolean masks for filtering subjects based on alert categories,
+        with special handling for threshold alerts which require complex pattern matching.
+        
+        Parameters:
+            df (pd.DataFrame): DataFrame to generate mask for
+            alert_category (str): Alert category ('T', 'NS', 'B', 'G', 'SB', 'SG')
+            
+        Returns:
+            pd.Series: Boolean mask for filtering the dataframe
+        """
+        if df.empty:
+            return pd.Series([], dtype=bool)
+        
+        if alert_category == 'T':
+            # Complex threshold alert pattern matching
+            threshold_mask = (
+                # Overall threshold alert column set to 'T'
+                (df.get("threshold_alert", pd.Series(dtype='object')) == "T") |
+                # Individual threshold alerts contain "T |" pattern  
+                (df.get("total_sessions_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False)) |
+                (df.get("stage_sessions_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False)) |
+                (df.get("water_day_total_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False))
+            )
+            return threshold_mask
+            
+        elif alert_category == 'NS':
+            # Not Scored subjects - use the correct column name
+            percentile_col = 'overall_percentile_category' if 'overall_percentile_category' in df.columns else 'percentile_category'
+            return df[percentile_col] == "NS"
+            
+        else:
+            # Percentile category filtering (B, G, SB, SG)
+            percentile_col = 'overall_percentile_category' if 'overall_percentile_category' in df.columns else 'percentile_category'
+            return df[percentile_col] == alert_category
+    
+    def _analyze_threshold_patterns(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Private method to analyze threshold patterns in the dataframe
+        
+        Parameters:
+            df (pd.DataFrame): DataFrame to analyze
+            
+        Returns:
+            Dict[str, Any]: Analysis results for threshold patterns
+        """
+        analysis = {
+            'exact_matches': 0,
+            'pattern_matches': {},
+            'total_threshold_subjects': 0
+        }
+        
+        # Count exact matches (threshold_alert == 'T')
+        if 'threshold_alert' in df.columns:
+            analysis['exact_matches'] = (df['threshold_alert'] == 'T').sum()
+        
+        # Count pattern matches for each alert type
+        alert_columns = ['total_sessions_alert', 'stage_sessions_alert', 'water_day_total_alert']
+        
+        for col in alert_columns:
+            if col in df.columns:
+                pattern_matches = df[col].str.contains(r'T \|', na=False).sum()
+                analysis['pattern_matches'][col] = pattern_matches
+        
+        # Calculate total subjects with any threshold alert
+        mask = self.get_alert_category_mask(df, 'T')
+        analysis['total_threshold_subjects'] = mask.sum()
+        
+        return analysis
+
     def get_unified_alerts(self, subject_ids=None):
         """
         Get unified alert structure combining both quantile and threshold alerts

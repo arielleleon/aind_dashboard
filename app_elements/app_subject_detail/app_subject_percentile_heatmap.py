@@ -19,6 +19,9 @@ class AppSubjectPercentileHeatmap:
         """
         Build percentile heatmap showing progression over time including overall percentile
         
+        This method coordinates UI rendering by calling business logic functions for data processing
+        and statistical calculations, keeping the component focused on visualization concerns.
+        
         Parameters:
             subject_id (str): Subject ID to build heatmap for
             app_utils (AppUtils): App utilities instance for accessing cached data
@@ -43,36 +46,14 @@ class AppSubjectPercentileHeatmap:
         # Extract session data
         sessions = time_series_data['sessions']
         
-        # Build heatmap data matrix
-        heatmap_data = []
-        feature_names = []
-        session_labels = []
+        # Process data using business logic functions
+        from app_utils.app_analysis.statistical_utils import StatisticalUtils
+        from app_utils.percentile_utils import calculate_heatmap_colorscale
         
-        # Process each feature
-        for feature in self.features_config.keys():
-            percentile_key = f"{feature}_percentiles"
-            
-            if percentile_key in time_series_data:
-                percentiles = time_series_data[percentile_key]
-                
-                # Filter out invalid values (-1 represents NaN)
-                valid_percentiles = [p if p != -1 else np.nan for p in percentiles]
-                
-                if any(not np.isnan(p) for p in valid_percentiles):
-                    heatmap_data.append(valid_percentiles)
-                    # Clean feature name for display
-                    display_name = feature.replace('_', ' ').replace('abs(', '|').replace(')', '|').title()
-                    feature_names.append(display_name)
-        
-        # Add overall percentile row
-        if 'overall_percentiles' in time_series_data:
-            overall_percentiles = time_series_data['overall_percentiles']
-            # Filter out invalid values (-1 represents NaN)
-            valid_overall = [p if p != -1 else np.nan for p in overall_percentiles]
-            
-            if any(not np.isnan(p) for p in valid_overall):
-                heatmap_data.append(valid_overall)
-                feature_names.append("Overall Percentile")
+        # Extract and validate heatmap matrix data
+        heatmap_data, feature_names = StatisticalUtils.process_heatmap_matrix_data(
+            time_series_data, self.features_config
+        )
         
         # Create session labels - show ALL sessions since we have full width
         session_labels = [f"S{s}" for s in sessions]
@@ -81,13 +62,10 @@ class AppSubjectPercentileHeatmap:
         if not heatmap_data or not feature_names:
             return self._create_empty_heatmap("No valid feature data")
         
-        # Choose colorscale based on mode
-        if colorscale_mode == "continuous":
-            colorscale = self._create_continuous_colorscale()
-        else:
-            colorscale = self._create_custom_colorscale()
+        # Get colorscale using business logic
+        colorscale = calculate_heatmap_colorscale(colorscale_mode)
         
-        # Create the heatmap
+        # Create the heatmap visualization (UI responsibility)
         fig = go.Figure(data=go.Heatmap(
             z=heatmap_data,
             x=session_labels,
@@ -109,14 +87,14 @@ class AppSubjectPercentileHeatmap:
             )
         ))
         
-        # Add highlighting for selected session
+        # Add highlighting for selected session using business logic
         if highlighted_session is not None and highlighted_session in sessions:
-            # Find the index of the highlighted session in the sessions list
-            try:
-                session_idx = sessions.index(highlighted_session)
-                
+            session_idx = StatisticalUtils.calculate_session_highlighting_coordinates(
+                sessions, highlighted_session
+            )
+            
+            if session_idx is not None:
                 # Add a vertical line to highlight the session column
-                # We'll add a rectangle with transparent fill and light blue border
                 fig.add_shape(
                     type="rect",
                     x0=session_idx - 0.4,  # Start slightly before the session
@@ -130,14 +108,11 @@ class AppSubjectPercentileHeatmap:
                     fillcolor="rgba(74, 144, 226, 0.1)",  # Very light blue fill
                     layer="above"
                 )
-                                
-            except ValueError:
-                print(f" Session {highlighted_session} not found in session list")
         
         # Add strata boundaries
         self._add_strata_boundaries(fig, sessions, time_series_data.get('strata', []), len(feature_names))
         
-        # PHASE 2: Add outlier markers to heatmap
+        # Add outlier markers to heatmap
         self._add_outlier_markers(fig, sessions, time_series_data.get('is_outlier', []), len(feature_names))
         
         fig.update_layout(
@@ -167,37 +142,24 @@ class AppSubjectPercentileHeatmap:
         )
     
     def _create_custom_colorscale(self):
-        """Create custom colorscale matching alert categories"""
-        # Create a colorscale that maps percentile ranges to alert colors
-        return [
-            [0.0, '#FF6B35'],    # 0-6.5% (SB) - Dark orange
-            [0.065, '#FF6B35'],  # 
-            [0.065, '#FFB366'],  # 6.5-28% (B) - Light orange
-            [0.28, '#FFB366'],   # 
-            [0.28, '#E8E8E8'],   # 28-72% (N) - Light grey
-            [0.72, '#E8E8E8'],   # 
-            [0.72, '#4A90E2'],   # 72-93.5% (G) - Light blue
-            [0.935, '#4A90E2'],  # 
-            [0.935, '#2E5A87'],  # 93.5-100% (SG) - Dark blue
-            [1.0, '#2E5A87']
-        ]
+        """
+        DEPRECATED: Use calculate_heatmap_colorscale() from percentile_utils instead
+        
+        This method is kept for backward compatibility but business logic has been
+        moved to percentile_utils.calculate_heatmap_colorscale() for better separation.
+        """
+        from app_utils.percentile_utils import calculate_heatmap_colorscale
+        return calculate_heatmap_colorscale("binned")
     
     def _create_continuous_colorscale(self):
-        """Create smooth continuous colorscale with gradual transitions"""
-        # Create a smooth gradient from red (low) through grey (normal) to blue (high)
-        return [
-            [0.0, '#FF4444'],     # 0% - Bright red (worst performance)
-            [0.065, '#FF6B35'],   # 6.5% - Orange-red transition
-            [0.15, '#FFA366'],    # 15% - Light orange
-            [0.28, '#FFD699'],    # 28% - Very light orange
-            [0.40, '#F0F0F0'],    # 40% - Light grey (approaching normal)
-            [0.50, '#E8E8E8'],    # 50% - Normal grey (median)
-            [0.60, '#E0E8F0'],    # 60% - Very light blue
-            [0.72, '#B8D4F0'],    # 72% - Light blue
-            [0.85, '#7BB8E8'],    # 85% - Medium blue
-            [0.935, '#4A90E2'],   # 93.5% - Good blue
-            [1.0, '#1E5A96']      # 100% - Deep blue (best performance)
-        ]
+        """
+        DEPRECATED: Use calculate_heatmap_colorscale() from percentile_utils instead
+        
+        This method is kept for backward compatibility but business logic has been
+        moved to percentile_utils.calculate_heatmap_colorscale() for better separation.
+        """
+        from app_utils.percentile_utils import calculate_heatmap_colorscale
+        return calculate_heatmap_colorscale("continuous")
     
     def _create_empty_heatmap(self, message):
         """Create empty heatmap with message"""

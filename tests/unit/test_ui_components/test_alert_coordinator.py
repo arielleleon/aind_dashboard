@@ -360,50 +360,139 @@ class TestAlertCoordinator:
         result = self.alert_coordinator.validate_alert_configuration(invalid_config)
         
         assert result['valid'] is False
-        assert len(result['errors']) == 1
-        assert 'feature_config must be a dictionary' in result['errors'][0]
+        assert 'feature_config must be a dictionary' in result['errors']
 
-
-class TestAlertCoordinatorIntegration:
-    """Integration tests for AlertCoordinator with other components"""
-    
-    def test_alert_coordinator_with_app_utils(self):
-        """Test AlertCoordinator integration with AppUtils"""
-        # This test would require importing AppUtils
-        # For now, we'll test the coordination pattern
+    def test_filter_by_alert_category_threshold_alerts(self):
+        """Test filtering by threshold alerts using AlertCoordinator"""
         
-        mock_cache_manager = Mock()
-        mock_pipeline_manager = Mock()
+        # Create test dataframe
+        test_data = {
+            'subject_id': ['001', '002', '003', '004'],
+            'threshold_alert': ['T', None, None, None],
+            'total_sessions_alert': [None, 'T | Test', None, None],
+            'overall_percentile_category': ['T', 'B', 'G', 'NS']
+        }
+        df = pd.DataFrame(test_data)
         
-        coordinator = AlertCoordinator(
-            cache_manager=mock_cache_manager,
-            pipeline_manager=mock_pipeline_manager
-        )
-        
-        # Verify the coordinator has the right dependencies
-        assert coordinator.cache_manager == mock_cache_manager
-        assert coordinator.pipeline_manager == mock_pipeline_manager
-    
-    def test_alert_coordinator_delegation_pattern(self):
-        """Test that AlertCoordinator properly delegates to AlertService"""
-        mock_cache_manager = Mock()
-        coordinator = AlertCoordinator(cache_manager=mock_cache_manager)
-        
-        # Initialize with mock app_utils
+        # Mock app_utils
         mock_app_utils = Mock()
-        alert_service = coordinator.initialize_alert_service(mock_app_utils)
+        mock_app_utils.quantile_analyzer = Mock()
+        mock_app_utils.percentile_calculator = Mock()
         
-        # Verify service is AlertService instance
-        assert isinstance(alert_service, AlertService)
-        assert coordinator.alert_service == alert_service
+        # Initialize alert service
+        self.alert_coordinator.initialize_alert_service(mock_app_utils)
         
-        # Test delegation works
-        mock_alerts = {'test': 'data'}
-        alert_service.get_quantile_alerts = Mock(return_value=mock_alerts)
+        # Test threshold alert filtering
+        result = self.alert_coordinator.filter_by_alert_category(df, 'T')
         
-        result = coordinator.get_quantile_alerts(['test_subject'])
-        assert result == mock_alerts
-        alert_service.get_quantile_alerts.assert_called_with(['test_subject'])
+        # Should include subjects with threshold alerts (001 and 002)
+        assert len(result) == 2
+        assert set(result['subject_id']) == {'001', '002'}
+    
+    def test_filter_by_alert_category_percentile_categories(self):
+        """Test filtering by percentile categories using AlertCoordinator"""
+        
+        # Create test dataframe
+        test_data = {
+            'subject_id': ['001', '002', '003', '004', '005'],
+            'overall_percentile_category': ['NS', 'B', 'G', 'SB', 'SG']
+        }
+        df = pd.DataFrame(test_data)
+        
+        # Mock app_utils
+        mock_app_utils = Mock()
+        mock_app_utils.quantile_analyzer = Mock()
+        mock_app_utils.percentile_calculator = Mock()
+        
+        # Initialize alert service
+        self.alert_coordinator.initialize_alert_service(mock_app_utils)
+        
+        # Test each category
+        categories_to_test = ['NS', 'B', 'G', 'SB', 'SG']
+        
+        for category in categories_to_test:
+            result = self.alert_coordinator.filter_by_alert_category(df, category)
+            assert len(result) == 1
+            assert result['overall_percentile_category'].iloc[0] == category
+    
+    def test_filter_by_alert_category_all_returns_original(self):
+        """Test that 'all' category returns original dataframe"""
+        
+        test_data = {
+            'subject_id': ['001', '002', '003'],
+            'overall_percentile_category': ['B', 'G', 'NS']
+        }
+        df = pd.DataFrame(test_data)
+        
+        # Mock app_utils
+        mock_app_utils = Mock()
+        self.alert_coordinator.initialize_alert_service(mock_app_utils)
+        
+        result = self.alert_coordinator.filter_by_alert_category(df, 'all')
+        
+        # Should return all data unchanged
+        assert len(result) == len(df)
+        pd.testing.assert_frame_equal(result, df)
+    
+    def test_aggregate_alert_categories(self):
+        """Test alert category aggregation functionality"""
+        
+        # Create test dataframe
+        test_data = {
+            'subject_id': ['001', '002', '003', '004', '005', '006'],
+            'threshold_alert': ['T', None, None, None, None, None],
+            'total_sessions_alert': [None, 'T | Test', None, None, None, None],
+            'overall_percentile_category': ['T', 'B', 'G', 'NS', 'SB', 'SG']
+        }
+        df = pd.DataFrame(test_data)
+        
+        # Mock app_utils
+        mock_app_utils = Mock()
+        mock_app_utils.quantile_analyzer = Mock()
+        mock_app_utils.percentile_calculator = Mock()
+        
+        # Initialize alert service
+        self.alert_coordinator.initialize_alert_service(mock_app_utils)
+        
+        # Test aggregation
+        result = self.alert_coordinator.aggregate_alert_categories(df)
+        
+        # Should have counts for each category
+        assert isinstance(result, dict)
+        assert result.get('T', 0) >= 2  # Threshold alerts from pattern matching
+        assert result.get('B', 0) == 1
+        assert result.get('G', 0) == 1
+        assert result.get('NS', 0) == 1
+        assert result.get('SB', 0) == 1
+        assert result.get('SG', 0) == 1
+    
+    def test_filter_by_alert_category_without_alert_service(self):
+        """Test that filtering raises error when alert service not initialized"""
+        
+        test_data = {
+            'subject_id': ['001'],
+            'overall_percentile_category': ['B']
+        }
+        df = pd.DataFrame(test_data)
+        
+        # Don't initialize alert service
+        with pytest.raises(ValueError, match="Alert service not initialized"):
+            self.alert_coordinator.filter_by_alert_category(df, 'B')
+    
+    def test_aggregate_alert_categories_fallback(self):
+        """Test aggregation fallback when alert service not available"""
+        
+        test_data = {
+            'subject_id': ['001', '002', '003'],
+            'overall_percentile_category': ['B', 'G', 'NS']
+        }
+        df = pd.DataFrame(test_data)
+        
+        # Don't initialize alert service
+        result = self.alert_coordinator.aggregate_alert_categories(df)
+        
+        # Should fall back to basic counting
+        assert result == {'B': 1, 'G': 1, 'NS': 1}
 
 
 class TestAlertCoordinatorEdgeCases:

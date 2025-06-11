@@ -812,48 +812,407 @@ class UIDataManager:
 
     def _calculate_ci_certainty_moderate(self, ci_width: float, target_value: float, feature_name: str = None) -> str:
         """
-        Calculate CI certainty classification using moderate relative width thresholds
-        
-        Uses more lenient thresholds than the strict version to avoid too many "uncertain" classifications.
-        Aims for roughly: 50% certain, 30% intermediate, 20% uncertain
+        Calculate CI certainty using 3-tier system based on CI width relative to point estimate
         
         Parameters:
             ci_width: float
-                Absolute CI width (upper - lower)
+                Width of the confidence interval
             target_value: float
-                Target value (rolling average) that the CI is for
-            feature_name: str, optional
-                Feature name for feature-specific thresholds
+                Point estimate (rolling average value) for relative threshold calculation
+            feature_name: str
+                Optional feature name (currently unused, kept for compatibility)
                 
         Returns:
-            str: 'certain', 'intermediate', or 'uncertain'
+            str: 'certain', 'intermediate', or 'uncertain' based on CI width relative to point estimate
+            
+        Criteria:
+            - certain: CI width ≤ 20% of point estimate  
+            - intermediate: 20% < CI width < 40% of point estimate
+            - uncertain: CI width ≥ 40% of point estimate
         """
-        if pd.isna(ci_width) or pd.isna(target_value) or target_value == 0:
+        # Handle edge cases
+        if pd.isna(ci_width) or pd.isna(target_value):
             return 'intermediate'
         
-        # Calculate relative CI width as percentage
-        relative_width = abs(ci_width / target_value)
+        # Avoid division by zero - if target_value is very small, use absolute threshold
+        if abs(target_value) < 1e-6:
+            # For very small target values, use absolute thresholds
+            if ci_width <= 0.01:  # Very narrow CI
+                return 'certain'
+            elif ci_width >= 0.05:  # Very wide CI
+                return 'uncertain' 
+            else:
+                return 'intermediate'
         
-        # MODERATE feature-specific thresholds (more lenient than strict version)
-        if feature_name:
-            # More moderate thresholds - easier to be "certain", harder to be "uncertain"
-            feature_thresholds = {
-                'finished_trials': {'certain': 0.10, 'uncertain': 0.40},      # 10% / 40% of trial count (was 5%/20%)
-                'ignore_rate': {'certain': 0.15, 'uncertain': 0.50},          # 15% / 50% of ignore rate (was 10%/30%) 
-                'total_trials': {'certain': 0.10, 'uncertain': 0.40},         # 10% / 40% of trial count (was 5%/20%)
-                'foraging_performance': {'certain': 0.12, 'uncertain': 0.35}, # 12% / 35% of performance (was 8%/25%)
-                'abs(bias_naive)': {'certain': 0.20, 'uncertain': 0.60}       # 20% / 60% of bias value (was 15%/40%)
-            }
-            
-            thresholds = feature_thresholds.get(feature_name, {'certain': 0.12, 'uncertain': 0.35})
-        else:
-            # Default moderate thresholds for overall percentiles
-            thresholds = {'certain': 0.12, 'uncertain': 0.35}  # 12% / 35% relative width (was 8%/25%)
+        # Calculate relative CI width as percentage of point estimate
+        relative_ci_width = ci_width / abs(target_value)
         
-        # Classify based on relative width
-        if relative_width < thresholds['certain']:
+        # Apply 3-tier thresholds
+        if relative_ci_width <= 0.20:  # CI width ≤ 20% of point estimate
             return 'certain'
-        elif relative_width > thresholds['uncertain']:
+        elif relative_ci_width >= 0.40:  # CI width ≥ 40% of point estimate
             return 'uncertain'
+        else:  # 20% < CI width < 40% of point estimate
+            return 'intermediate'
+
+# =============================================================================
+# DATA PROCESSING BUSINESS LOGIC FUNCTIONS
+# =============================================================================
+# These functions handle complex data operations extracted from UI components
+
+def get_optimized_table_data(app_utils, use_cache: bool = True) -> pd.DataFrame:
+    """
+    Get optimized table data with intelligent cache fallback strategy
+    
+    This function implements the complex fallback chain for getting table data:
+    1. UI-optimized table display data (fastest path)
+    2. Cached session-level data with most recent session selection
+    3. Pipeline re-run as last resort
+    
+    Parameters:
+        app_utils: AppUtils instance
+        use_cache: bool, whether to use cached data
+        
+    Returns:
+        pd.DataFrame: Recent sessions data for table display
+    """
+    print("🔍 Getting optimized table data with intelligent cache fallback...")
+    
+    # CRITICAL FIX: First try to use UI-optimized table display data (fastest path)
+    table_data = app_utils.get_table_display_data(use_cache=use_cache)
+    if table_data:
+        print("✅ Using UI-optimized table display data (no pipeline re-run needed)")
+        recent_sessions = pd.DataFrame(table_data)
+        print(f"Loaded {len(recent_sessions)} subjects from UI cache")
+        return recent_sessions
+    
+    # Second option: Use cached session-level data
+    elif (app_utils._cache.get('session_level_data') is not None):
+        print("🔄 Using cached session-level data to get most recent sessions")
+        recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=use_cache)
+        print(f"Selected most recent session for {len(recent_sessions)} subjects")
+        return recent_sessions
+    
+    else:
+        # FIXED: Check if pipeline is already running or recently completed
+        # Only re-run pipeline if absolutely necessary to avoid expensive duplication
+        session_level_data = app_utils._cache.get('session_level_data')
+        if session_level_data is not None:
+            print("✅ Session-level data found in cache - using cached data")
+            recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=use_cache)
+            print(f"Selected most recent session for {len(recent_sessions)} subjects")
+            return recent_sessions
         else:
-            return 'intermediate' 
+            print("⚠️  No cached data available - this should not happen after app initialization")
+            print("🔄 Unified pipeline not run yet - processing now to ensure data availability...")
+            
+            # We need to get the original data for pipeline processing
+            # This is a fallback scenario, so we'll use whatever data is available
+            app_utils.process_data_pipeline(use_cache=False)
+            print("✅ Unified pipeline complete - UI structures now available")
+            
+            # Now get the UI-optimized data
+            table_data = app_utils.get_table_display_data(use_cache=use_cache)
+            if table_data:
+                recent_sessions = pd.DataFrame(table_data)
+                print(f"Loaded {len(recent_sessions)} subjects from UI cache")
+                return recent_sessions
+            else:
+                # Final fallback
+                recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=use_cache)
+                print(f"Selected most recent session for {len(recent_sessions)} subjects")
+                return recent_sessions
+
+
+def process_unified_alerts_integration(recent_sessions: pd.DataFrame, app_utils, threshold_config: dict = None, stage_thresholds: dict = None) -> pd.DataFrame:
+    """
+    Integrate unified alerts with session data using business logic
+    
+    This function handles:
+    1. Alert service initialization
+    2. Unified alerts retrieval
+    3. Alert column initialization
+    4. Threshold alerts processing
+    5. Alert data merging and combining
+    
+    Parameters:
+        recent_sessions: pd.DataFrame - Session data to integrate alerts with
+        app_utils: AppUtils instance
+        threshold_config: dict - Threshold configuration for alerts
+        stage_thresholds: dict - Stage-specific threshold configuration
+        
+    Returns:
+        pd.DataFrame: Session data with integrated alerts
+    """
+    print("🚨 Processing unified alerts integration...")
+    
+    # Step 1: Initialize alert service if needed
+    if app_utils.alert_service is None:
+        app_utils.initialize_alert_service()
+    
+    # Step 2: Get all subject IDs
+    subject_ids = recent_sessions['subject_id'].unique().tolist()
+    
+    # Step 3: Get unified alerts for these subjects  
+    unified_alerts = app_utils.get_unified_alerts(subject_ids)
+    print(f"Got unified alerts for {len(unified_alerts)} subjects")
+    
+    # Step 4: Apply alerts and format output dataframe
+    # Start with the most recent sessions and add alert columns
+    output_df = recent_sessions.copy()
+    
+    # DEBUG: Show what columns are available from the unified pipeline
+    print(f"\nDEBUG: Columns available from unified pipeline ({len(output_df.columns)} total):")
+    session_percentile_cols = [col for col in output_df.columns if col.endswith('_session_percentile')]
+    rolling_avg_cols = [col for col in output_df.columns if col.endswith('_rolling_avg')]
+    category_cols = [col for col in output_df.columns if col.endswith('_category')]
+    overall_cols = [col for col in output_df.columns if 'overall_percentile' in col]
+    
+    print(f"  Session percentile columns ({len(session_percentile_cols)}): {session_percentile_cols}")
+    print(f"  Rolling average columns ({len(rolling_avg_cols)}): {rolling_avg_cols}")
+    print(f"  Category columns ({len(category_cols)}): {category_cols}")
+    print(f"  Overall percentile columns ({len(overall_cols)}): {overall_cols}")
+    
+    # Check if we have sample data
+    if len(output_df) > 0:
+        print(f"  Sample data for first subject ({output_df.iloc[0]['subject_id']}):")
+        sample_cols = session_percentile_cols[:2] + ['overall_percentile'] if session_percentile_cols else ['overall_percentile']
+        for col in sample_cols:
+            if col in output_df.columns:
+                value = output_df.iloc[0][col]
+                print(f"    {col}: {value}")
+    print("")  # Empty line for readability
+    
+    # Step 5: Initialize alert columns if not already present (for UI cache compatibility)
+    for col in ['percentile_category', 'threshold_alert', 'combined_alert', 'ns_reason', 'strata_abbr',
+               'total_sessions_alert', 'stage_sessions_alert', 'water_day_total_alert']:
+        if col not in output_df.columns:
+            default_val = 'NS' if col in ['percentile_category', 'combined_alert'] else ('N' if col.endswith('_alert') else '')
+            output_df.loc[:, col] = default_val
+    
+    # Step 6: THRESHOLD ALERTS: Check if threshold alerts are already computed in UI cache
+    threshold_alerts_precomputed = 'threshold_alert' in output_df.columns and output_df['threshold_alert'].notna().any()
+    
+    if threshold_alerts_precomputed:
+        print("✅ Using pre-computed threshold alerts from UI cache")
+    else:
+        print("🔄 Computing threshold alerts (UI cache not available)")
+        
+        # Only compute if we have threshold configuration
+        if threshold_config is not None and stage_thresholds is not None:
+            from app_utils.app_analysis.threshold_analyzer import ThresholdAnalyzer
+            
+            # Initialize threshold analyzer with configuration
+            # Combine general thresholds with stage-specific thresholds
+            combined_config = threshold_config.copy()
+            for stage, threshold in stage_thresholds.items():
+                combined_config[f"stage_{stage}_sessions"] = {
+                    'condition': 'gt',
+                    'value': threshold
+                }
+            
+            threshold_analyzer = ThresholdAnalyzer(combined_config)
+            
+            # Calculate threshold alerts for each subject
+            for idx, row in output_df.iterrows():
+                subject_id = row['subject_id']
+                
+                # Get all sessions for this subject (needed for session count calculations)
+                subject_sessions = app_utils.get_subject_sessions(subject_id)
+                if subject_sessions is not None and not subject_sessions.empty:
+                    
+                    # 1. Check total sessions alert
+                    total_sessions_alert = threshold_analyzer.check_total_sessions(subject_sessions)
+                    output_df.loc[idx, 'total_sessions_alert'] = total_sessions_alert['display_format']
+                    
+                    # 2. Check stage-specific sessions alert
+                    current_stage = row.get('current_stage_actual')
+                    if current_stage and current_stage in stage_thresholds:
+                        stage_sessions_alert = threshold_analyzer.check_stage_sessions(subject_sessions, current_stage)
+                        output_df.loc[idx, 'stage_sessions_alert'] = stage_sessions_alert['display_format']
+                    
+                    # 3. Check water day total alert
+                    water_day_total = row.get('water_day_total')
+                    if not pd.isna(water_day_total):
+                        water_alert = threshold_analyzer.check_water_day_total(water_day_total)
+                        output_df.loc[idx, 'water_day_total_alert'] = water_alert['display_format']
+            
+            print(f"Threshold alerts calculated for {len(output_df)} subjects")
+    
+    # Step 7: Apply alerts from unified_alerts
+    for subject_id, alerts in unified_alerts.items():
+        # Create mask for this subject
+        mask = output_df['subject_id'] == subject_id
+        if not mask.any():
+            continue
+        
+        # Add alert category
+        alert_category = alerts.get('alert_category', 'NS')
+        output_df.loc[mask, 'percentile_category'] = alert_category
+        
+        # Add NS reason if applicable
+        if alert_category == 'NS' and 'ns_reason' in alerts:
+            output_df.loc[mask, 'ns_reason'] = alerts['ns_reason']
+        
+        # FIXED: Apply threshold alerts from unified alerts structure
+        # The unified alerts structure has threshold data under 'threshold' key
+        threshold_data = alerts.get('threshold', {})
+        
+        # Check if there's an overall threshold alert 
+        overall_threshold_alert = threshold_data.get('threshold_alert', 'N')
+        
+        # If we don't have pre-computed threshold alerts, apply from unified alerts
+        if not threshold_alerts_precomputed:
+            if overall_threshold_alert == 'T':
+                output_df.loc[mask, 'threshold_alert'] = 'T'
+                
+                # Apply specific threshold alerts if available
+                specific_alerts = threshold_data.get('specific_alerts', {})
+                
+                # Apply total sessions alert
+                total_alert = specific_alerts.get('total_sessions', {})
+                if total_alert.get('alert') == 'T':
+                    value = total_alert.get('value', '')
+                    output_df.loc[mask, 'total_sessions_alert'] = f"T | {value}"
+                
+                # Apply stage sessions alert
+                stage_alert = specific_alerts.get('stage_sessions', {})
+                if stage_alert.get('alert') == 'T':
+                    value = stage_alert.get('value', '')
+                    stage = stage_alert.get('stage', '')
+                    output_df.loc[mask, 'stage_sessions_alert'] = f"T | {stage} | {value}"
+                
+                # Apply water day total alert
+                water_alert = specific_alerts.get('water_day_total', {})
+                if water_alert.get('alert') == 'T':
+                    value = water_alert.get('value', '')
+                    output_df.loc[mask, 'water_day_total_alert'] = f"T | {value:.1f}"
+        else:
+            # FIXED: Even with precomputed threshold alerts, we still need to apply them from unified alerts
+            if overall_threshold_alert == 'T':
+                output_df.loc[mask, 'threshold_alert'] = 'T'
+        
+        # Step 8: Combine percentile and threshold alerts for display
+        current_threshold_alert = output_df.loc[mask, 'threshold_alert'].iloc[0] if mask.any() else 'N'
+        
+        if current_threshold_alert == 'T':
+            # Combine alerts
+            if alert_category != 'NS':
+                output_df.loc[mask, 'combined_alert'] = f"{alert_category}, T"
+            else:
+                output_df.loc[mask, 'combined_alert'] = 'T'
+        else:
+            output_df.loc[mask, 'combined_alert'] = alert_category
+    
+    print(f"Applied alerts to {len(output_df)} subjects")
+    
+    # DEBUG: Check final threshold alert counts
+    threshold_alert_count = (output_df['threshold_alert'] == 'T').sum()
+    total_sessions_alert_count = output_df['total_sessions_alert'].str.contains(r'T \|', na=False).sum()
+    stage_sessions_alert_count = output_df['stage_sessions_alert'].str.contains(r'T \|', na=False).sum()
+    water_day_alert_count = output_df['water_day_total_alert'].str.contains(r'T \|', na=False).sum()
+    
+    print(f"Final threshold alert counts:")
+    print(f"  - Overall threshold alerts: {threshold_alert_count}")
+    print(f"  - Total sessions alerts: {total_sessions_alert_count}")
+    print(f"  - Stage sessions alerts: {stage_sessions_alert_count}")
+    print(f"  - Water day total alerts: {water_day_alert_count}")
+    
+    return output_df
+
+
+def format_strata_abbreviations(df: pd.DataFrame, strata_column: str = 'strata', abbr_column: str = 'strata_abbr') -> pd.DataFrame:
+    """
+    Apply strata abbreviation formatting to dataframe using business logic
+    
+    This function handles complex string processing for strata abbreviations:
+    - Mapping logic for curriculum/stage/version abbreviations
+    - String manipulation and formatting
+    - Multiple format handling
+    
+    Parameters:
+        df: pd.DataFrame - DataFrame to add strata abbreviations to
+        strata_column: str - Column name containing full strata names
+        abbr_column: str - Column name for abbreviated strata
+        
+    Returns:
+        pd.DataFrame: DataFrame with strata abbreviations added
+    """
+    print("📝 Applying strata abbreviation formatting...")
+    
+    def get_abbreviated_strata(strata_name):
+        """
+        Convert full strata name to abbreviated forms for datatable
+        
+        Parameters:
+            strata_name (str): The full strata name (e.g., "Uncoupled Baiting_ADVANCED_v3")
+            
+        Returns:
+            str: The abbreviated strata (e.g., "UBA3")
+        """
+        # Return empty string if no strata found
+        if not strata_name:
+            return ''
+        
+        # Hard coded mappings for common terms
+        strata_mappings = {
+            'Uncoupled Baiting': 'UB',
+            'Coupled Baiting': 'CB',
+            'Uncoupled Without Baiting': 'UWB',
+            'Coupled Without Baiting': 'CWB',
+
+            'BEGINNER': 'B',
+            'INTERMEDIATE': 'I',
+            'ADVANCED': 'A',
+
+            'v1': '1',
+            'v2': '2',
+            'v3': '3'
+        }
+        
+        # Split the strata name
+        parts = strata_name.split('_')
+        
+        # Handle different strata formats
+        if len(parts) >= 3:
+            # Format: curriculum_Stage_Version (e.g., "Uncoupled Baiting_ADVANCED_v3")
+            curriculum = '_'.join(parts[:-2])
+            stage = parts[-2]
+            version = parts[-1]
+
+            # Get abbreviations from mappings
+            curriculum_abbr = strata_mappings.get(curriculum, curriculum[:2].upper())
+            stage_abbr = strata_mappings.get(stage, stage[0])
+            version_abbr = strata_mappings.get(version, version[-1])
+            
+            # Combine abbreviations
+            return f"{curriculum_abbr}{stage_abbr}{version_abbr}"
+        else:
+            return strata_name.replace(" ", "")
+    
+    # Apply abbreviations to strata names if not already present
+    output_df = df.copy()
+    if abbr_column not in output_df.columns or output_df[abbr_column].isna().all():
+        if strata_column in output_df.columns:
+            output_df.loc[:, abbr_column] = output_df[strata_column].apply(get_abbreviated_strata)
+            print(f"Applied strata abbreviations to {len(output_df)} rows")
+        else:
+            print(f"Warning: Strata column '{strata_column}' not found in dataframe")
+            output_df.loc[:, abbr_column] = ''
+    else:
+        print("Strata abbreviations already present, skipping")
+    
+    return output_df
+
+
+def create_empty_dataframe_structure() -> pd.DataFrame:
+    """
+    Create empty dataframe with required columns to avoid breaking UI
+    
+    Returns:
+        pd.DataFrame: Empty dataframe with essential columns
+    """
+    return pd.DataFrame(columns=[
+        'subject_id', 'combined_alert', 'percentile_category', 
+        'overall_percentile', 'session_date', 'session'
+    ]) 

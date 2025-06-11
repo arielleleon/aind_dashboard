@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 from scipy import stats
 from sklearn.preprocessing import StandardScaler
 
@@ -16,6 +16,7 @@ class StatisticalUtils:
     - Session-level bootstrap CI calculations
     - Bootstrap distribution generation and management
     - Coverage statistics and enhancement summaries
+    - Percentile data validation and processing for heatmaps
     """
     
     @staticmethod
@@ -1092,3 +1093,113 @@ class StatisticalUtils:
         }
         
         return summary 
+
+    @staticmethod
+    def validate_percentile_data(percentiles: List[Union[float, int]], 
+                               invalid_marker: float = -1) -> List[float]:
+        """
+        Validate and clean percentile data, converting invalid markers to NaN
+        
+        This function processes raw percentile data by converting invalid markers
+        (typically -1) to NaN values for proper statistical handling.
+        
+        Parameters:
+            percentiles: List[Union[float, int]]
+                Raw percentile data that may contain invalid markers
+            invalid_marker: float
+                Value used to mark invalid/missing data (default: -1)
+                
+        Returns:
+            List[float]: Cleaned percentile data with NaN for invalid values
+        """
+        return [p if p != invalid_marker else np.nan for p in percentiles]
+    
+    @staticmethod
+    def process_heatmap_matrix_data(time_series_data: Dict[str, Any], 
+                                   features_config: Dict[str, bool]) -> Tuple[List[List[float]], List[str]]:
+        """
+        Process time series data into heatmap matrix format with feature names
+        
+        This function extracts percentile data for configured features and prepares
+        it for heatmap visualization, including data validation and display name formatting.
+        
+        Parameters:
+            time_series_data: Dict[str, Any]
+                Time series data containing percentile information for features
+            features_config: Dict[str, bool]
+                Configuration dict mapping feature names to whether they should be included
+                
+        Returns:
+            Tuple[List[List[float]], List[str]]: 
+                - Matrix data for heatmap (list of feature percentile arrays)
+                - Feature display names for heatmap labels
+        """
+        heatmap_data = []
+        feature_names = []
+        
+        # Process each configured feature
+        for feature in features_config.keys():
+            percentile_key = f"{feature}_percentiles"
+            
+            if percentile_key in time_series_data:
+                percentiles = time_series_data[percentile_key]
+                
+                # Validate and clean percentile data
+                valid_percentiles = StatisticalUtils.validate_percentile_data(percentiles)
+                
+                # Only include features with at least some valid data
+                if any(not np.isnan(p) for p in valid_percentiles):
+                    heatmap_data.append(valid_percentiles)
+                    
+                    # Format display name for visualization
+                    display_name = StatisticalUtils.format_feature_display_name(feature)
+                    feature_names.append(display_name)
+        
+        # Add overall percentile row if available
+        if 'overall_percentiles' in time_series_data:
+            overall_percentiles = time_series_data['overall_percentiles']
+            valid_overall = StatisticalUtils.validate_percentile_data(overall_percentiles)
+            
+            if any(not np.isnan(p) for p in valid_overall):
+                heatmap_data.append(valid_overall)
+                feature_names.append("Overall Percentile")
+        
+        return heatmap_data, feature_names
+    
+    @staticmethod
+    def format_feature_display_name(feature: str) -> str:
+        """
+        Convert feature key to human-readable display name
+        
+        Transforms technical feature names into properly formatted display names
+        for visualization components.
+        
+        Parameters:
+            feature: str
+                Technical feature name (e.g., "finished_trials", "abs(bias_naive)")
+                
+        Returns:
+            str: Human-readable display name (e.g., "Finished Trials", "|Bias Naive|")
+        """
+        return feature.replace('_', ' ').replace('abs(', '|').replace(')', '|').title()
+
+    @staticmethod
+    def calculate_session_highlighting_coordinates(sessions: List[int], 
+                                                 highlighted_session: int) -> Optional[int]:
+        """
+        Calculate coordinates for highlighting a specific session in visualizations
+        
+        Parameters:
+            sessions: List[int]
+                List of all session numbers in display order
+            highlighted_session: int
+                Session number to highlight
+                
+        Returns:
+            Optional[int]: Index of the highlighted session, or None if not found
+        """
+        try:
+            return sessions.index(highlighted_session)
+        except ValueError:
+            print(f"Session {highlighted_session} not found in session list")
+            return None 

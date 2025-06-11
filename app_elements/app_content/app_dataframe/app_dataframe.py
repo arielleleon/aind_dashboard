@@ -9,6 +9,12 @@ from dash import callback_context, Input, Output, clientside_callback
 from typing import Dict, Any
 from app_utils.app_analysis.threshold_analyzer import ThresholdAnalyzer
 from .column_groups_config import COLUMN_GROUPS, get_columns_for_groups, get_default_visible_columns
+from app_utils.ui_utils import (
+    get_optimized_table_data, 
+    process_unified_alerts_integration, 
+    format_strata_abbreviations,
+    create_empty_dataframe_structure
+)
 
 class AppDataFrame:
     def __init__(self, app_utils=None):
@@ -62,56 +68,6 @@ class AppDataFrame:
         # Create percentile calculator
         self.percentile_calculator = OverallPercentileCalculator()
 
-    def get_abbreviated_strata(self, strata_name):
-        """
-        Convert full strata name to abbreviated forms for datatable
-        
-        Parameters:
-            strata_name (str): The full strata name (e.g., "Uncoupled Baiting_ADVANCED_v3")
-            
-        Returns:
-            str: The abbreviated strata (e.g., "UBA3")
-        """
-        # Return empty string if no strata found
-        if not strata_name:
-            return ''
-        
-        # Hard coded mappings for common terms
-        strata_mappings = {
-            'Uncoupled Baiting': 'UB',
-            'Coupled Baiting': 'CB',
-            'Uncoupled Without Baiting': 'UWB',
-            'Coupled Without Baiting': 'CWB',
-
-            'BEGINNER': 'B',
-            'INTERMEDIATE': 'I',
-            'ADVANCED': 'A',
-
-            'v1': '1',
-            'v2': '2',
-            'v3': '3'
-        }
-        
-        # Split the strata name
-        parts = strata_name.split('_')
-        
-        # Handle different strata formats
-        if len(parts) >= 3:
-            # Format: curriculum_Stage_Version (e.g., "Uncoupled Baiting_ADVANCED_v3")
-            curriculum = '_'.join(parts[:-2])
-            stage = parts[-2]
-            version = parts[-1]
-
-            # Get abbreviations from mappings
-            curriculum_abbr = strata_mappings.get(curriculum, curriculum[:2].upper())
-            stage_abbr = strata_mappings.get(stage, stage[0])
-            version_abbr = strata_mappings.get(version, version[-1])
-            
-            # Combine abbreviations
-            return f"{curriculum_abbr}{stage_abbr}{version_abbr}"
-        else:
-            return strata_name.replace(" ", "")
-
     def get_filtered_columns(self, all_columns, visible_column_ids):
         """
         Filter the column definitions to only include visible columns
@@ -129,10 +85,11 @@ class AppDataFrame:
         """
         Format the dataframe for display in the table with unified session-level metrics
         
-        1. Use already processed UI-optimized data if available
-        2. Apply unified alerts
-        3. Add feature-specific percentiles and metadata
-        4. Filter to visible columns if specified
+        This method now uses extracted business logic functions to:
+        1. Get optimized data with intelligent cache fallback
+        2. Integrate unified alerts using business logic
+        3. Apply strata abbreviation formatting
+        4. Handle column filtering
         """
         # Defensive copy of input data
         original_df = df.copy() if df is not None else pd.DataFrame()
@@ -145,226 +102,33 @@ class AppDataFrame:
                 print(f"Available columns: {original_df.columns.tolist()}")
             
             # Return empty dataframe with required columns to avoid breaking the UI
-            return pd.DataFrame(columns=['subject_id', 'combined_alert', 'percentile_category', 
-                                        'overall_percentile', 'session_date', 'session'])
+            return create_empty_dataframe_structure()
         
         print(f"📊 Starting data formatting with {len(original_df)} sessions")
         
-        # Check if we have a cached formatted result or can use UI-optimized data
-        app_utils = self.app_utils
+        # STEP 1: Get optimized data using business logic
+        recent_sessions = get_optimized_table_data(self.app_utils, use_cache=True)
         
-        # CRITICAL FIX: First try to use UI-optimized table display data (fastest path)
-        table_data = app_utils.get_table_display_data(use_cache=True)
-        if table_data:
-            print("✅ Using UI-optimized table display data (no pipeline re-run needed)")
-            recent_sessions = pd.DataFrame(table_data)
-            print(f"Loaded {len(recent_sessions)} subjects from UI cache")
-        elif (app_utils._cache.get('session_level_data') is not None):
-            print("🔄 Using cached session-level data to get most recent sessions")
-            recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=True)
-            print(f"Selected most recent session for {len(recent_sessions)} subjects")
-        else:
-            # FIXED: Check if pipeline is already running or recently completed
-            # Only re-run pipeline if absolutely necessary to avoid expensive duplication
-            session_level_data = app_utils._cache.get('session_level_data')
-            if session_level_data is not None:
-                print("✅ Session-level data found in cache - using cached data")
-                recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=True)
-                print(f"Selected most recent session for {len(recent_sessions)} subjects")
-            else:
-                print("⚠️  No cached data available - this should not happen after app initialization")
-                print("🔄 Unified pipeline not run yet - processing now to ensure data availability...")
-                app_utils.process_data_pipeline(original_df, use_cache=False)
-                print("✅ Unified pipeline complete - UI structures now available")
-                
-                # Now get the UI-optimized data
-                table_data = app_utils.get_table_display_data(use_cache=True)
-                if table_data:
-                    recent_sessions = pd.DataFrame(table_data)
-                    print(f"Loaded {len(recent_sessions)} subjects from UI cache")
-                else:
-                    # Final fallback
-                    recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=True)
-                    print(f"Selected most recent session for {len(recent_sessions)} subjects")
+        # STEP 2: Process alerts using business logic
+        recent_sessions = process_unified_alerts_integration(
+            recent_sessions, 
+            self.app_utils, 
+            threshold_config=self.threshold_config,
+            stage_thresholds=self.stage_thresholds
+        )
         
-        # Step 3: Apply alerts and prepare output
-        # Initialize alert service if needed
-        if app_utils.alert_service is None:
-            app_utils.initialize_alert_service()
+        # STEP 3: Apply strata formatting using business logic
+        recent_sessions = format_strata_abbreviations(recent_sessions)
         
-        # Get all subject IDs
-        subject_ids = recent_sessions['subject_id'].unique().tolist()
-        
-        # Get unified alerts for these subjects  
-        unified_alerts = app_utils.get_unified_alerts(subject_ids)
-        print(f"Got unified alerts for {len(unified_alerts)} subjects")
-        
-        # Step 4: Apply alerts and format output dataframe
-        # Start with the most recent sessions and add alert columns
-        output_df = recent_sessions.copy()
-        
-        # DEBUG: Show what columns are available from the unified pipeline
-        print(f"\nDEBUG: Columns available from unified pipeline ({len(output_df.columns)} total):")
-        session_percentile_cols = [col for col in output_df.columns if col.endswith('_session_percentile')]
-        rolling_avg_cols = [col for col in output_df.columns if col.endswith('_rolling_avg')]
-        category_cols = [col for col in output_df.columns if col.endswith('_category')]
-        overall_cols = [col for col in output_df.columns if 'overall_percentile' in col]
-        
-        print(f"  Session percentile columns ({len(session_percentile_cols)}): {session_percentile_cols}")
-        print(f"  Rolling average columns ({len(rolling_avg_cols)}): {rolling_avg_cols}")
-        print(f"  Category columns ({len(category_cols)}): {category_cols}")
-        print(f"  Overall percentile columns ({len(overall_cols)}): {overall_cols}")
-        
-        # Check if we have sample data
-        if len(output_df) > 0:
-            print(f"  Sample data for first subject ({output_df.iloc[0]['subject_id']}):")
-            sample_cols = session_percentile_cols[:2] + ['overall_percentile'] if session_percentile_cols else ['overall_percentile']
-            for col in sample_cols:
-                if col in output_df.columns:
-                    value = output_df.iloc[0][col]
-                    print(f"    {col}: {value}")
-        print("")  # Empty line for readability
-        
-        # Initialize alert columns if not already present (for UI cache compatibility)
-        for col in ['percentile_category', 'threshold_alert', 'combined_alert', 'ns_reason', 'strata_abbr',
-                   'total_sessions_alert', 'stage_sessions_alert', 'water_day_total_alert']:
-            if col not in output_df.columns:
-                default_val = 'NS' if col in ['percentile_category', 'combined_alert'] else ('N' if col.endswith('_alert') else '')
-                output_df.loc[:, col] = default_val
-        
-        # THRESHOLD ALERTS: Check if threshold alerts are already computed in UI cache
-        threshold_alerts_precomputed = 'threshold_alert' in output_df.columns and output_df['threshold_alert'].notna().any()
-        
-        if threshold_alerts_precomputed:
-            print("✅ Using pre-computed threshold alerts from UI cache")
-        else:
-            print("🔄 Computing threshold alerts (UI cache not available)")
-            
-            # Initialize threshold analyzer with configuration
-            # Combine general thresholds with stage-specific thresholds
-            combined_config = self.threshold_config.copy()
-            for stage, threshold in self.stage_thresholds.items():
-                combined_config[f"stage_{stage}_sessions"] = {
-                    'condition': 'gt',
-                    'value': threshold
-                }
-            
-            threshold_analyzer = ThresholdAnalyzer(combined_config)
-            
-            # Calculate threshold alerts for each subject
-            for idx, row in output_df.iterrows():
-                subject_id = row['subject_id']
-                
-                # Get all sessions for this subject (needed for session count calculations)
-                subject_sessions = app_utils.get_subject_sessions(subject_id)
-                if subject_sessions is not None and not subject_sessions.empty:
-                    
-                    # 1. Check total sessions alert
-                    total_sessions_alert = threshold_analyzer.check_total_sessions(subject_sessions)
-                    output_df.loc[idx, 'total_sessions_alert'] = total_sessions_alert['display_format']
-                    
-                    # 2. Check stage-specific sessions alert
-                    current_stage = row.get('current_stage_actual')
-                    if current_stage and current_stage in self.stage_thresholds:
-                        stage_sessions_alert = threshold_analyzer.check_stage_sessions(subject_sessions, current_stage)
-                        output_df.loc[idx, 'stage_sessions_alert'] = stage_sessions_alert['display_format']
-                    
-                    # 3. Check water day total alert
-                    water_day_total = row.get('water_day_total')
-                    if not pd.isna(water_day_total):
-                        water_alert = threshold_analyzer.check_water_day_total(water_day_total)
-                        output_df.loc[idx, 'water_day_total_alert'] = water_alert['display_format']
-            
-            print(f"Threshold alerts calculated for {len(output_df)} subjects")
-        
-        # Apply abbreviations to strata names if not already present
-        if 'strata_abbr' not in output_df.columns or output_df['strata_abbr'].isna().all():
-            output_df.loc[:, 'strata_abbr'] = output_df['strata'].apply(self.get_abbreviated_strata)
-        
-        # Apply alerts from unified_alerts
-        for subject_id, alerts in unified_alerts.items():
-            # Create mask for this subject
-            mask = output_df['subject_id'] == subject_id
-            if not mask.any():
-                continue
-            
-            # Add alert category
-            alert_category = alerts.get('alert_category', 'NS')
-            output_df.loc[mask, 'percentile_category'] = alert_category
-            
-            # Add NS reason if applicable
-            if alert_category == 'NS' and 'ns_reason' in alerts:
-                output_df.loc[mask, 'ns_reason'] = alerts['ns_reason']
-            
-            # FIXED: Apply threshold alerts from unified alerts structure
-            # The unified alerts structure has threshold data under 'threshold' key
-            threshold_data = alerts.get('threshold', {})
-            
-            # Check if there's an overall threshold alert 
-            overall_threshold_alert = threshold_data.get('threshold_alert', 'N')
-            
-            # If we don't have pre-computed threshold alerts, apply from unified alerts
-            if not threshold_alerts_precomputed:
-                if overall_threshold_alert == 'T':
-                    output_df.loc[mask, 'threshold_alert'] = 'T'
-                    
-                    # Apply specific threshold alerts if available
-                    specific_alerts = threshold_data.get('specific_alerts', {})
-                    
-                    # Apply total sessions alert
-                    total_alert = specific_alerts.get('total_sessions', {})
-                    if total_alert.get('alert') == 'T':
-                        value = total_alert.get('value', '')
-                        output_df.loc[mask, 'total_sessions_alert'] = f"T | {value}"
-                    
-                    # Apply stage sessions alert
-                    stage_alert = specific_alerts.get('stage_sessions', {})
-                    if stage_alert.get('alert') == 'T':
-                        value = stage_alert.get('value', '')
-                        stage = stage_alert.get('stage', '')
-                        output_df.loc[mask, 'stage_sessions_alert'] = f"T | {stage} | {value}"
-                    
-                    # Apply water day total alert
-                    water_alert = specific_alerts.get('water_day_total', {})
-                    if water_alert.get('alert') == 'T':
-                        value = water_alert.get('value', '')
-                        output_df.loc[mask, 'water_day_total_alert'] = f"T | {value:.1f}"
-            
-            # Combine percentile and threshold alerts for display
-            current_threshold_alert = output_df.loc[mask, 'threshold_alert'].iloc[0] if mask.any() else 'N'
-            
-            if current_threshold_alert == 'T':
-                # Combine alerts
-                if alert_category != 'NS':
-                    output_df.loc[mask, 'combined_alert'] = f"{alert_category}, T"
-                else:
-                    output_df.loc[mask, 'combined_alert'] = 'T'
-            else:
-                output_df.loc[mask, 'combined_alert'] = alert_category
-        
-        print(f"Applied alerts to {len(output_df)} subjects")
-        
-        # DEBUG: Check final threshold alert counts
-        threshold_alert_count = (output_df['threshold_alert'] == 'T').sum()
-        total_sessions_alert_count = output_df['total_sessions_alert'].str.contains(r'T \|', na=False).sum()
-        stage_sessions_alert_count = output_df['stage_sessions_alert'].str.contains(r'T \|', na=False).sum()
-        water_day_alert_count = output_df['water_day_total_alert'].str.contains(r'T \|', na=False).sum()
-        
-        print(f"Final threshold alert counts:")
-        print(f"  - Overall threshold alerts: {threshold_alert_count}")
-        print(f"  - Total sessions alerts: {total_sessions_alert_count}")
-        print(f"  - Stage sessions alerts: {stage_sessions_alert_count}")
-        print(f"  - Water day total alerts: {water_day_alert_count}")
-        
-        # Filter to visible columns if specified
+        # STEP 4: Filter to visible columns if specified
         if visible_columns is not None:
             # Only keep columns that exist in the dataframe and are in visible_columns
-            existing_visible_cols = [col for col in visible_columns if col in output_df.columns]
-            output_df = output_df[existing_visible_cols]
+            existing_visible_cols = [col for col in visible_columns if col in recent_sessions.columns]
+            recent_sessions = recent_sessions[existing_visible_cols]
             print(f"Filtered to {len(existing_visible_cols)} visible columns")
         
         # Return the formatted dataframe
-        return output_df
+        return recent_sessions
     
     def _get_percentile_formatting_rules(self):
         """

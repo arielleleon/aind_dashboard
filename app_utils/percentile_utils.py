@@ -10,7 +10,7 @@ for percentile coordination logic.
 """
 
 import pandas as pd
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from .app_analysis.overall_percentile_calculator import OverallPercentileCalculator
 
 
@@ -322,4 +322,83 @@ class PercentileCoordinator:
                         f"Could not validate column {col}: {str(e)}"
                     )
         
-        return validation_results 
+        return validation_results
+
+
+def calculate_heatmap_colorscale(mode: str = 'binned') -> List[Tuple[float, str]]:
+    """
+    Calculate colorscale for percentile heatmaps with alert category mapping
+    
+    This function provides colorscales that match the alert category system used
+    throughout the dashboard for consistent visual representation.
+    
+    Parameters:
+        mode: str
+            Colorscale mode - 'binned' for discrete categories, 'continuous' for smooth gradients
+            
+    Returns:
+        List[Tuple[float, str]]: Colorscale definition as list of (position, color) tuples
+    """
+    if mode == "continuous":
+        return _create_continuous_colorscale()
+    else:
+        return _create_custom_colorscale()
+
+
+def _create_custom_colorscale() -> List[Tuple[float, str]]:
+    """Create custom colorscale matching alert categories"""
+    # Create a colorscale that maps percentile ranges to alert colors
+    return [
+        [0.0, '#FF6B35'],    # 0-6.5% (SB) - Dark orange
+        [0.065, '#FF6B35'],  # 
+        [0.065, '#FFB366'],  # 6.5-28% (B) - Light orange
+        [0.28, '#FFB366'],   # 
+        [0.28, '#E8E8E8'],   # 28-72% (N) - Light grey
+        [0.72, '#E8E8E8'],   # 
+        [0.72, '#4A90E2'],   # 72-93.5% (G) - Light blue
+        [0.935, '#4A90E2'],  # 
+        [0.935, '#2E5A87'],  # 93.5-100% (SG) - Dark blue
+        [1.0, '#2E5A87']
+    ]
+
+
+def _create_continuous_colorscale() -> List[Tuple[float, str]]:
+    """Create smooth continuous colorscale with gradual transitions"""
+    # Create a smooth gradient from red (low) through grey (normal) to blue (high)
+    return [
+        [0.0, '#FF4444'],     # 0% - Bright red (worst performance)
+        [0.065, '#FF6B35'],   # 6.5% - Orange-red transition
+        [0.15, '#FFA366'],    # 15% - Light orange
+        [0.28, '#FFD699'],    # 28% - Very light orange
+        [0.40, '#F0F0F0'],    # 40% - Light grey (approaching normal)
+        [0.50, '#E8E8E8'],    # 50% - Normal grey (median)
+        [0.60, '#E0E8F0'],    # 60% - Very light blue
+        [0.72, '#B8D4F0'],    # 72% - Light blue
+        [0.85, '#7BB8E8'],    # 85% - Medium blue
+        [0.935, '#4A90E2'],   # 93.5% - Good blue
+        [1.0, '#1E5A96']      # 100% - Deep blue (best performance)
+    ]
+
+
+def format_feature_display_names(features_config: Dict[str, bool]) -> Dict[str, str]:
+    """
+    Convert feature keys to human-readable display names
+    
+    Creates a mapping from technical feature names to properly formatted display names
+    for visualization components.
+    
+    Parameters:
+        features_config: Dict[str, bool]
+            Configuration dict mapping feature names to whether they should be included
+            
+    Returns:
+        Dict[str, str]: Mapping from feature keys to display names
+    """
+    display_names = {}
+    
+    for feature in features_config.keys():
+        # Transform technical names to display format
+        display_name = feature.replace('_', ' ').replace('abs(', '|').replace(')', '|').title()
+        display_names[feature] = display_name
+    
+    return display_names 

@@ -30,11 +30,13 @@
         └── __init__.py
         └── 📁app_alerts
             └── __init__.py
+            └── alert_coordinator.py
             └── alert_service.py
         └── 📁app_analysis
             └── __init__.py
             └── bootstrap_manager.py
             └── overall_percentile_calculator.py
+            └── pipeline_manager.py
             └── quantile_analyzer.py
             └── reference_processor.py
             └── statistical_utils.py
@@ -42,7 +44,11 @@
         └── 📁app_data_load
             └── __init__.py
             └── app_load_data.py
+            └── data_loader.py
         └── app_utils.py
+        └── cache_utils.py
+        └── percentile_utils.py
+        └── ui_utils.py
     └── 📁assets
         └── column_toggle_styles.css
         └── custom_styles.css
@@ -52,12 +58,55 @@
         └── tooltip_styles.css
     └── 📁callbacks
         └── __init__.py
-        └── callbacks.py
-        └── column_toggle_callbacks.py
+        └── filter_callbacks.py
+        └── session_interaction_callbacks.py
+        └── shared_callback_utils.py
+        └── subject_detail_callbacks.py
+        └── table_callbacks.py
+        └── tooltip_callbacks.py
+        └── visualization_callbacks.py
+    └── 📁tests
+        └── __init__.py
+        └── conftest.py
+        └── 📁e2e
+            └── __init__.py
+            └── test_app_smoke.py
+            └── 📁test_integration
+                └── __init__.py
+            └── 📁test_user_workflows
+                └── __init__.py
+        └── 📁fixtures
+            └── __init__.py
+            └── sample_data.py
+        └── README.md
+        └── 📁unit
+            └── __init__.py
+            └── 📁test_callback_logic
+                └── __init__.py
+                └── test_callback_integration.py
+            └── 📁test_data_operations
+                └── __init__.py
+                └── test_enhanced_data_loader.py
+            └── test_percentile_utils.py
+            └── 📁test_statistical_analysis
+                └── __init__.py
+                └── test_statistical_utils.py
+            └── 📁test_ui_components
+                └── __init__.py
+                └── test_alert_coordinator.py
+                └── test_ui_data_manager.py
+            └── 📁test_utilities
+                └── __init__.py
+                └── test_helper_functions.py
     └── .gitignore
     └── app.py
+    └── codebase.md
     └── LICENSE
+    └── pyproject.toml
+    └── pytest.ini
     └── README.md
+    └── requirements-test.txt
     └── requirements.txt
+    └── run_tests.py
     └── shared_utils.py
 ```

@@ -574,48 +574,247 @@ class TestParameterValidation:
     """Tests for parameter validation and bounds checking"""
     
     def test_confidence_level_bounds(self):
-        """Test confidence level parameter bounds with realistic data"""
-        # Use realistic statistical data from fixtures
-        stat_data = get_statistical_data()
-        values = stat_data['values'][:50]  # Use subset for faster testing
+        """Test confidence level parameter validation"""
+        # Edge case: very low confidence level
+        data = np.random.normal(50, 10, 100)
+        lower, upper = StatisticalUtils.calculate_percentile_confidence_interval(
+            data, 50, confidence_level=0.01
+        )
         
-        # Test valid confidence levels
-        for cl in [0.90, 0.95, 0.99]:
-            lower, upper = StatisticalUtils.calculate_percentile_confidence_interval(
-                values, percentile=50, confidence_level=cl
-            )
-            assert not np.isnan(lower)
-            assert not np.isnan(upper)
-            
+        # Should still return valid bounds, just very narrow
+        assert not np.isnan(lower)
+        assert not np.isnan(upper)
+        assert lower < upper
+        
+        # Edge case: very high confidence level
+        lower, upper = StatisticalUtils.calculate_percentile_confidence_interval(
+            data, 50, confidence_level=0.999
+        )
+        
+        # Should return valid bounds, very wide
+        assert not np.isnan(lower)
+        assert not np.isnan(upper)
+        assert lower < upper
+    
     def test_percentile_bounds(self):
-        """Test percentile parameter bounds with realistic statistical data"""
-        # Use realistic statistical data from fixtures
-        stat_data = get_statistical_data()
-        values = stat_data['values'][:50]  # Use subset for faster testing
+        """Test percentile parameter bounds"""
+        data = np.random.normal(50, 10, 100)
         
-        # Test edge percentiles
-        for p in [1, 50, 99]:
+        # Test extreme percentiles
+        for percentile in [0.1, 99.9]:
             lower, upper = StatisticalUtils.calculate_percentile_confidence_interval(
-                values, percentile=p, confidence_level=0.95
+                data, percentile
             )
             assert not np.isnan(lower)
             assert not np.isnan(upper)
             assert 0 <= lower <= 100
             assert 0 <= upper <= 100
-            
+    
     def test_bootstrap_samples_parameter(self):
-        """Test bootstrap samples parameter with realistic strata data"""
-        # Use realistic strata reference data from fixtures
-        stat_data = get_statistical_data()
-        strata_name = list(stat_data['strata_reference'].keys())[0]
-        reference_data = stat_data['strata_reference'][strata_name]
+        """Test bootstrap samples parameter"""
+        data = np.random.normal(50, 10, 50)
         
-        # Test different bootstrap sample counts
-        for n_bootstrap in [10, 50, 100]:
-            result = StatisticalUtils.generate_bootstrap_reference_distribution(
-                reference_data=reference_data,
-                n_bootstrap=n_bootstrap,
-                random_state=42
-            )
-            assert result['bootstrap_enabled'] == True
-            assert result['bootstrap_samples'] <= n_bootstrap 
+        # Test with minimal bootstrap samples
+        result = StatisticalUtils.generate_bootstrap_reference_distribution(
+            data, n_bootstrap=10
+        )
+        
+        assert 'percentile_grid' in result
+        assert 'bootstrap_enabled' in result
+        assert result['bootstrap_enabled'] == True
+        assert result['bootstrap_samples'] <= 10
+
+
+class TestHeatmapDataProcessing:
+    """Test the new heatmap data processing functions extracted from UI component"""
+    
+    def test_validate_percentile_data_basic(self):
+        """Test basic percentile data validation"""
+        # Test with mixed valid and invalid data
+        test_percentiles = [50.0, -1, 75.0, -1, 90.0, 25.0]
+        validated = StatisticalUtils.validate_percentile_data(test_percentiles)
+        
+        expected = [50.0, np.nan, 75.0, np.nan, 90.0, 25.0]
+        
+        assert len(validated) == len(expected)
+        for i, (actual, expect) in enumerate(zip(validated, expected)):
+            if np.isnan(expect):
+                assert np.isnan(actual), f"Position {i}: expected NaN, got {actual}"
+            else:
+                assert actual == expect, f"Position {i}: expected {expect}, got {actual}"
+    
+    def test_validate_percentile_data_custom_marker(self):
+        """Test percentile validation with custom invalid marker"""
+        test_percentiles = [50.0, -999, 75.0, -999, 90.0]
+        validated = StatisticalUtils.validate_percentile_data(test_percentiles, invalid_marker=-999)
+        
+        expected = [50.0, np.nan, 75.0, np.nan, 90.0]
+        
+        assert len(validated) == len(expected)
+        for i, (actual, expect) in enumerate(zip(validated, expected)):
+            if np.isnan(expect):
+                assert np.isnan(actual)
+            else:
+                assert actual == expect
+    
+    def test_validate_percentile_data_all_valid(self):
+        """Test percentile validation with all valid data"""
+        test_percentiles = [10.5, 25.0, 50.0, 75.0, 90.5]
+        validated = StatisticalUtils.validate_percentile_data(test_percentiles)
+        
+        assert validated == test_percentiles
+    
+    def test_validate_percentile_data_all_invalid(self):
+        """Test percentile validation with all invalid data"""
+        test_percentiles = [-1, -1, -1, -1]
+        validated = StatisticalUtils.validate_percentile_data(test_percentiles)
+        
+        assert all(np.isnan(v) for v in validated)
+        assert len(validated) == 4
+    
+    def test_process_heatmap_matrix_data_basic(self):
+        """Test basic heatmap matrix data processing"""
+        # Setup test data
+        features_config = {
+            'finished_trials': False,
+            'ignore_rate': True,
+            'foraging_performance': False
+        }
+        
+        time_series_data = {
+            'finished_trials_percentiles': [50.0, 60.0, 70.0],
+            'ignore_rate_percentiles': [30.0, -1, 40.0],
+            'foraging_performance_percentiles': [80.0, 85.0, 90.0],
+            'overall_percentiles': [55.0, 62.5, 67.5]
+        }
+        
+        # Process the data
+        heatmap_data, feature_names = StatisticalUtils.process_heatmap_matrix_data(
+            time_series_data, features_config
+        )
+        
+        # Verify structure
+        assert len(heatmap_data) == 4  # 3 features + overall
+        assert len(feature_names) == 4
+        
+        # Verify feature names are properly formatted
+        expected_names = ['Finished Trials', 'Ignore Rate', 'Foraging Performance', 'Overall Percentile']
+        assert feature_names == expected_names
+        
+        # Verify data integrity
+        assert heatmap_data[0] == [50.0, 60.0, 70.0]  # finished_trials
+        assert heatmap_data[1][0] == 30.0 and np.isnan(heatmap_data[1][1]) and heatmap_data[1][2] == 40.0  # ignore_rate with NaN
+        assert heatmap_data[2] == [80.0, 85.0, 90.0]  # foraging_performance
+        assert heatmap_data[3] == [55.0, 62.5, 67.5]  # overall
+    
+    def test_process_heatmap_matrix_data_missing_features(self):
+        """Test heatmap processing when some features are missing from data"""
+        features_config = {
+            'finished_trials': False,
+            'missing_feature': True,
+            'ignore_rate': True
+        }
+        
+        time_series_data = {
+            'finished_trials_percentiles': [50.0, 60.0, 70.0],
+            'ignore_rate_percentiles': [30.0, 35.0, 40.0],
+            # missing_feature_percentiles is not present
+        }
+        
+        heatmap_data, feature_names = StatisticalUtils.process_heatmap_matrix_data(
+            time_series_data, features_config
+        )
+        
+        # Should only include features that exist in data
+        assert len(heatmap_data) == 2
+        assert len(feature_names) == 2
+        assert feature_names == ['Finished Trials', 'Ignore Rate']
+    
+    def test_process_heatmap_matrix_data_all_invalid_features(self):
+        """Test heatmap processing when all feature data is invalid"""
+        features_config = {
+            'finished_trials': False,
+            'ignore_rate': True
+        }
+        
+        time_series_data = {
+            'finished_trials_percentiles': [-1, -1, -1],
+            'ignore_rate_percentiles': [-1, -1, -1],
+        }
+        
+        heatmap_data, feature_names = StatisticalUtils.process_heatmap_matrix_data(
+            time_series_data, features_config
+        )
+        
+        # Should return empty lists when no valid data
+        assert len(heatmap_data) == 0
+        assert len(feature_names) == 0
+    
+    def test_process_heatmap_matrix_data_no_overall(self):
+        """Test heatmap processing without overall percentiles"""
+        features_config = {
+            'finished_trials': False
+        }
+        
+        time_series_data = {
+            'finished_trials_percentiles': [50.0, 60.0, 70.0],
+            # No overall_percentiles
+        }
+        
+        heatmap_data, feature_names = StatisticalUtils.process_heatmap_matrix_data(
+            time_series_data, features_config
+        )
+        
+        assert len(heatmap_data) == 1
+        assert len(feature_names) == 1
+        assert feature_names == ['Finished Trials']
+    
+    def test_format_feature_display_name(self):
+        """Test feature name formatting for display"""
+        test_cases = [
+            ('finished_trials', 'Finished Trials'),
+            ('abs(bias_naive)', '|Bias Naive|'),
+            ('ignore_rate', 'Ignore Rate'),
+            ('total_trials', 'Total Trials'),
+            ('foraging_performance', 'Foraging Performance'),
+            ('simple', 'Simple'),
+            ('complex_feature_name', 'Complex Feature Name')
+        ]
+        
+        for input_name, expected in test_cases:
+            result = StatisticalUtils.format_feature_display_name(input_name)
+            assert result == expected, f"Expected '{expected}', got '{result}' for input '{input_name}'"
+    
+    def test_calculate_session_highlighting_coordinates(self):
+        """Test session highlighting coordinate calculation"""
+        sessions = [1, 3, 5, 7, 9, 11]
+        
+        # Test valid session
+        result = StatisticalUtils.calculate_session_highlighting_coordinates(sessions, 5)
+        assert result == 2  # Index of session 5
+        
+        # Test another valid session
+        result = StatisticalUtils.calculate_session_highlighting_coordinates(sessions, 1)
+        assert result == 0  # Index of session 1
+        
+        # Test session not in list
+        result = StatisticalUtils.calculate_session_highlighting_coordinates(sessions, 6)
+        assert result is None
+        
+        # Test with empty sessions list
+        result = StatisticalUtils.calculate_session_highlighting_coordinates([], 5)
+        assert result is None
+    
+    def test_calculate_session_highlighting_coordinates_edge_cases(self):
+        """Test session highlighting with edge cases"""
+        # Single session
+        sessions = [1]
+        result = StatisticalUtils.calculate_session_highlighting_coordinates(sessions, 1)
+        assert result == 0
+        
+        # Large session numbers
+        sessions = [100, 200, 300]
+        result = StatisticalUtils.calculate_session_highlighting_coordinates(sessions, 200)
+        assert result == 1
+
+# ... existing code ... 

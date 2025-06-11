@@ -5,6 +5,9 @@ from callbacks.shared_callback_utils import (
     format_multi_value, create_filter_badge
 )
 
+# Import new filtering utilities
+from app_utils.filter_utils import apply_all_filters
+
 # No need to re-create instances - they're shared from utilities
 # app_dataframe = AppDataFrame(app_utils=app_utils)  # Removed - using shared instance
 # app_filter = AppFilter()  # Removed - using shared instance
@@ -218,147 +221,28 @@ def update_table_data(time_window_value, stage_value, curriculum_value,
     formatted_df = pd.DataFrame(app_utils.get_table_display_data(use_cache=True))
     
     if formatted_df.empty:
-        print("⚠️  No table display data found, falling back to formatted data cache")
+        print(" No table display data found, falling back to formatted data cache")
         # Fallback to formatted data cache if UI cache is empty
         if app_utils._cache['formatted_data'] is not None:
             formatted_df = app_utils._cache['formatted_data'].copy()
         else:
-            print("🔄 No cached data found, triggering format_dataframe")
+            print("No cached data found, triggering format_dataframe")
             df = app_utils.get_session_data(use_cache=True)
             formatted_df = app_dataframe.format_dataframe(df)
     
-    print(f"📊 Starting with {len(formatted_df)} subjects before filtering")
-
-    # Apply time window filter directly to the session_date column
-    if time_window_value:
-        reference_date = formatted_df['session_date'].max()
-        start_date = reference_date - timedelta(days=time_window_value)
-        # Filter to sessions within time window
-        time_filtered = formatted_df[formatted_df['session_date'] >= start_date]
-        # Get most recent session for each subject in the window
-        time_filtered = time_filtered.sort_values('session_date', ascending=False)
-        formatted_df = time_filtered.drop_duplicates(subset=['subject_id'], keep='first')
-        print(f"Applied {time_window_value} day window filter: {len(formatted_df)} subjects")
-
-    # Apply subject ID filter if specified
-    if subject_id_value:
-        if isinstance(subject_id_value, list):
-            # Convert subject IDs to strings for consistent comparison
-            subject_id_strings = [str(sid) for sid in subject_id_value]
-            formatted_df = formatted_df[formatted_df["subject_id"].astype(str).isin(subject_id_strings)]
-            print(f"Applied subject ID filter for {len(subject_id_value)} subjects: {len(formatted_df)} subjects remaining")
-        else:
-            # Single subject ID
-            subject_id_string = str(subject_id_value)
-            formatted_df = formatted_df[formatted_df["subject_id"].astype(str) == subject_id_string]
-            print(f"Applied subject ID filter for {subject_id_string}: {len(formatted_df)} subjects remaining")
-
-    # Apply each filter if it has a value - handling multi-select
-    if stage_value:
-        if isinstance(stage_value, list):
-            formatted_df = formatted_df[formatted_df["current_stage_actual"].isin(stage_value)]
-        else:
-            formatted_df = formatted_df[formatted_df["current_stage_actual"] == stage_value]
-    
-    if curriculum_value:
-        if isinstance(curriculum_value, list):
-            formatted_df = formatted_df[formatted_df["curriculum_name"].isin(curriculum_value)]
-        else:
-            formatted_df = formatted_df[formatted_df["curriculum_name"] == curriculum_value]
-    
-    if rig_value:
-        if isinstance(rig_value, list):
-            formatted_df = formatted_df[formatted_df["rig"].isin(rig_value)]
-        else:
-            formatted_df = formatted_df[formatted_df["rig"] == rig_value]
-    
-    if trainer_value:
-        if isinstance(trainer_value, list):
-            formatted_df = formatted_df[formatted_df["trainer"].isin(trainer_value)]
-        else:
-            formatted_df = formatted_df[formatted_df["trainer"] == trainer_value]
-    
-    if pi_value:
-        if isinstance(pi_value, list):
-            formatted_df = formatted_df[formatted_df["PI"].isin(pi_value)]
-        else:
-            formatted_df = formatted_df[formatted_df["PI"] == pi_value]
-    
-    # Apply alert category filter if selected
-    if alert_category != "all":
-        if alert_category == "T":
-            # Filter for threshold alerts specifically
-            print("🔍 DEBUG: Checking threshold alert values...")
-            
-            # Debug: Check what threshold alert values we have
-            if 'threshold_alert' in formatted_df.columns:
-                threshold_values = formatted_df['threshold_alert'].value_counts()
-                print(f"  threshold_alert values: {threshold_values.to_dict()}")
-            
-            if 'total_sessions_alert' in formatted_df.columns:
-                total_values = formatted_df['total_sessions_alert'].value_counts()
-                print(f"  total_sessions_alert values: {total_values.to_dict()}")
-            
-            if 'stage_sessions_alert' in formatted_df.columns:
-                stage_values = formatted_df['stage_sessions_alert'].value_counts()
-                print(f"  stage_sessions_alert values: {stage_values.to_dict()}")
-            
-            if 'water_day_total_alert' in formatted_df.columns:
-                water_values = formatted_df['water_day_total_alert'].value_counts()
-                print(f"  water_day_total_alert values: {water_values.to_dict()}")
-            
-            # Match the actual threshold alert patterns
-            threshold_mask = (
-                # Overall threshold alert column set to 'T'
-                (formatted_df.get("threshold_alert", pd.Series(dtype='object')) == "T") |
-                # Individual threshold alerts contain "T |" pattern
-                (formatted_df.get("total_sessions_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False)) |
-                (formatted_df.get("stage_sessions_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False)) |
-                (formatted_df.get("water_day_total_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False))
-            )
-            
-            before_count = len(formatted_df)
-            formatted_df = formatted_df[threshold_mask]
-            after_count = len(formatted_df)
-            
-            print(f"🔽 Threshold filter applied: {before_count} → {after_count} subjects")
-            
-        elif alert_category == "NS":
-            # Filter for Not Scored subjects
-            formatted_df = formatted_df[formatted_df["percentile_category"] == "NS"]
-        else:
-            # Filter for specific percentile category (B, G, SB, SG)
-            formatted_df = formatted_df[formatted_df["percentile_category"] == alert_category]
-    
-    # Apply sorting if specified
-    if sort_option != "none":
-        print(f"Available columns for sorting: {list(formatted_df.columns)}")
-        
-        if sort_option == "overall_percentile_asc":
-            # Try session_overall_percentile first, fall back to overall_percentile
-            if 'session_overall_percentile' in formatted_df.columns:
-                print("Sorting by session_overall_percentile (ascending)")
-                formatted_df = formatted_df.sort_values("session_overall_percentile", ascending=True, na_position='last')
-            elif 'overall_percentile' in formatted_df.columns:
-                print("Sorting by overall_percentile (ascending)")
-                formatted_df = formatted_df.sort_values("overall_percentile", ascending=True, na_position='last')
-            else:
-                print("WARNING: No overall percentile column found for sorting")
-        elif sort_option == "overall_percentile_desc":
-            # Try session_overall_percentile first, fall back to overall_percentile
-            if 'session_overall_percentile' in formatted_df.columns:
-                print("Sorting by session_overall_percentile (descending)")
-                formatted_df = formatted_df.sort_values("session_overall_percentile", ascending=False, na_position='last')
-            elif 'overall_percentile' in formatted_df.columns:
-                print("Sorting by overall_percentile (descending)")
-                formatted_df = formatted_df.sort_values("overall_percentile", ascending=False, na_position='last')
-            else:
-                print("WARNING: No overall percentile column found for sorting")
-    
-    # Count percentile categories for debugging
-    percentile_counts = formatted_df["percentile_category"].value_counts().to_dict()
-    print(f"Percentile categories: {percentile_counts}")
-    print(f"Applied sorting: {sort_option}")
+    # Apply all filters using the extracted business logic functions
+    filtered_df = apply_all_filters(
+        df=formatted_df,
+        time_window_value=time_window_value,
+        stage_value=stage_value,
+        curriculum_value=curriculum_value,
+        rig_value=rig_value,
+        trainer_value=trainer_value,
+        pi_value=pi_value,
+        sort_option=sort_option,
+        alert_category=alert_category,
+        subject_id_value=subject_id_value
+    )
     
     # Convert to records for datatable
-    return formatted_df.to_dict("records") 
+    return filtered_df.to_dict("records") 
