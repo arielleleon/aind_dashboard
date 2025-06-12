@@ -1,8 +1,20 @@
-from dash import html, dcc
-import dash_bootstrap_components as dbc
-import plotly.graph_objects as go
+"""
+Subject percentile timeseries visualization component for AIND Dashboard
+
+This module creates interactive timeseries plots showing percentile progression
+over time with confidence intervals and bootstrap support.
+"""
+
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from typing import Dict, List, Optional, Any
+from app_utils.simple_logger import get_logger
+import dash_bootstrap_components as dbc
+from dash import html, dcc
+
+logger = get_logger('subject_percentile_timeseries')
 
 class AppSubjectPercentileTimeseries:
     def __init__(self):
@@ -130,7 +142,7 @@ class AppSubjectPercentileTimeseries:
             highlighted_session: int - Session to highlight
             show_confidence_intervals: bool - Whether to show confidence interval bands
         """
-        print(f"Creating percentile timeseries plot for subject with data keys: {list(subject_data.keys()) if subject_data else 'None'}")
+        logger.info(f"Creating percentile timeseries plot for subject with data keys: {list(subject_data.keys()) if subject_data else 'None'}")
         
         if not subject_data or 'sessions' not in subject_data:
             return self._create_empty_figure()
@@ -163,9 +175,9 @@ class AppSubjectPercentileTimeseries:
                 features_to_plot = list(self.features_config.keys())
                 show_overall_percentile = True
         
-        print(f"Features to plot (percentiles): {features_to_plot}")
-        print(f"Show overall percentile: {show_overall_percentile}")
-        print(f"Show confidence intervals: {show_confidence_intervals}")
+        logger.info(f"Features to plot (percentiles): {features_to_plot}")
+        logger.info(f"Show overall percentile: {show_overall_percentile}")
+        logger.info(f"Show confidence intervals: {show_confidence_intervals}")
         
         # Create strata abbreviation mapping for hover info
         strata_sessions_map = {}
@@ -181,14 +193,14 @@ class AppSubjectPercentileTimeseries:
             ci_upper_key = f"{feature}_percentile_ci_upper"
             
             if percentile_key not in subject_data:
-                print(f"No percentile data found for {feature}, skipping")
+                logger.info(f"No percentile data found for {feature}, skipping")
                 continue
                 
             percentile_data = subject_data[percentile_key]
             ci_lower_data = subject_data.get(ci_lower_key, [])
             ci_upper_data = subject_data.get(ci_upper_key, [])
             
-            print(f"Using percentile data for {feature}: {len(percentile_data)} values")
+            logger.info(f"Using percentile data for {feature}: {len(percentile_data)} values")
             
             # Check if we have CI data
             has_ci_data = (len(ci_lower_data) == len(percentile_data) and 
@@ -196,7 +208,7 @@ class AppSubjectPercentileTimeseries:
                           show_confidence_intervals)
             
             if has_ci_data:
-                print(f"CI data available for {feature}")
+                logger.info(f"CI data available for {feature}")
             
             # Get bootstrap indicator data for this feature
             bootstrap_indicator_key = f"{feature}_bootstrap_enhanced"
@@ -232,14 +244,14 @@ class AppSubjectPercentileTimeseries:
                         valid_bootstrap_indicators.append(False)
             
             if len(valid_data) < 2:
-                print(f"Insufficient valid percentile data for {feature}: {len(valid_data)} points")
+                logger.info(f"Insufficient valid percentile data for {feature}: {len(valid_data)} points")
                 continue
                 
             valid_sessions, valid_percentiles = zip(*valid_data)
             valid_sessions = list(valid_sessions)
             valid_percentiles = list(valid_percentiles)
             
-            print(f"Valid percentile data for {feature}: {len(valid_percentiles)} points, range: {min(valid_percentiles):.1f}% to {max(valid_percentiles):.1f}%")
+            logger.info(f"Valid percentile data for {feature}: {len(valid_percentiles)} points, range: {min(valid_percentiles):.1f}% to {max(valid_percentiles):.1f}%")
             
             # Get color for this feature
             feature_color = self.feature_colors.get(feature, '#000000')
@@ -278,7 +290,7 @@ class AppSubjectPercentileTimeseries:
                         name=f'{feature}_ci_band'
                     ))
                     
-                    print(f"Added CI bands for {feature}: {len(valid_sessions_ci)} sessions")
+                    logger.info(f"Added CI bands for {feature}: {len(valid_sessions_ci)} sessions")
 
             # Prepare hover data
             if i == 0:  # First trace gets strata info
@@ -346,7 +358,7 @@ class AppSubjectPercentileTimeseries:
             overall_ci_lower = subject_data.get('overall_percentiles_ci_lower', [])
             overall_ci_upper = subject_data.get('overall_percentiles_ci_upper', [])
             
-            print(f"Adding overall percentile trace: {len(overall_percentiles)} values")
+            logger.info(f"Adding overall percentile trace: {len(overall_percentiles)} values")
             
             # Check if we have overall CI data
             has_overall_ci = (len(overall_ci_lower) == len(overall_percentiles) and 
@@ -389,7 +401,7 @@ class AppSubjectPercentileTimeseries:
                 valid_sessions_overall = list(valid_sessions_overall)
                 valid_percentiles_overall = list(valid_percentiles_overall)
                 
-                print(f"Valid overall percentile data: {len(valid_percentiles_overall)} points, range: {min(valid_percentiles_overall):.1f}% to {max(valid_percentiles_overall):.1f}%")
+                logger.info(f"Valid overall percentile data: {len(valid_percentiles_overall)} points, range: {min(valid_percentiles_overall):.1f}% to {max(valid_percentiles_overall):.1f}%")
                 
                 # Add overall CI bands if available
                 if has_overall_ci and len(valid_overall_ci_lower) == len(valid_sessions_overall):
@@ -425,7 +437,7 @@ class AppSubjectPercentileTimeseries:
                             name='overall_ci_band'
                         ))
                         
-                        print(f"Added overall CI bands: {len(valid_sessions_overall_ci)} sessions")
+                        logger.info(f"Added overall CI bands: {len(valid_sessions_overall_ci)} sessions")
                 
                 # Create strata info for overall percentile hover
                 strata_hover_info_overall = [strata_sessions_map.get(session, 'Unknown') for session in valid_sessions_overall]
@@ -662,7 +674,7 @@ class AppSubjectPercentileTimeseries:
             outlier_data: list - List of boolean outlier indicators for each session
         """
         if not sessions or not outlier_data or len(outlier_data) != len(sessions):
-            print("No outlier data available or length mismatch for percentile time series markers")
+            logger.info("No outlier data available or length mismatch for percentile time series markers")
             return
         
         outlier_sessions = []
@@ -694,4 +706,4 @@ class AppSubjectPercentileTimeseries:
             showlegend=True
         ))
         
-        print(f"Added outlier markers to percentile plot for {len(outlier_sessions)} sessions: {outlier_sessions}") 
+        logger.info(f"Added outlier markers to percentile plot for {len(outlier_sessions)} sessions: {outlier_sessions}") 

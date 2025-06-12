@@ -9,6 +9,9 @@ from typing import Dict, List, Optional, Any, Tuple
 import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
+from app_utils.simple_logger import get_logger
+
+logger = get_logger('app_utils')
 
 
 class AppUtils:
@@ -53,13 +56,20 @@ class AppUtils:
         # Legacy compatibility
         self.percentile_calculator = self.percentile_coordinator.percentile_calculator
         self._cache = self.cache_manager._cache
+        
+        # Track cache access to reduce logging spam
+        self._cache_access_count = 0
 
     def get_session_data(self, load_bpod: bool = False, use_cache: bool = True) -> pd.DataFrame:
         """Get session data with caching support"""
         if use_cache and self.cache_manager.has('raw_data'):
-            print("Using cached raw session data")
+            self._cache_access_count += 1
+            # Only log initial cache usage - remove periodic spam
+            if self._cache_access_count == 1:
+                logger.info("Using cached session data")
             return self.cache_manager.get('raw_data')
         
+        logger.info("Loading fresh session data")
         data = self.data_loader.load(load_bpod=load_bpod) if load_bpod else self.data_loader.get_data()
         self.cache_manager.set('raw_data', data)
         self._invalidate_derived_caches()

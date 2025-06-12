@@ -2,7 +2,9 @@ from typing import Dict, List, Optional, Any, Tuple
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from app_utils.simple_logger import get_logger
 
+logger = get_logger('ui_utils')
 
 class UIDataManager:
     """
@@ -100,7 +102,6 @@ class UIDataManager:
         Returns:
             Dict[str, Any]: Optimized storage structure with bootstrap support
         """
-        print("Optimizing session data storage...")
         
         # Handle empty DataFrame case
         if session_data.empty or 'subject_id' not in session_data.columns:
@@ -281,15 +282,8 @@ class UIDataManager:
             'bootstrap_coverage': bootstrap_coverage
         }
         
-        print(f"Optimized storage created:")
-        print(f"  - {len(subject_data)} subjects")
-        print(f"  - {len(strata_reference)} strata references")
-        print(f"  - {len(session_data)} total sessions")
-        # PHASE 3: Report bootstrap enhancement status
-        print(f"  {len(bootstrap_enabled_strata_set)} strata with bootstrap enhancement")
-        if bootstrap_coverage:
-            bootstrap_features = sum(len(coverage['feature_coverage']) for coverage in bootstrap_coverage.values())
-            print(f" {bootstrap_features} feature-strata combinations analyzed for bootstrap coverage")
+        # Log single consolidated message about UI structures creation
+        logger.info(f"Created optimized storage and UI structures for {len(subject_data)} subjects")
         
         return optimized_storage
     
@@ -321,29 +315,16 @@ class UIDataManager:
         Returns:
             Dict[str, Any]: UI-optimized data structures
         """
-        print("Creating UI-optimized data structures...")
         
         # DEBUG: Check what columns are available in session_data
-        print(f" Session data columns ({len(session_data.columns)} total):")
-        session_percentile_cols = [col for col in session_data.columns if col.endswith('_session_percentile')]
-        rolling_avg_cols = [col for col in session_data.columns if col.endswith('_rolling_avg')]
-        category_cols = [col for col in session_data.columns if col.endswith('_category')]
-        overall_cols = [col for col in session_data.columns if 'overall_percentile' in col]
-        
-        print(f"  Session percentile columns ({len(session_percentile_cols)}): {session_percentile_cols}")
-        print(f"  Rolling average columns ({len(rolling_avg_cols)}): {rolling_avg_cols}")
-        print(f"  Category columns ({len(category_cols)}): {category_cols}")
-        print(f"  Overall percentile columns ({len(overall_cols)}): {overall_cols}")
+        logger.info(f"Pipeline processed {len(session_data.columns)} columns across {len(session_data.groupby('strata'))} strata")
         
         # Check if we have sample data with percentiles
         if len(session_data) > 0:
-            print(f"  Sample data for first row:")
-            sample_cols = session_percentile_cols[:2] + ['session_overall_percentile']
-            for col in sample_cols:
-                if col in session_data.columns:
-                    value = session_data.iloc[0][col]
-                    print(f"    {col}: {value}")
-        print("")  # Empty line for readability
+            logger.info(f"Sample data validation: {len(session_data)} sessions with percentile data")
+        
+        # Log single consolidated summary message
+        logger.info(f"Unified pipeline complete: {len(session_data)} sessions processed")
         
         ui_structures = {
             'feature_rank_data': {},
@@ -430,12 +411,11 @@ class UIDataManager:
         # 5. Table Display Cache
         ui_structures['table_display_cache'] = self._create_table_display_cache(session_data, bootstrap_manager)
         
-        print(f"UI structures created:")
-        print(f"  - Feature rank data: {len(ui_structures['feature_rank_data'])} subjects")
-        print(f"  - Subject lookups: {len(ui_structures['subject_lookup'])} subjects")
-        print(f"  - Strata lookups: {len(ui_structures['strata_lookup'])} strata")
-        print(f"  - Time series data: {len(ui_structures['time_series_data'])} subjects")
-        print(f"  - Table display cache: {len(ui_structures['table_display_cache'])} rows")
+        # Store data hash in UI structures for cache validation
+        ui_structures['data_hash'] = self._calculate_data_hash(session_data)
+        
+        # Single consolidated UI completion message
+        logger.info(f"UI structures created for {len(ui_structures['time_series_data'])} subjects")
         
         return ui_structures 
     
@@ -443,8 +423,18 @@ class UIDataManager:
         """Create time series data for visualization components"""
         time_series_data = {}
         
-        for subject_id, subject_sessions in session_data.groupby('subject_id'):
-            subject_sessions = subject_sessions.sort_values('session_date')
+        # Counters for aggregate reporting instead of per-subject spam
+        total_subjects_processed = 0
+        feature_stats = {feature: {'subjects_with_data': 0, 'total_valid_points': 0, 'ci_sessions': 0, 'bootstrap_sessions': 0} 
+                        for feature in self.features}
+        overall_stats = {'subjects_with_data': 0, 'total_valid_points': 0, 'ci_sessions': 0, 'bootstrap_sessions': 0}
+        
+        # Initialize tracking for high outlier subjects
+        high_outlier_subjects = []
+        
+        for subject_id, subject_sessions_data in session_data.groupby('subject_id'):
+            total_subjects_processed += 1
+            subject_sessions = subject_sessions_data.sort_values('session_date')
             
             # Extract time series data in compressed format
             time_series = {
@@ -459,20 +449,28 @@ class UIDataManager:
             if 'session_overall_percentile_ci_lower' in subject_sessions.columns:
                 time_series['overall_percentiles_ci_lower'] = subject_sessions['session_overall_percentile_ci_lower'].fillna(-1).tolist()
                 time_series['overall_percentiles_ci_upper'] = subject_sessions['session_overall_percentile_ci_upper'].fillna(-1).tolist()
-                print(f"Added overall percentile CI data for {subject_id}: {len(subject_sessions['session_overall_percentile_ci_lower'].dropna())} valid CI bounds")
+                valid_ci_count = len(subject_sessions['session_overall_percentile_ci_lower'].dropna())
+                if valid_ci_count > 0:
+                    overall_stats['ci_sessions'] += valid_ci_count
+                    overall_stats['subjects_with_data'] += 1
             
             # PHASE 2: Add outlier detection information for visualization
             if 'is_outlier' in subject_sessions.columns:
                 time_series['is_outlier'] = subject_sessions['is_outlier'].fillna(False).tolist()
                 outlier_count = subject_sessions['is_outlier'].sum()
-                print(f"Added outlier data for {subject_id}: {outlier_count} outlier sessions out of {len(subject_sessions)}")
+                # Track high outlier subjects instead of logging individually
+                if outlier_count > len(subject_sessions) * 0.2:  # More than 20% outliers
+                    high_outlier_subjects.append((subject_id, outlier_count, len(subject_sessions)))
             
             # Add RAW feature values for timeseries plotting (not the processed rolling averages)
             for feature in self.features:
                 # Store raw feature values for timeseries component to apply its own rolling average
                 if feature in subject_sessions.columns:
                     time_series[f"{feature}_raw"] = subject_sessions[feature].fillna(-1).tolist()
-                    print(f"Added raw data for {feature}: {len(subject_sessions[feature].dropna())} valid values")
+                    valid_count = len(subject_sessions[feature].dropna())
+                    if valid_count > 0:
+                        feature_stats[feature]['subjects_with_data'] += 1
+                        feature_stats[feature]['total_valid_points'] += valid_count
                 
                 # Keep percentiles for fallback compatibility
                 percentile_col = f"{feature}_session_percentile"
@@ -486,13 +484,17 @@ class UIDataManager:
                 if ci_lower_col in subject_sessions.columns and ci_upper_col in subject_sessions.columns:
                     time_series[f"{feature}_percentile_ci_lower"] = subject_sessions[ci_lower_col].fillna(-1).tolist()
                     time_series[f"{feature}_percentile_ci_upper"] = subject_sessions[ci_upper_col].fillna(-1).tolist()
-                    print(f"Added CI data for {feature}: {len(subject_sessions[ci_lower_col].dropna())} valid CI bounds")
+                    valid_ci_count = len(subject_sessions[ci_lower_col].dropna())
+                    feature_stats[feature]['ci_sessions'] += valid_ci_count
                 
                 # PHASE 3: Add bootstrap indicators for feature percentiles
                 bootstrap_indicator_col = f"{feature}_bootstrap_enhanced"
                 if bootstrap_indicator_col in subject_sessions.columns:
-                    time_series[f"{feature}_bootstrap_enhanced"] = subject_sessions[bootstrap_indicator_col].fillna(False).tolist()
-                    print(f"Added bootstrap indicators for {feature}: {subject_sessions[bootstrap_indicator_col].sum()} bootstrap-enhanced sessions")
+                    # Fix FutureWarning by using infer_objects()
+                    bootstrap_data = subject_sessions[bootstrap_indicator_col].fillna(False).infer_objects(copy=False)
+                    time_series[f"{feature}_bootstrap_enhanced"] = bootstrap_data.tolist()
+                    bootstrap_count = subject_sessions[bootstrap_indicator_col].sum()
+                    feature_stats[feature]['bootstrap_sessions'] += bootstrap_count
                 
                 # Add bootstrap CIs for raw rolling averages (separate from percentile CIs)
                 if bootstrap_manager is not None:
@@ -504,16 +506,10 @@ class UIDataManager:
                         # Use pre-computed values (replace NaN with -1 for UI compatibility)
                         bootstrap_ci_lower_values = subject_sessions[ci_lower_col].fillna(-1).tolist()
                         bootstrap_ci_upper_values = subject_sessions[ci_upper_col].fillna(-1).tolist()
-                        
-                        # Count valid CIs for reporting
-                        valid_bootstrap_cis = sum(1 for lower, upper in zip(bootstrap_ci_lower_values, bootstrap_ci_upper_values) 
-                                                if lower != -1 and upper != -1)
-                        print(f"Using pre-computed bootstrap CIs for {feature}: {valid_bootstrap_cis} valid CIs")
                     else:
                         # Fallback: create empty arrays if pre-computed CIs not available
                         bootstrap_ci_lower_values = [-1] * len(subject_sessions)
                         bootstrap_ci_upper_values = [-1] * len(subject_sessions)
-                        print(f"No pre-computed bootstrap CIs for {feature} - using empty arrays")
                     
                     # Add bootstrap CI arrays to time series
                     time_series[f"{feature}_bootstrap_ci_lower"] = bootstrap_ci_lower_values
@@ -531,11 +527,34 @@ class UIDataManager:
             # PHASE 3: Add overall percentile bootstrap indicator
             overall_bootstrap_col = "session_overall_bootstrap_enhanced"
             if overall_bootstrap_col in subject_sessions.columns:
-                time_series["overall_bootstrap_enhanced"] = subject_sessions[overall_bootstrap_col].fillna(False).tolist()
-                overall_bootstrap_count = subject_sessions[overall_bootstrap_col].sum()
-                print(f"Added overall bootstrap indicators for {subject_id}: {overall_bootstrap_count} bootstrap-enhanced sessions")
+                # Fix FutureWarning by using infer_objects()
+                overall_bootstrap_data = subject_sessions[overall_bootstrap_col].fillna(False).infer_objects(copy=False)
+                time_series["overall_bootstrap_enhanced"] = overall_bootstrap_data.tolist()
+                bootstrap_count = subject_sessions[overall_bootstrap_col].sum()
+                overall_stats['bootstrap_sessions'] += bootstrap_count
             
             time_series_data[subject_id] = time_series
+        
+        # Log aggregate summary instead of per-subject details
+        logger.info(f"Time series data created for {total_subjects_processed} subjects")
+        
+        # Log consolidated high outlier summary if any found
+        if high_outlier_subjects:
+            logger.info(f"High outlier rate detected for {len(high_outlier_subjects)} subjects")
+        
+        # Log feature-level summaries only if significant
+        features_with_data = [f for f, stats in feature_stats.items() if stats['subjects_with_data'] > 0]
+        if features_with_data:
+            logger.info(f"Features with data: {len(features_with_data)} ({', '.join(features_with_data)})")
+            
+            # Report bootstrap enhancement summary
+            total_bootstrap_sessions = sum(stats['bootstrap_sessions'] for stats in feature_stats.values())
+            if total_bootstrap_sessions > 0:
+                logger.info(f"Bootstrap enhancement: {total_bootstrap_sessions} total feature-sessions enhanced")
+        
+        # Report overall percentile summary
+        if overall_stats['subjects_with_data'] > 0:
+            logger.info(f"Overall percentiles: {overall_stats['subjects_with_data']} subjects with CI data, {overall_stats['bootstrap_sessions']} bootstrap-enhanced sessions")
         
         return time_series_data
     
@@ -721,12 +740,8 @@ class UIDataManager:
                 # Calculate CI width if both bounds are available
                 if not pd.isna(ci_lower_value) and not pd.isna(ci_upper_value):
                     ci_width = ci_upper_value - ci_lower_value
-                    display_row[f"{feature}_bootstrap_ci_width"] = ci_width
-                    
-                    # MODERATE: Use improved but more lenient certainty classification
-                    rolling_avg_value = row.get(rolling_avg_col, 0)
                     display_row[f"{feature}_bootstrap_ci_certainty"] = self._calculate_ci_certainty_moderate(
-                        ci_width, rolling_avg_value, feature
+                        ci_width, row.get(rolling_avg_col, 0), feature
                     )
                 else:
                     display_row[f"{feature}_bootstrap_ci_width"] = np.nan
@@ -876,52 +891,25 @@ def get_optimized_table_data(app_utils, use_cache: bool = True) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Recent sessions data for table display
     """
-    print("🔍 Getting optimized table data with intelligent cache fallback...")
+    logger.info("Getting optimized table data with intelligent cache fallback...")
     
-    # CRITICAL FIX: First try to use UI-optimized table display data (fastest path)
+    # First try to use UI-optimized table display data (fastest path)
     table_data = app_utils.get_table_display_data(use_cache=use_cache)
     if table_data:
-        print("✅ Using UI-optimized table display data (no pipeline re-run needed)")
-        recent_sessions = pd.DataFrame(table_data)
-        print(f"Loaded {len(recent_sessions)} subjects from UI cache")
-        return recent_sessions
+        logger.info(f"Loaded {len(table_data)} subjects from UI cache")
+        return pd.DataFrame(table_data)
     
     # Second option: Use cached session-level data
-    elif (app_utils._cache.get('session_level_data') is not None):
-        print("🔄 Using cached session-level data to get most recent sessions")
-        recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=use_cache)
-        print(f"Selected most recent session for {len(recent_sessions)} subjects")
-        return recent_sessions
+    elif hasattr(app_utils, '_cache') and app_utils._cache.get('session_level_data') is not None:
+        logger.info(f"Selected most recent session for subjects")
+        return app_utils.get_most_recent_subject_sessions(use_cache=use_cache)
     
     else:
-        # FIXED: Check if pipeline is already running or recently completed
-        # Only re-run pipeline if absolutely necessary to avoid expensive duplication
-        session_level_data = app_utils._cache.get('session_level_data')
-        if session_level_data is not None:
-            print("✅ Session-level data found in cache - using cached data")
-            recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=use_cache)
-            print(f"Selected most recent session for {len(recent_sessions)} subjects")
-            return recent_sessions
-        else:
-            print("⚠️  No cached data available - this should not happen after app initialization")
-            print("🔄 Unified pipeline not run yet - processing now to ensure data availability...")
-            
-            # We need to get the original data for pipeline processing
-            # This is a fallback scenario, so we'll use whatever data is available
-            app_utils.process_data_pipeline(use_cache=False)
-            print("✅ Unified pipeline complete - UI structures now available")
-            
-            # Now get the UI-optimized data
-            table_data = app_utils.get_table_display_data(use_cache=use_cache)
-            if table_data:
-                recent_sessions = pd.DataFrame(table_data)
-                print(f"Loaded {len(recent_sessions)} subjects from UI cache")
-                return recent_sessions
-            else:
-                # Final fallback
-                recent_sessions = app_utils.get_most_recent_subject_sessions(use_cache=use_cache)
-                print(f"Selected most recent session for {len(recent_sessions)} subjects")
-                return recent_sessions
+        # Final fallback - need to run pipeline
+        logger.info("Processing data pipeline for table data...")
+        # Run pipeline with fresh data processing
+        app_utils.process_data_pipeline(use_cache=False)
+        return app_utils.get_most_recent_subject_sessions(use_cache=use_cache)
 
 
 def process_unified_alerts_integration(recent_sessions: pd.DataFrame, app_utils, threshold_config: dict = None, stage_thresholds: dict = None) -> pd.DataFrame:
@@ -944,7 +932,7 @@ def process_unified_alerts_integration(recent_sessions: pd.DataFrame, app_utils,
     Returns:
         pd.DataFrame: Session data with integrated alerts
     """
-    print("🚨 Processing unified alerts integration...")
+    logger.info("Processing unified alerts integration...")
     
     # Step 1: Initialize alert service if needed
     if app_utils.alert_service is None:
@@ -955,48 +943,28 @@ def process_unified_alerts_integration(recent_sessions: pd.DataFrame, app_utils,
     
     # Step 3: Get unified alerts for these subjects  
     unified_alerts = app_utils.get_unified_alerts(subject_ids)
-    print(f"Got unified alerts for {len(unified_alerts)} subjects")
+    logger.info(f"Got unified alerts for {len(unified_alerts)} subjects")
     
     # Step 4: Apply alerts and format output dataframe
     # Start with the most recent sessions and add alert columns
     output_df = recent_sessions.copy()
     
-    # DEBUG: Show what columns are available from the unified pipeline
-    print(f"\nDEBUG: Columns available from unified pipeline ({len(output_df.columns)} total):")
-    session_percentile_cols = [col for col in output_df.columns if col.endswith('_session_percentile')]
-    rolling_avg_cols = [col for col in output_df.columns if col.endswith('_rolling_avg')]
-    category_cols = [col for col in output_df.columns if col.endswith('_category')]
-    overall_cols = [col for col in output_df.columns if 'overall_percentile' in col]
-    
-    print(f"  Session percentile columns ({len(session_percentile_cols)}): {session_percentile_cols}")
-    print(f"  Rolling average columns ({len(rolling_avg_cols)}): {rolling_avg_cols}")
-    print(f"  Category columns ({len(category_cols)}): {category_cols}")
-    print(f"  Overall percentile columns ({len(overall_cols)}): {overall_cols}")
-    
-    # Check if we have sample data
-    if len(output_df) > 0:
-        print(f"  Sample data for first subject ({output_df.iloc[0]['subject_id']}):")
-        sample_cols = session_percentile_cols[:2] + ['overall_percentile'] if session_percentile_cols else ['overall_percentile']
-        for col in sample_cols:
-            if col in output_df.columns:
-                value = output_df.iloc[0][col]
-                print(f"    {col}: {value}")
-    print("")  # Empty line for readability
+    logger.info(f"Pipeline complete: {len(output_df.columns)} columns processed for {len(output_df)} subjects")
     
     # Step 5: Initialize alert columns if not already present (for UI cache compatibility)
     for col in ['percentile_category', 'threshold_alert', 'combined_alert', 'ns_reason', 'strata_abbr',
                'total_sessions_alert', 'stage_sessions_alert', 'water_day_total_alert']:
         if col not in output_df.columns:
             default_val = 'NS' if col in ['percentile_category', 'combined_alert'] else ('N' if col.endswith('_alert') else '')
-            output_df.loc[:, col] = default_val
+            output_df[col] = default_val
     
     # Step 6: THRESHOLD ALERTS: Check if threshold alerts are already computed in UI cache
     threshold_alerts_precomputed = 'threshold_alert' in output_df.columns and output_df['threshold_alert'].notna().any()
     
     if threshold_alerts_precomputed:
-        print("✅ Using pre-computed threshold alerts from UI cache")
+        logger.info("Using pre-computed threshold alerts from UI cache")
     else:
-        print("🔄 Computing threshold alerts (UI cache not available)")
+        logger.info("Computing threshold alerts (UI cache not available)")
         
         # Only compute if we have threshold configuration
         if threshold_config is not None and stage_thresholds is not None:
@@ -1037,7 +1005,7 @@ def process_unified_alerts_integration(recent_sessions: pd.DataFrame, app_utils,
                         water_alert = threshold_analyzer.check_water_day_total(water_day_total)
                         output_df.loc[idx, 'water_day_total_alert'] = water_alert['display_format']
             
-            print(f"Threshold alerts calculated for {len(output_df)} subjects")
+            logger.info(f"Threshold alerts calculated for {len(output_df)} subjects")
     
     # Step 7: Apply alerts from unified_alerts
     for subject_id, alerts in unified_alerts.items():
@@ -1054,8 +1022,7 @@ def process_unified_alerts_integration(recent_sessions: pd.DataFrame, app_utils,
         if alert_category == 'NS' and 'ns_reason' in alerts:
             output_df.loc[mask, 'ns_reason'] = alerts['ns_reason']
         
-        # FIXED: Apply threshold alerts from unified alerts structure
-        # The unified alerts structure has threshold data under 'threshold' key
+        # Apply threshold alerts from unified alerts structure
         threshold_data = alerts.get('threshold', {})
         
         # Check if there's an overall threshold alert 
@@ -1088,7 +1055,7 @@ def process_unified_alerts_integration(recent_sessions: pd.DataFrame, app_utils,
                     value = water_alert.get('value', '')
                     output_df.loc[mask, 'water_day_total_alert'] = f"T | {value:.1f}"
         else:
-            # FIXED: Even with precomputed threshold alerts, we still need to apply them from unified alerts
+            # Even with precomputed threshold alerts, we still need to apply them from unified alerts
             if overall_threshold_alert == 'T':
                 output_df.loc[mask, 'threshold_alert'] = 'T'
         
@@ -1104,19 +1071,15 @@ def process_unified_alerts_integration(recent_sessions: pd.DataFrame, app_utils,
         else:
             output_df.loc[mask, 'combined_alert'] = alert_category
     
-    print(f"Applied alerts to {len(output_df)} subjects")
+    logger.info(f"Applied alerts to {len(output_df)} subjects")
     
-    # DEBUG: Check final threshold alert counts
-    threshold_alert_count = (output_df['threshold_alert'] == 'T').sum()
+    # Report final alert counts  
+    threshold_alert_count = output_df['threshold_alert'].str.contains(r'T \|', na=False).sum()
     total_sessions_alert_count = output_df['total_sessions_alert'].str.contains(r'T \|', na=False).sum()
-    stage_sessions_alert_count = output_df['stage_sessions_alert'].str.contains(r'T \|', na=False).sum()
+    stage_sessions_alert_count = output_df['stage_sessions_alert'].str.contains(r'T \|', na=False).sum() 
     water_day_alert_count = output_df['water_day_total_alert'].str.contains(r'T \|', na=False).sum()
     
-    print(f"Final threshold alert counts:")
-    print(f"  - Overall threshold alerts: {threshold_alert_count}")
-    print(f"  - Total sessions alerts: {total_sessions_alert_count}")
-    print(f"  - Stage sessions alerts: {stage_sessions_alert_count}")
-    print(f"  - Water day total alerts: {water_day_alert_count}")
+    logger.info(f"Alert summary: {threshold_alert_count} threshold, {total_sessions_alert_count} total sessions, {stage_sessions_alert_count} stage sessions, {water_day_alert_count} water day alerts")
     
     return output_df
 
@@ -1138,7 +1101,7 @@ def format_strata_abbreviations(df: pd.DataFrame, strata_column: str = 'strata',
     Returns:
         pd.DataFrame: DataFrame with strata abbreviations added
     """
-    print("📝 Applying strata abbreviation formatting...")
+    logger.info("Applying strata abbreviation formatting...")
     
     def get_abbreviated_strata(strata_name):
         """
@@ -1190,17 +1153,19 @@ def format_strata_abbreviations(df: pd.DataFrame, strata_column: str = 'strata',
         else:
             return strata_name.replace(" ", "")
     
-    # Apply abbreviations to strata names if not already present
+    # Apply abbreviations to strata names if not already present or if missing strata column
     output_df = df.copy()
+    
+    if strata_column not in output_df.columns:
+        logger.warning(f"Strata column '{strata_column}' not found in dataframe")
+        output_df[abbr_column] = ''
+        return output_df
+    
     if abbr_column not in output_df.columns or output_df[abbr_column].isna().all():
-        if strata_column in output_df.columns:
-            output_df.loc[:, abbr_column] = output_df[strata_column].apply(get_abbreviated_strata)
-            print(f"Applied strata abbreviations to {len(output_df)} rows")
-        else:
-            print(f"Warning: Strata column '{strata_column}' not found in dataframe")
-            output_df.loc[:, abbr_column] = ''
+        output_df[abbr_column] = output_df[strata_column].apply(get_abbreviated_strata)
+        logger.info("Strata abbreviations applied")
     else:
-        print("Strata abbreviations already present, skipping")
+        logger.info("Strata abbreviations already present, skipping")
     
     return output_df
 

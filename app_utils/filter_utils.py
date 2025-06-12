@@ -1,38 +1,48 @@
 from typing import Dict, List, Optional, Any
 import pandas as pd
 from datetime import datetime, timedelta
+from app_utils.simple_logger import get_logger
 
+# Initialize logger for filter operations
+logger = get_logger('filters')
 
-def apply_time_window_filter(df: pd.DataFrame, time_window_days: int) -> pd.DataFrame:
+def apply_time_window_filter(df: pd.DataFrame, time_window_value: int) -> pd.DataFrame:
     """
-    Apply time window filtering with subject deduplication
+    Apply time window filtering to show sessions from last N days only
     
     Parameters:
         df: DataFrame to filter
-        time_window_days: Number of days to include from the latest session date
-        
+        time_window_value: Number of days to include (None = no filter)
+    
     Returns:
-        Filtered DataFrame with most recent session per subject within time window
+        Filtered DataFrame
     """
-    if df.empty or not time_window_days:
+    if df.empty or time_window_value is None:
+        return df
+        
+    if time_window_value <= 0:
         return df
     
-    print(f"Starting with {len(df)} subjects before time window filtering")
+    # Get the current date and calculate the cutoff
+    current_date = pd.Timestamp.now()
+    cutoff_date = current_date - pd.Timedelta(days=time_window_value)
     
-    # Apply time window filter directly to the session_date column
-    reference_date = df['session_date'].max()
-    start_date = reference_date - timedelta(days=time_window_days)
+    # Ensure session_date is datetime
+    if 'session_date' in df.columns:
+        df = df.copy()
+        df['session_date'] = pd.to_datetime(df['session_date'])
+        
+        # Filter sessions within the time window
+        filtered_df = df[df['session_date'] >= cutoff_date]
+        
+        # Remove duplicate subjects (keep most recent session)
+        if not filtered_df.empty:
+            filtered_df = filtered_df.sort_values('session_date').groupby('subject_id').last().reset_index()
+        
+        logger.info(f"Applied {time_window_value} day window filter: {len(filtered_df)} subjects")
+        return filtered_df
     
-    # Filter to sessions within time window
-    time_filtered = df[df['session_date'] >= start_date]
-    
-    # Get most recent session for each subject in the window
-    time_filtered = time_filtered.sort_values('session_date', ascending=False)
-    filtered_df = time_filtered.drop_duplicates(subset=['subject_id'], keep='first')
-    
-    print(f"Applied {time_window_days} day window filter: {len(filtered_df)} subjects")
-    
-    return filtered_df
+    return df
 
 
 def apply_multi_select_filters(df: pd.DataFrame, filter_configs: Dict[str, Any]) -> pd.DataFrame:
@@ -59,12 +69,12 @@ def apply_multi_select_filters(df: pd.DataFrame, filter_configs: Dict[str, Any])
             # Convert subject IDs to strings for consistent comparison
             subject_id_strings = [str(sid) for sid in subject_id_value]
             filtered_df = filtered_df[filtered_df["subject_id"].astype(str).isin(subject_id_strings)]
-            print(f"Applied subject ID filter for {len(subject_id_value)} subjects: {len(filtered_df)} subjects remaining")
+            logger.info(f"Applied subject ID filter for {len(subject_id_value)} subjects: {len(filtered_df)} subjects remaining")
         else:
             # Single subject ID
             subject_id_string = str(subject_id_value)
             filtered_df = filtered_df[filtered_df["subject_id"].astype(str) == subject_id_string]
-            print(f"Applied subject ID filter for {subject_id_string}: {len(filtered_df)} subjects remaining")
+            logger.info(f"Applied subject ID filter for {subject_id_string}: {len(filtered_df)} subjects remaining")
 
     # Apply each filter if it has a value - handling multi-select
     stage_value = filter_configs.get('stage')
@@ -148,17 +158,17 @@ def apply_alert_category_filter(df: pd.DataFrame, alert_category: str) -> pd.Dat
                 return alert_coordinator.filter_by_alert_category(df, alert_category)
             else:
                 # Fallback to old logic if coordinator not available
-                print(" Alert coordinator not available, using fallback logic")
+                logger.info(" Alert coordinator not available, using fallback logic")
                 return _apply_alert_category_filter_fallback(df, alert_category)
                 
         except ImportError:
             # If shared_callback_utils not available, use fallback
-            print(" Cannot import app_utils, using fallback logic")
+            logger.info(" Cannot import app_utils, using fallback logic")
             return _apply_alert_category_filter_fallback(df, alert_category)
             
     except Exception as e:
-        print(f" Error in alert category filtering: {str(e)}")
-        print(" Using fallback logic")
+        logger.error(f" Error in alert category filtering: {str(e)}")
+        logger.info(" Using fallback logic")
         return _apply_alert_category_filter_fallback(df, alert_category)
 
 
@@ -178,30 +188,10 @@ def _apply_alert_category_filter_fallback(df: pd.DataFrame, alert_category: str)
     """
     if alert_category == "T":
         # Original threshold alert logic as fallback
-        print("DEBUG: Using fallback threshold alert filtering...")
-        
-        # Debug: Check what threshold alert values we have
-        if 'threshold_alert' in df.columns:
-            threshold_values = df['threshold_alert'].value_counts()
-            print(f"  threshold_alert values: {threshold_values.to_dict()}")
-        
-        if 'total_sessions_alert' in df.columns:
-            total_values = df['total_sessions_alert'].value_counts()
-            print(f"  total_sessions_alert values: {total_values.to_dict()}")
-        
-        if 'stage_sessions_alert' in df.columns:
-            stage_values = df['stage_sessions_alert'].value_counts()
-            print(f"  stage_sessions_alert values: {stage_values.to_dict()}")
-        
-        if 'water_day_total_alert' in df.columns:
-            water_values = df['water_day_total_alert'].value_counts()
-            print(f"  water_day_total_alert values: {water_values.to_dict()}")
-        
-        # Match the actual threshold alert patterns
         threshold_mask = (
             # Overall threshold alert column set to 'T'
             (df.get("threshold_alert", pd.Series(dtype='object')) == "T") |
-            # Individual threshold alerts contain "T |" pattern
+            # Individual threshold alerts contain "T |" pattern  
             (df.get("total_sessions_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False)) |
             (df.get("stage_sessions_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False)) |
             (df.get("water_day_total_alert", pd.Series(dtype='object')).str.contains(r'T \|', na=False))
@@ -211,62 +201,57 @@ def _apply_alert_category_filter_fallback(df: pd.DataFrame, alert_category: str)
         filtered_df = df[threshold_mask]
         after_count = len(filtered_df)
         
-        print(f"Fallback threshold filter applied: {before_count} → {after_count} subjects")
-        
-    elif alert_category == "NS":
-        # Filter for Not Scored subjects - use the correct column name
-        percentile_col = 'overall_percentile_category' if 'overall_percentile_category' in df.columns else 'percentile_category'
-        filtered_df = df[df[percentile_col] == "NS"]
-    else:
-        # Filter for specific percentile category (B, G, SB, SG) - use the correct column name
-        percentile_col = 'overall_percentile_category' if 'overall_percentile_category' in df.columns else 'percentile_category'
-        filtered_df = df[df[percentile_col] == alert_category]
+        logger.info(f"Fallback threshold filter applied: {before_count} → {after_count} subjects")
+        return filtered_df
     
-    return filtered_df
+    elif alert_category == "NS":
+        # Not Scored subjects
+        percentile_col = 'overall_percentile_category' if 'overall_percentile_category' in df.columns else 'percentile_category'
+        return df[df[percentile_col] == "NS"]
+    else:
+        # Percentile category filtering (B, G, SB, SG)
+        percentile_col = 'overall_percentile_category' if 'overall_percentile_category' in df.columns else 'percentile_category'
+        return df[df[percentile_col] == alert_category]
 
 
 def apply_sorting_logic(df: pd.DataFrame, sort_option: str) -> pd.DataFrame:
     """
-    Apply sorting with column fallback handling
+    Apply sorting logic to the filtered dataframe
+    
+    This function handles the different sorting options for the main data table,
+    with fallback logic for different column name variations.
     
     Parameters:
         df: DataFrame to sort
-        sort_option: Sort option ('none', 'overall_percentile_asc', 'overall_percentile_desc')
+        sort_option: Sort option string
         
     Returns:
         Sorted DataFrame
     """
-    if df.empty or sort_option == "none":
+    if df.empty or sort_option is None:
         return df
     
-    print(f"Available columns for sorting: {list(df.columns)}")
+    try:
+        if sort_option == "overall_percentile_asc":
+            if 'session_overall_percentile' in df.columns:
+                df = df.sort_values('session_overall_percentile', ascending=True)
+            elif 'overall_percentile' in df.columns:
+                df = df.sort_values('overall_percentile', ascending=True)
+            else:
+                logger.warning("No overall percentile column found for sorting")
+                
+        elif sort_option == "overall_percentile_desc":
+            if 'session_overall_percentile' in df.columns:
+                df = df.sort_values('session_overall_percentile', ascending=False)
+            elif 'overall_percentile' in df.columns:
+                df = df.sort_values('overall_percentile', ascending=False)
+            else:
+                logger.warning("No overall percentile column found for sorting")
+        
+    except Exception as e:
+        logger.error(f"Error applying sort option '{sort_option}': {str(e)}")
     
-    if sort_option == "overall_percentile_asc":
-        # Try session_overall_percentile first, fall back to overall_percentile
-        if 'session_overall_percentile' in df.columns:
-            print("Sorting by session_overall_percentile (ascending)")
-            sorted_df = df.sort_values("session_overall_percentile", ascending=True, na_position='last')
-        elif 'overall_percentile' in df.columns:
-            print("Sorting by overall_percentile (ascending)")
-            sorted_df = df.sort_values("overall_percentile", ascending=True, na_position='last')
-        else:
-            print("WARNING: No overall percentile column found for sorting")
-            sorted_df = df
-    elif sort_option == "overall_percentile_desc":
-        # Try session_overall_percentile first, fall back to overall_percentile
-        if 'session_overall_percentile' in df.columns:
-            print("Sorting by session_overall_percentile (descending)")
-            sorted_df = df.sort_values("session_overall_percentile", ascending=False, na_position='last')
-        elif 'overall_percentile' in df.columns:
-            print("Sorting by overall_percentile (descending)")
-            sorted_df = df.sort_values("overall_percentile", ascending=False, na_position='last')
-        else:
-            print("WARNING: No overall percentile column found for sorting")
-            sorted_df = df
-    else:
-        sorted_df = df
-    
-    return sorted_df
+    return df
 
 
 def apply_all_filters(df: pd.DataFrame, time_window_value: int, stage_value: Any, 
@@ -316,9 +301,9 @@ def apply_all_filters(df: pd.DataFrame, time_window_value: int, stage_value: Any
     percentile_col = 'overall_percentile_category' if 'overall_percentile_category' in filtered_df.columns else 'percentile_category'
     if percentile_col in filtered_df.columns:
         percentile_counts = filtered_df[percentile_col].value_counts().to_dict()
-        print(f"Percentile categories: {percentile_counts}")
+        logger.info(f"Percentile categories: {percentile_counts}")
     else:
-        print(f"No percentile category column found. Available columns: {list(filtered_df.columns)}")
-    print(f"Applied sorting: {sort_option}")
+        logger.info(f"No percentile category column found. Available columns: {list(filtered_df.columns)}")
+    logger.info(f"Applied sorting: {sort_option}")
     
     return filtered_df 

@@ -1,7 +1,18 @@
-import plotly.graph_objects as go
-from dash import dcc
+"""
+Subject percentile heatmap visualization component for AIND Dashboard
+
+This module creates interactive heatmap visualizations showing percentile data
+across sessions with strata transitions and outlier highlighting.
+"""
+
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
+from typing import Dict, List, Optional, Any
+from app_utils.simple_logger import get_logger
+from dash import dcc
+
+logger = get_logger('subject_percentile_heatmap')
 
 class AppSubjectPercentileHeatmap:
     def __init__(self):
@@ -32,7 +43,7 @@ class AppSubjectPercentileHeatmap:
             dcc.Graph: Heatmap showing percentile progression over time
         """
         if highlighted_session:
-            print(f"Highlighting session: {highlighted_session}")
+            logger.info(f"Highlighting session: {highlighted_session}")
         
         if not subject_id or not app_utils:
             return self._create_empty_heatmap("No subject selected")
@@ -57,7 +68,7 @@ class AppSubjectPercentileHeatmap:
         
         # Create session labels - show ALL sessions since we have full width
         session_labels = [f"S{s}" for s in sessions]
-        print(f"📊 Displaying all {len(sessions)} sessions in heatmap")
+        logger.info(f"Displaying all {len(sessions)} sessions in heatmap")
         
         if not heatmap_data or not feature_names:
             return self._create_empty_heatmap("No valid feature data")
@@ -196,7 +207,7 @@ class AppSubjectPercentileHeatmap:
             num_feature_rows: int - Number of feature rows in the heatmap
         """
         if not strata_data or len(strata_data) != len(sessions):
-            print("No strata data available or length mismatch")
+            logger.info("No strata data available or length mismatch")
             return
         
         # Find transition points
@@ -223,7 +234,7 @@ class AppSubjectPercentileHeatmap:
                 })
                 current_strata = strata
         
-        print(f"Found {len(transitions)} strata transitions: {[t['session'] for t in transitions]}")
+        logger.info(f"Found {len(transitions)} strata transitions: {[t['session'] for t in transitions]}")
         
         # Add vertical lines for transitions (skip the first one which is just the start)
         for transition in transitions[1:]:  # Skip first transition (start)
@@ -259,7 +270,7 @@ class AppSubjectPercentileHeatmap:
                 yanchor="bottom"
             )
             
-            print(f"Added strata boundary at session {session} (index {session_idx}) for strata: {strata_abbr}")
+            logger.info(f"Added strata boundary at session {session} (index {session_idx}) for strata: {strata_abbr}")
     
     def _get_strata_abbreviation(self, strata):
         """Get abbreviated strata name for display (same as time series)"""
@@ -310,7 +321,7 @@ class AppSubjectPercentileHeatmap:
             num_feature_rows: int - Number of feature rows in the heatmap
         """
         if not outlier_data or len(outlier_data) != len(sessions):
-            print("No outlier data available or length mismatch")
+            logger.info("No outlier data available or length mismatch")
             return
         
         outlier_count = 0
@@ -335,4 +346,4 @@ class AppSubjectPercentileHeatmap:
                 outlier_count += 1
                 
         if outlier_count > 0:
-            print(f"Added outlier markers for {outlier_count} sessions with purple borders") 
+            logger.info(f"Added outlier markers for {outlier_count} sessions with purple borders") 

@@ -1,8 +1,19 @@
-import pandas as pd
+"""
+Statistical utilities and analysis functions for AIND Dashboard
+
+This module provides statistical processing, bootstrap analysis, and 
+confidence interval calculations for session data.
+"""
+
+import logging
 import numpy as np
-from typing import Dict, List, Optional, Any, Tuple, Union
+import pandas as pd
+from typing import Dict, List, Optional, Tuple, Any, Union
 from scipy import stats
 from sklearn.preprocessing import StandardScaler
+from app_utils.simple_logger import get_logger
+
+logger = get_logger('statistical_utils')
 
 class StatisticalUtils:
     """
@@ -671,14 +682,14 @@ class StatisticalUtils:
             pd.DataFrame
                 Session data with bootstrap CI columns added
         """
-        print("Pre-computing bootstrap CIs during pipeline...")
+        logger.info("Pre-computing bootstrap CIs during pipeline...")
         
         if bootstrap_manager is None:
-            print("Bootstrap manager not available - skipping bootstrap CI calculation")
+            logger.info("Bootstrap manager not available - skipping bootstrap CI calculation")
             return session_data
         
         if reference_processor is None:
-            print("Reference processor not available - skipping bootstrap CI calculation")
+            logger.info("Reference processor not available - skipping bootstrap CI calculation")
             return session_data
         
         result_df = session_data.copy()
@@ -698,10 +709,10 @@ class StatisticalUtils:
                 strata_data = quantile_analyzer.percentile_data.get(strata)
                 
                 if strata_data is None:
-                    print(f"  No reference data for strata {strata} - skipping")
+                    logger.info(f"  No reference data for strata {strata} - skipping")
                     continue
                 
-                print(f"  Processing {len(strata_sessions)} sessions for strata {strata}")
+                logger.info(f"  Processing {len(strata_sessions)} sessions for strata {strata}")
                 
                 # Process each feature for this strata
                 for feature in features:
@@ -783,14 +794,14 @@ class StatisticalUtils:
                             result_df.loc[idx, 'session_overall_bootstrap_ci_upper'] = np.nan
         
         # Report results
-        print(f"Bootstrap CI pre-computation complete:")
+        logger.info(f"Bootstrap CI pre-computation complete:")
         if total_ci_calculations > 0:
             success_rate = (successful_ci_calculations/total_ci_calculations*100)
-            print(f"   - {successful_ci_calculations}/{total_ci_calculations} successful calculations ({success_rate:.1f}%)")
+            logger.info(f"   - {successful_ci_calculations}/{total_ci_calculations} successful calculations ({success_rate:.1f}%)")
         else:
-            print(f"   - No CI calculations attempted (no suitable reference data)")
-        print(f"   - {len(strata_processed)} strata processed")
-        print(f"   - Reduced bootstrap samples from 500 to 150 for better performance")
+            logger.info(f"   - No CI calculations attempted (no suitable reference data)")
+        logger.info(f"   - {len(strata_processed)} strata processed")
+        logger.info(f"   - Reduced bootstrap samples from 500 to 150 for better performance")
         
         return result_df
     
@@ -822,11 +833,11 @@ class StatisticalUtils:
             Dict[str, Any]: Bootstrap generation results
         """
         if bootstrap_manager is None:
-            print("Bootstrap manager not available for distribution generation")
+            logger.info("Bootstrap manager not available for distribution generation")
             return {'error': 'Bootstrap manager not available', 'bootstrap_enabled_count': 0}
         
         if reference_processor is None:
-            print("Reference processor not available for bootstrap distribution generation")
+            logger.info("Reference processor not available for bootstrap distribution generation")
             return {'error': 'Reference processor not available', 'bootstrap_enabled_count': 0}
         
         # Get current session data for session date checking
@@ -842,10 +853,10 @@ class StatisticalUtils:
         if quantile_analyzer is not None:
             strata_data = getattr(quantile_analyzer, 'stratified_data', None)
             if strata_data is None:
-                print("No stratified data found in quantile analyzer - bootstrap generation skipped")
+                logger.info("No stratified data found in quantile analyzer - bootstrap generation skipped")
                 return {'error': 'No stratified data available for bootstrap generation', 'bootstrap_enabled_count': 0}
         else:
-            print("Quantile analyzer not available - bootstrap generation skipped")
+            logger.info("Quantile analyzer not available - bootstrap generation skipped")
             return {'error': 'Quantile analyzer not available', 'bootstrap_enabled_count': 0}
         
         # Filter strata if requested
@@ -853,7 +864,7 @@ class StatisticalUtils:
             strata_data = {k: v for k, v in strata_data.items() if k in strata_filter}
         
         # Generate bootstrap distributions
-        print(f"Generating bootstrap distributions for {len(strata_data)} strata...")
+        logger.info(f"Generating bootstrap distributions for {len(strata_data)} strata...")
         result = bootstrap_manager.generate_bootstrap_for_all_strata(
             strata_data=strata_data,
             session_dates=session_dates,
@@ -1201,5 +1212,5 @@ class StatisticalUtils:
         try:
             return sessions.index(highlighted_session)
         except ValueError:
-            print(f"Session {highlighted_session} not found in session list")
+            logger.info(f"Session {highlighted_session} not found in session list")
             return None 

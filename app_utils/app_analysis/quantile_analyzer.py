@@ -1,8 +1,15 @@
+"""
+Quantile analyzer for session-level percentile calculations and statistical analysis
+"""
+
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Any, Tuple
 from .overall_percentile_calculator import OverallPercentileCalculator
 from .statistical_utils import StatisticalUtils
+from app_utils.simple_logger import get_logger
+
+logger = get_logger('quantile_analyzer')
 
 class QuantileAnalyzer:
     """
@@ -43,11 +50,11 @@ class QuantileAnalyzer:
         # Calculate percentiles for strata (now contains both current and historical data)
         for strata, df in self.stratified_data.items():
             # Log strata size for debugging
-            print(f"Processing strata '{strata}' with {len(df)} subjects (current + historical)")
+            logger.info(f"Processing strata '{strata}' with {len(df)} subjects (current + historical)")
             
             # Skip strata with too few subjects (consider increasing minimum)
             if len(df) < 10:  # Minimum number for meaningful percentiles
-                print(f"  Skipping strata '{strata}' - too few subjects ({len(df)} < 10)")
+                logger.info(f"  Skipping strata '{strata}' - too few subjects ({len(df)} < 10)")
                 continue
                 
             # Get processed feature columns
@@ -60,9 +67,9 @@ class QuantileAnalyzer:
             has_outlier_weights = 'outlier_weight' in df.columns
             
             if has_outlier_weights:
-                print(f"  Using weighted percentile ranking (outlier weights detected)")
+                logger.info(f"  Using weighted percentile ranking (outlier weights detected)")
                 outlier_count = (df['outlier_weight'] < 1.0).sum()
-                print(f"    Found {outlier_count} sessions with outlier weights")
+                logger.info(f"    Found {outlier_count} sessions with outlier weights")
             
             # Calculate percentile for each feature - ranking all subjects together
             for feature in feature_cols:
@@ -213,7 +220,7 @@ class QuantileAnalyzer:
         subject_data = all_data[all_data['subject_id'] == subject_id]
         
         if subject_data.empty:
-            print(f"Subject {subject_id} not found in the data")
+            logger.info(f"Subject {subject_id} not found in the data")
             return pd.DataFrame()
         
         # Sort by date to get chronological progression if date columns exist
@@ -245,7 +252,7 @@ class QuantileAnalyzer:
         rolling_avg_cols = [col for col in result_df.columns if col.endswith('_rolling_avg')]
         
         if not rolling_avg_cols:
-            print("No rolling average columns found in data")
+            logger.info("No rolling average columns found in data")
             return result_df
             
         # Track how many session-level percentiles we create
@@ -256,29 +263,36 @@ class QuantileAnalyzer:
         # Check if session data has outlier weights
         session_has_weights = 'outlier_weight' in session_data.columns
         if session_has_weights:
-            print("Session data contains outlier weights - will use weighted percentiles where available")
+            logger.info("Session data contains outlier weights - will use weighted percentiles where available")
         
         # PHASE 3: Check for bootstrap manager availability
         bootstrap_available = self.bootstrap_manager is not None
         if bootstrap_available:
-            print("PHASE 3: Bootstrap manager available - will use enhanced CIs when possible")
+            logger.info("Bootstrap manager available for enhanced CIs")
+            
+        # Track processing summary for consolidated logging
+        processing_summary = {
+            'total_strata': 0,
+            'processed_strata': 0,
+            'skipped_strata': 0,
+            'bootstrap_enhanced_strata': 0
+        }
             
         # Process each strata separately to maintain consistent reference distributions
         for strata, strata_df in session_data.groupby('strata'):
+            processing_summary['total_strata'] += 1
+            
             # Check if we have percentile data for this strata
             if strata not in self.percentile_data:
-                print(f"No reference distribution found for strata '{strata}'")
+                processing_summary['skipped_strata'] += 1
                 continue
                 
             # Get reference distribution for this strata
             reference_df = self.percentile_data[strata]
+            processing_summary['processed_strata'] += 1
             
             # Check if reference distribution has outlier weights
             reference_has_weights = 'outlier_weight' in reference_df.columns
-            
-            print(f"Processing strata '{strata}' with {len(reference_df)} reference subjects for CI calculation")
-            if reference_has_weights:
-                print(f"  Reference distribution has outlier weights")
             
             # PHASE 3: Check for bootstrap availability for this strata
             strata_bootstrap_available = False
@@ -288,10 +302,8 @@ class QuantileAnalyzer:
                     feature_name = rolling_col.replace('_rolling_avg', '').replace('_processed', '')
                     if self.bootstrap_manager.is_bootstrap_available(strata, feature_name):
                         strata_bootstrap_available = True
+                        processing_summary['bootstrap_enhanced_strata'] += 1
                         break
-                
-                if strata_bootstrap_available:
-                    print(f"  PHASE 3: Bootstrap distributions available for strata '{strata}'")
             
             # For each rolling average feature, calculate percentile using reference distribution
             for rolling_col in rolling_avg_cols:
@@ -304,7 +316,7 @@ class QuantileAnalyzer:
                 
                 # Get reference column (processed feature values)
                 if processed_col not in reference_df.columns:
-                    print(f"No reference data found for {processed_col} in strata '{strata}'")
+                    logger.info(f"No reference data found for {processed_col} in strata '{strata}'")
                     continue
                     
                 # Get reference values for this feature
@@ -322,7 +334,7 @@ class QuantileAnalyzer:
                 clean_reference_weights = reference_weights[valid_mask]
                 
                 if len(clean_reference_values) < 3:
-                    print(f"Insufficient reference data for CI calculation in {processed_col}, strata '{strata}'")
+                    logger.info(f"Insufficient reference data for CI calculation in {processed_col}, strata '{strata}'")
                     continue
                 
                 # PHASE 3: Check for bootstrap distribution for this specific feature
@@ -335,7 +347,7 @@ class QuantileAnalyzer:
                     use_bootstrap_ci = bootstrap_dist is not None and bootstrap_dist.get('bootstrap_enabled', False)
                     
                     if use_bootstrap_ci:
-                        print(f"    Using bootstrap-enhanced CI for {clean_feature_name}")
+                        logger.info(f"    Using bootstrap-enhanced CI for {clean_feature_name}")
                 
                 # For each session in this strata
                 for idx, row in strata_df.iterrows():
@@ -386,13 +398,13 @@ class QuantileAnalyzer:
                     created_columns += 1
                     created_ci_columns += 2  # Lower and upper bounds
         
-        print(f"Created {created_columns} session-level percentile columns")
-        print(f"Created {created_ci_columns} confidence interval columns")
+        logger.info(f"Created {created_columns} session-level percentile columns")
+        logger.info(f"Created {created_ci_columns} confidence interval columns")
         # PHASE 3: Report bootstrap enhancement usage
         if bootstrap_enhanced_columns > 0:
-            print(f"PHASE 3: {bootstrap_enhanced_columns} percentiles used bootstrap-enhanced CIs")
+            logger.info(f"PHASE 3: {bootstrap_enhanced_columns} percentiles used bootstrap-enhanced CIs")
         if session_has_weights or any('outlier_weight' in self.percentile_data[strata].columns for strata in self.percentile_data):
-            print(f"Used weighted percentile ranking where outlier weights were available")
+            logger.info(f"Used weighted percentile ranking where outlier weights were available")
         
         return result_df
     
@@ -418,7 +430,7 @@ class QuantileAnalyzer:
         session_percentile_cols = [col for col in result_df.columns if col.endswith('_session_percentile')]
         
         if not session_percentile_cols:
-            print("No session percentile columns found")
+            logger.info("No session percentile columns found")
             return result_df
             
         # Process each session

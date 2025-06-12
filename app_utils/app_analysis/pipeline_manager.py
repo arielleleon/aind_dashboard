@@ -2,6 +2,9 @@ from typing import Dict, List, Optional, Any, Tuple
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from app_utils.simple_logger import get_logger
+
+logger = get_logger('pipeline_manager')
 
 from .reference_processor import ReferenceProcessor
 from .quantile_analyzer import QuantileAnalyzer
@@ -96,8 +99,7 @@ class DataPipelineManager:
             outlier_config=outlier_config
         )
         
-        print(f"   Method: {outlier_config['method']}")
-        print(f"   Handling: {outlier_config['handling']} (weight: {outlier_config['outlier_weight']})")
+        logger.info(f"Reference processor initialized with {outlier_config['method']} outlier detection")
         
         return self.reference_processor
     
@@ -121,15 +123,17 @@ class DataPipelineManager:
         
         # PHASE 3: Report bootstrap integration status
         if self.bootstrap_manager is not None:
-            print("QuantileAnalyzer initialized with bootstrap enhancement")
+            logger.info("QuantileAnalyzer initialized with bootstrap enhancement")
         else:
-            print("QuantileAnalyzer initialized with standard confidence intervals")
+            logger.info("QuantileAnalyzer initialized with standard confidence intervals")
+        
+        logger.info(f"QuantileAnalyzer initialized with {'bootstrap' if self.bootstrap_manager else 'standard'} confidence intervals")
         
         return self.quantile_analyzer
     
     def initialize_bootstrap_manager(self, bootstrap_config: Optional[Dict[str, Any]] = None) -> BootstrapManager:
         """
-        Initialize Bootstrap Manager for Phase 3 enhanced statistical robustness
+        Initialize bootstrap manager with configuration
         
         Parameters:
             bootstrap_config: Optional[Dict[str, Any]]
@@ -140,7 +144,7 @@ class DataPipelineManager:
         """
         self.bootstrap_manager = BootstrapManager(bootstrap_config)
         
-        print(" Bootstrap Manager initialized for statistical robustness")
+        logger.info("Bootstrap Manager initialized for statistical robustness")
         
         return self.bootstrap_manager
     
@@ -161,16 +165,16 @@ class DataPipelineManager:
             pd.DataFrame
                 Complete session-level data with percentiles, rolling averages, and metadata
         """
-        print(f"Starting unified data processing pipeline with {len(df)} sessions")
+        logger.info(f"Starting unified data processing pipeline with {len(df)} sessions")
         
         # Check cache first
         if use_cache and self.cache_manager and self.cache_manager.has('session_level_data'):
-            print("Using cached session-level data")
+            logger.info("Using cached session-level data")
             return self.cache_manager.get('session_level_data')
         
         # Step 1: Initialize processors if needed
         if self.reference_processor is None:
-            print(" Initializing reference processor with default configuration...")
+            logger.info("Initializing reference processor with default configuration...")
             self.initialize_reference_processor(
                 features_config=self.default_features_config,
                 min_sessions=1, 
@@ -181,28 +185,28 @@ class DataPipelineManager:
         # Step 2: Get eligible subjects and preprocess data with enhanced outlier detection
         eligible_subjects = self.reference_processor.get_eligible_subjects(df)
         eligible_df = df[df['subject_id'].isin(eligible_subjects)]
-        print(f"Got {len(eligible_subjects)} eligible subjects")
+        logger.info(f"Got {len(eligible_subjects)} eligible subjects")
         
         # PHASE 2: Enhanced preprocessing with outlier detection
         processed_df = self.reference_processor.preprocess_data(eligible_df, remove_outliers=True)
-        print(f"Preprocessed data: {len(processed_df)} sessions")
+        logger.info(f"Preprocessed data: {len(processed_df)} sessions")
         
         # Report outlier weights if present
         if 'outlier_weight' in processed_df.columns:
             outlier_sessions = (processed_df['outlier_weight'] < 1.0).sum()
             total_sessions = len(processed_df)
             outlier_rate = (outlier_sessions / total_sessions) * 100
-            print(f" {outlier_sessions}/{total_sessions} sessions ({outlier_rate:.1f}%) have outlier weights")
+            logger.info(f"{outlier_sessions}/{total_sessions} sessions ({outlier_rate:.1f}%) have outlier weights")
         
         # Step 3: Prepare session-level data with rolling averages and strata assignments
         session_level_data = self.reference_processor.prepare_session_level_data(processed_df)
-        print(f" Prepared session-level data: {len(session_level_data)} sessions")
+        logger.info(f"Prepared session-level data: {len(session_level_data)} sessions")
         
         # Step 4: Calculate reference distributions for percentile calculation
         if self.quantile_analyzer is None:
             # PHASE 3: Initialize bootstrap manager before quantile analyzer if not already done
             if self.bootstrap_manager is None:
-                print(" Initializing Bootstrap Manager")
+                logger.info("Initializing Bootstrap Manager")
                 self.initialize_bootstrap_manager()
             
             # Create reference distributions for session percentiles
@@ -211,37 +215,37 @@ class DataPipelineManager:
             )
             # PHASE 3: Pass bootstrap manager to quantile analyzer
             self.initialize_quantile_analyzer(stratified_data)
-            print(f"Initialized quantile analyzer with {len(stratified_data)} strata")
+            logger.info("Bootstrap Manager initialized for statistical robustness")
             
             # PHASE 3: Generate bootstrap distributions for enhanced confidence intervals
-            print("Generating bootstrap distributions")
+            logger.info("Generating bootstrap distributions")
             bootstrap_result = self._generate_bootstrap_distributions(force_regenerate=False)
             
             # Report bootstrap generation results
             if bootstrap_result.get('bootstrap_enabled_count', 0) > 0:
                 enabled_count = bootstrap_result['bootstrap_enabled_count']
                 total_strata = bootstrap_result['total_strata']
-                print(f"Bootstrap enhancement enabled for {enabled_count}/{total_strata} strata")
+                logger.info(f"Bootstrap enhancement enabled for {enabled_count}/{total_strata} strata")
             else:
-                print("No bootstrap distributions generated - using standard confidence intervals")
+                logger.info("No bootstrap distributions generated - using standard confidence intervals")
                 if bootstrap_result.get('warnings'):
-                    print(f"Warnings: {len(bootstrap_result['warnings'])} issues detected")
+                    logger.warning(f"Bootstrap warnings: {len(bootstrap_result['warnings'])} issues detected")
         
         # Step 5: Calculate session-level percentiles using reference distributions
         session_with_percentiles = self.quantile_analyzer.calculate_session_level_percentiles(session_level_data)
-        print(f"Calculated session-level percentiles")
+        logger.info("Calculated session-level percentiles")
         
         # Step 6: Calculate overall percentiles for each session
         comprehensive_data = self.percentile_calculator.calculate_session_overall_percentile(
             session_with_percentiles
         )
-        print(f"Calculated overall session percentiles")
+        logger.info("Calculated overall session percentiles")
         
         # Step 6.5: Calculate overall rolling averages for hover information
         comprehensive_data = self.percentile_calculator.calculate_session_overall_rolling_average(
             comprehensive_data
         )
-        print(f"Calculated overall session rolling averages")
+        logger.info("Calculated overall session rolling averages")
         
         # Step 6.75: PHASE 1 OPTIMIZATION - Pre-compute bootstrap CIs during pipeline
         comprehensive_data = self._calculate_session_bootstrap_cis(comprehensive_data)
@@ -270,10 +274,9 @@ class DataPipelineManager:
                 )
                 self.cache_manager.set('ui_structures', ui_structures)
                 
-                print(f"Optimized storage created with {len(optimized_storage['subjects'])} subjects")
-                print(f"UI structures created for {len(ui_structures['feature_rank_data'])} subjects")
+                logger.info(f"Created optimized storage and UI structures for {len(optimized_storage['subjects'])} subjects")
         
-        print(f"Unified pipeline complete: {len(comprehensive_data)} sessions processed")
+        logger.info(f"Unified pipeline complete: {len(comprehensive_data)} sessions processed")
         return comprehensive_data
     
     def _add_session_metadata(self, session_data: pd.DataFrame) -> pd.DataFrame:
@@ -292,7 +295,7 @@ class DataPipelineManager:
         
         # Get feature list from reference processor
         if self.reference_processor is None:
-            print("Reference processor not available for metadata generation")
+            logger.warning("Reference processor not available for metadata generation")
             return result_df
         
         feature_list = list(self.reference_processor.features_config.keys())
@@ -333,7 +336,7 @@ class DataPipelineManager:
         
         # PHASE 3: Add bootstrap enhancement indicators
         if self.bootstrap_manager is not None:
-            print("Adding bootstrap enhancement indicators to session metadata...")
+            logger.info("Adding bootstrap enhancement indicators to session metadata...")
             
             # Process each session to determine which percentiles used bootstrap
             for idx, row in result_df.iterrows():
@@ -383,28 +386,25 @@ class DataPipelineManager:
                 else:
                     result_df.loc[idx, overall_bootstrap_indicator_col] = False
             
-            # Count how many sessions have bootstrap enhancement
+            # Count and report bootstrap enhancement summary
             bootstrap_enhanced_sessions = 0
             for feature in feature_list:
-                bootstrap_col = f"{feature}_bootstrap_enhanced"
-                if bootstrap_col in result_df.columns:
-                    enhanced_count = result_df[bootstrap_col].sum()
+                bootstrap_indicator_col = f"{feature}_bootstrap_enhanced"
+                if bootstrap_indicator_col in result_df.columns:
+                    enhanced_count = result_df[bootstrap_indicator_col].sum()
                     if enhanced_count > 0:
-                        print(f"  {feature}: {enhanced_count} sessions with bootstrap-enhanced CIs")
-                        bootstrap_enhanced_sessions = max(bootstrap_enhanced_sessions, enhanced_count)
+                        logger.info(f"  {feature}: {enhanced_count} sessions with bootstrap-enhanced CIs")
+                        bootstrap_enhanced_sessions += enhanced_count
             
+            # Report overall bootstrap enhancement
             overall_bootstrap_col = "session_overall_bootstrap_enhanced"
             if overall_bootstrap_col in result_df.columns:
                 overall_enhanced_count = result_df[overall_bootstrap_col].sum()
-                print(f"  Overall percentile: {overall_enhanced_count} sessions with bootstrap-enhanced CIs")
+                logger.info(f"  Overall percentile: {overall_enhanced_count} sessions with bootstrap-enhanced CIs")
             
-            print(f"Total sessions with any bootstrap enhancement: {bootstrap_enhanced_sessions}")
-        else:
-            # If no bootstrap manager, set all bootstrap indicators to False
-            for feature in feature_list:
-                result_df[f"{feature}_bootstrap_enhanced"] = False
-            result_df["session_overall_bootstrap_enhanced"] = False
-        
+            unique_bootstrap_sessions = len(result_df[result_df[[f"{feature}_bootstrap_enhanced" for feature in feature_list if f"{feature}_bootstrap_enhanced" in result_df.columns]].any(axis=1)])
+            logger.info(f"Total sessions with any bootstrap enhancement: {unique_bootstrap_sessions}")
+
         return result_df
     
     def _simple_percentile_to_category(self, percentile: float) -> str:

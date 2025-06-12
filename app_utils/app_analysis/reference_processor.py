@@ -5,6 +5,9 @@ from datetime import datetime, timedelta
 from sklearn.preprocessing import StandardScaler
 from scipy import stats
 from .statistical_utils import StatisticalUtils
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ReferenceProcessor:
@@ -41,7 +44,7 @@ class ReferenceProcessor:
         # Initialize statistical utilities
         self.statistical_utils = StatisticalUtils()
         
-        print(f"ReferenceProcessor initialized with outlier config: {self.outlier_config}")
+        logger.info(f"ReferenceProcessor initialized with outlier config: {self.outlier_config}")
 
     def get_eligible_subjects(self, df: pd.DataFrame) -> List[str]:
         """
@@ -109,7 +112,7 @@ class ReferenceProcessor:
         # Report and remove off-curriculum sessions
         off_count = off_curriculum_mask.sum()
         if off_count > 0:
-            print(f"Reference processor preprocess: Removing {off_count} off-curriculum sessions")
+            logger.info(f"Reference processor preprocess: Removing {off_count} off-curriculum sessions")
             df = df[~off_curriculum_mask].copy()
 
         # Clean data - additional filtering
@@ -126,7 +129,7 @@ class ReferenceProcessor:
         df_clean["curriculum_version_group"] = df_clean["curriculum_version"].map(_map_curriculum_ver)
 
         # CRITICAL CHANGE: Assign strata BEFORE standardization
-        print("Assigning strata before standardization for strata-specific processing...")
+        logger.info("Assigning strata before standardization for strata-specific processing...")
         df_with_strata = self.assign_subject_strata(df_clean, use_simplified=True)
         
         # Determine outlier detection approach
@@ -135,7 +138,7 @@ class ReferenceProcessor:
             apply_outlier_detection = self.outlier_config['handling'] != 'none'
         
         # PHASE 2 ENHANCEMENT: Enhanced outlier detection and weighted standardization
-        print("Applying strata-specific standardization with enhanced outlier detection...")
+        logger.info("Applying strata-specific standardization with enhanced outlier detection...")
         processed_df_list = []
         
         # Track outlier detection statistics
@@ -146,9 +149,17 @@ class ReferenceProcessor:
             'outliers_by_strata': {}
         }
         
+        # Track processing summary for consolidated logging
+        processing_summary = {
+            'total_strata': 0,
+            'processed_strata': 0,
+            'insufficient_strata': 0,
+            'features_processed': set()
+        }
+        
         # Process each strata separately
         for strata, strata_df in df_with_strata.groupby('strata'):
-            print(f"  Processing strata '{strata}' with {len(strata_df)} sessions")
+            processing_summary['total_strata'] += 1
             strata_processed = strata_df.copy()
             
             # Initialize outlier weights for this strata (default to 1.0 = no outlier detected)
@@ -160,21 +171,22 @@ class ReferenceProcessor:
             min_subjects_for_standardization = 5  # Minimum subjects needed for standardization
             
             if unique_subjects >= min_subjects_for_standardization:
+                processing_summary['processed_strata'] += 1
                 # Apply enhanced outlier detection and standardization within this strata
                 for feature, lower_is_better in self.features_config.items():
                     if feature not in strata_df.columns:
                         continue
                     
+                    processing_summary['features_processed'].add(feature)
+                    
                     # Get non-null feature values for this strata
                     feature_values = strata_df[feature].dropna()
                     
                     if len(feature_values) < 3:  # Need minimum data points for standardization
-                        print(f"    Skipping {feature} - insufficient data points ({len(feature_values)})")
                         continue
                     
                     # PHASE 2: Apply outlier detection before standardization
                     if apply_outlier_detection and len(feature_values) >= self.outlier_config['min_data_points']:
-                        print(f"    Applying {self.outlier_config['method']} outlier detection to {feature}")
                         
                         # Get outlier detection results
                         feature_values_array = strata_df[feature].values
@@ -191,8 +203,6 @@ class ReferenceProcessor:
                         if feature not in outlier_stats['outliers_by_feature']:
                             outlier_stats['outliers_by_feature'][feature] = 0
                         outlier_stats['outliers_by_feature'][feature] += feature_outlier_count
-                        
-                        print(f"      Detected {feature_outlier_count} outliers ({feature_outlier_count/len(feature_values)*100:.1f}%)")
                     
                     # Create and fit scaler for this strata and feature
                     scaler = StandardScaler()
@@ -217,15 +227,13 @@ class ReferenceProcessor:
                         # Add processed feature to strata dataframe
                         strata_processed[f'{feature}_processed'] = scaled_values
                         
-                        print(f"    Standardized {feature}: mean={scaler.mean_[0]:.3f}, std={scaler.scale_[0]:.3f}, inverted={lower_is_better}")
-                        
                     except Exception as e:
-                        print(f"    Error standardizing {feature} in strata {strata}: {e}")
+                        logger.warning(f"Error standardizing {feature} in strata {strata}: {e}")
                         # If standardization fails, copy original values
                         strata_processed[f'{feature}_processed'] = strata_df[feature]
             
             else:
-                print(f"    Insufficient subjects ({unique_subjects} < {min_subjects_for_standardization}) - using raw values")
+                processing_summary['insufficient_strata'] += 1
                 # If insufficient subjects, just copy raw values as "processed"
                 for feature, lower_is_better in self.features_config.items():
                     if feature in strata_df.columns:
@@ -245,31 +253,28 @@ class ReferenceProcessor:
         # Combine all processed strata back together
         if processed_df_list:
             df_final = pd.concat(processed_df_list, ignore_index=True)
-            print(f"Combined {len(processed_df_list)} strata into final dataset with {len(df_final)} sessions")
+            logger.info(f"Combined {len(processed_df_list)} strata into final dataset with {len(df_final)} sessions")
         else:
-            print("No valid strata found - returning empty dataframe")
+            logger.warning("No valid strata found - returning empty dataframe")
             return pd.DataFrame()
 
-        # Report outlier detection statistics
+        # Log processing summary
+        logger.info(f"Strata processing: {processing_summary['processed_strata']}/{processing_summary['total_strata']} processed ({processing_summary['insufficient_strata']} insufficient)")
+        logger.info(f"Features processed: {len(processing_summary['features_processed'])} ({', '.join(sorted(processing_summary['features_processed']))})")
+
+        # Report outlier detection statistics (only key metrics)
         if apply_outlier_detection and outlier_stats['total_sessions'] > 0:
             outlier_rate = (outlier_stats['total_outliers_detected'] / outlier_stats['total_sessions']) * 100
-            print(f"\n📊 PHASE 2 Outlier Detection Results:")
-            print(f"  Method: {self.outlier_config['method']}")
-            print(f"  Total sessions processed: {outlier_stats['total_sessions']}")
-            print(f"  Total outliers detected: {outlier_stats['total_outliers_detected']} ({outlier_rate:.1f}%)")
-            print(f"  Handling: {self.outlier_config['handling']} (weight={self.outlier_config['outlier_weight']})")
+            logger.info(f"Outlier Detection Results:")
+            logger.info(f"  Method: {self.outlier_config['method']}, Total: {outlier_stats['total_outliers_detected']}/{outlier_stats['total_sessions']} ({outlier_rate:.1f}%)")
+            logger.info(f"  Handling: {self.outlier_config['handling']} (weight={self.outlier_config['outlier_weight']})")
             
-            # Feature-specific outlier rates
-            print(f"  Outliers by feature:")
+            # Only log feature rates, skip detailed strata breakdown
+            feature_summary = []
             for feature, count in outlier_stats['outliers_by_feature'].items():
                 feature_rate = (count / outlier_stats['total_sessions']) * 100
-                print(f"    {feature}: {count} ({feature_rate:.1f}%)")
-            
-            # Strata-specific outlier counts
-            print(f"  Outliers by strata:")
-            for strata, count in outlier_stats['outliers_by_strata'].items():
-                print(f"    {strata}: {count}")
-            print()
+                feature_summary.append(f"{feature}: {count} ({feature_rate:.1f}%)")
+            logger.info(f"  By feature: {', '.join(feature_summary)}")
 
         # PHASE 2: Remove old 3-sigma outlier removal (replaced with weighted approach above)
         # The old remove_outliers logic has been replaced with the enhanced outlier detection
@@ -305,7 +310,7 @@ class ReferenceProcessor:
             # No outlier detection - return all normal weights
             return np.zeros(len(data), dtype=bool), np.ones(len(data))
         else:
-            print(f"Warning: Unknown outlier detection method '{method}', using IQR")
+            # Fallback silently to IQR when the outlier detection method is unrecognized
             return self.statistical_utils.detect_outliers_iqr(data, factor=1.5)
 
     def _simplify_strata(self, strat_id: str) -> str:
@@ -327,8 +332,7 @@ class ReferenceProcessor:
             curriculum = '_'.join(parts[:stage_start])
             stage_parts = parts[stage_start:]  # Get all parts after curriculum name
         except StopIteration:
-            # No STAGE or GRADUATED found, return simplified format with UNKNOWN stage
-            print(f"Warning: No STAGE or GRADUATED found in strata_id: {strat_id}")
+            # Silent handling when STAGE or GRADUATED markers are missing
             if len(parts) >= 2:
                 curriculum = '_'.join(parts[:-1])  # All but last part as curriculum
                 version = parts[-1]  # Last part as version
@@ -352,7 +356,7 @@ class ReferenceProcessor:
         elif any(s in stage for s in ['STAGE_2', 'STAGE_1', 'STAGE_1_WARMUP']):
             simplified_stage = 'BEGINNER'
         else:
-            print(f"Warning: Unknown stage format: {stage}")
+            # Silent handling when stage format is unknown
             simplified_stage = 'UNKNOWN'
 
         return f"{curriculum}_{simplified_stage}_{version}"
@@ -581,14 +585,14 @@ class ReferenceProcessor:
         processed_features = [col for col in df.columns if col.endswith('_processed')]
 
         if not processed_features:
-            print("No processed features found in data")
+            logger.info("No processed features found in data")
             return df.copy()
         
         result_df = df.copy()
 
         # Debug information
-        print(f"Calculating rolling averages for {len(processed_features)} features")
-        print(f"Feature examples: {processed_features[:3]}")
+        logger.info(f"Calculating rolling averages for {len(processed_features)} features")
+        logger.debug(f"Feature examples (first 3): {processed_features[:3]}")
 
         for subject_id, subject_data in df.groupby('subject_id'):
             for strata, strata_sessions in subject_data.groupby('strata'):
@@ -624,7 +628,7 @@ class ReferenceProcessor:
         
         # Verify column creation
         rolling_avg_cols = [col for col in result_df.columns if col.endswith('_rolling_avg')]
-        print(f"Created {len(rolling_avg_cols)} rolling average columns")
+        logger.info(f"Created {len(rolling_avg_cols)} rolling average columns")
         
         return result_df
 

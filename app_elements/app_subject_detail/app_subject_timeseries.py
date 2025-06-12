@@ -1,8 +1,20 @@
-from dash import html, dcc
-import dash_bootstrap_components as dbc
-import plotly.graph_objects as go
+"""
+Subject raw timeseries visualization component for AIND Dashboard
+
+This module creates interactive timeseries plots showing raw feature values
+over time with rolling averages and outlier detection.
+"""
+
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from typing import Dict, List, Optional, Any
+from app_utils.simple_logger import get_logger
+from dash import html, dcc
+import dash_bootstrap_components as dbc
+
+logger = get_logger('subject_timeseries')
 
 class AppSubjectTimeseries:
     def __init__(self):
@@ -109,7 +121,7 @@ class AppSubjectTimeseries:
             selected_features: list - Features to plot  
             highlighted_session: int - Session to highlight
         """
-        print(f"Creating timeseries plot for subject with data keys: {list(subject_data.keys()) if subject_data else 'None'}")
+        logger.info(f"Creating timeseries plot for subject with data keys: {list(subject_data.keys()) if subject_data else 'None'}")
         
         if not subject_data or 'sessions' not in subject_data:
             return self._create_empty_figure()
@@ -132,7 +144,7 @@ class AppSubjectTimeseries:
         if not features_to_plot:
             features_to_plot = list(self.features_config.keys())
         
-        print(f"Features to plot: {features_to_plot}")
+        logger.info(f"Features to plot: {features_to_plot}")
         
         # Create strata abbreviation mapping for hover info
         strata_sessions_map = {}
@@ -146,11 +158,11 @@ class AppSubjectTimeseries:
             raw_key = f"{feature}_raw"
             
             if raw_key not in subject_data:
-                print(f"No raw data found for {feature}, skipping")
+                logger.info(f"No raw data found for {feature}, skipping")
                 continue
                 
             raw_data = subject_data[raw_key]
-            print(f"Using raw data for {feature}: {len(raw_data)} values")
+            logger.info(f"Using raw data for {feature}: {len(raw_data)} values")
             
             # Filter out invalid values (-1 or NaN represents missing data)
             valid_data = []
@@ -159,14 +171,14 @@ class AppSubjectTimeseries:
                     valid_data.append((session, value))
             
             if len(valid_data) < 2:
-                print(f"Insufficient valid data for {feature}: {len(valid_data)} points")
+                logger.info(f"Insufficient valid data for {feature}: {len(valid_data)} points")
                 continue
                 
             valid_sessions, valid_raw_values = zip(*valid_data)
             valid_sessions = list(valid_sessions)
             valid_raw_values = list(valid_raw_values)
             
-            print(f"Valid raw data for {feature}: {len(valid_raw_values)} points, range: {min(valid_raw_values):.3f} to {max(valid_raw_values):.3f}")
+            logger.info(f"Valid raw data for {feature}: {len(valid_raw_values)} points, range: {min(valid_raw_values):.3f} to {max(valid_raw_values):.3f}")
             
             # Apply 3-session rolling average to raw values
             rolling_avg_values = self._apply_rolling_average(valid_raw_values, window=3)
@@ -423,7 +435,7 @@ class AppSubjectTimeseries:
             outlier_data: list - List of boolean outlier indicators for each session
         """
         if not sessions or not outlier_data or len(outlier_data) != len(sessions):
-            print("No outlier data available or length mismatch for time series markers")
+            logger.info("No outlier data available or length mismatch for time series markers")
             return
         
         outlier_sessions = []
@@ -459,4 +471,4 @@ class AppSubjectTimeseries:
             showlegend=True
         ))
         
-        print(f"Added outlier markers for {len(outlier_sessions)} sessions: {outlier_sessions}")
+        logger.info(f"Added outlier markers for {len(outlier_sessions)} sessions: {outlier_sessions}")

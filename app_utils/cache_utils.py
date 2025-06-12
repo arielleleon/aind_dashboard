@@ -3,6 +3,10 @@ import numpy as np
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 import hashlib
+import psutil
+import pickle
+import os
+from app_utils.simple_logger import get_logger
 
 
 class CacheManager:
@@ -32,6 +36,7 @@ class CacheManager:
             'bootstrap_coverage_stats': None,
             'bootstrap_enabled_strata': None
         }
+        self.logger = get_logger('cache')
     
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -171,7 +176,6 @@ class CacheManager:
             Dict[str, Any]: Memory usage statistics
         """
         try:
-            import psutil
             import sys
             
             # Get process memory info
@@ -234,114 +238,70 @@ class CacheManager:
         except Exception as e:
             return {'error': f"Memory monitoring failed: {str(e)}"}
     
-    def compress_cache_data(self, force: bool = False) -> Dict[str, Any]:
+    def compress_cache_data(self):
         """
-        Compress cached data to reduce memory usage
-        
-        Parameters:
-            force: bool
-                Whether to force compression even if memory usage is acceptable
-                
-        Returns:
-            Dict[str, Any]: Compression results and memory savings
+        Compress stored cache data when memory usage is high
         """
-        import pickle
-        import gzip
-        import sys
+        process = psutil.Process(os.getpid())
+        process_memory = process.memory_info().rss / 1024 / 1024  # MB
         
-        results = {
-            'compressed_caches': [],
-            'memory_saved_mb': 0,
-            'compression_ratios': {}
-        }
-        
-        # Check if compression is needed
-        memory_summary = self.get_memory_usage_summary()
-        process_memory = memory_summary.get('process_memory_mb', 0)
-        
-        # Compress if memory usage is high or force is requested
-        if process_memory > 500 or force:  # 500MB threshold
-            print(f"Compressing cache data (current memory: {process_memory:.1f}MB)...")
+        if process_memory > 1000:  # Only compress if using more than 1GB
+            self.logger.info(f"Compressing cache data (current memory: {process_memory:.1f}MB)...")
             
-            # Compress large cache objects
-            compressible_caches = ['session_level_data', 'optimized_storage', 'ui_structures']
+            compressed_count = 0
+            total_count = len(self._cache)
             
-            for cache_key in compressible_caches:
-                if cache_key in self._cache and self._cache[cache_key] is not None:
-                    try:
-                        # Get original size
-                        original_data = self._cache[cache_key]
-                        original_size = sys.getsizeof(original_data)
+            for cache_key, cache_value in self._cache.items():
+                if cache_key.endswith('_compressed'):
+                    continue
+                    
+                try:
+                    if isinstance(cache_value, pd.DataFrame) and len(cache_value) > 1000:
+                        # Compress large DataFrames
+                        original_size = cache_value.memory_usage(deep=True).sum()
+                        compressed_data = pickle.dumps(cache_value, protocol=pickle.HIGHEST_PROTOCOL)
                         
-                        # Compress using pickle + gzip
-                        compressed_data = gzip.compress(pickle.dumps(original_data))
-                        compressed_size = sys.getsizeof(compressed_data)
+                        # Store compressed version
+                        self._cache[f"{cache_key}_compressed"] = compressed_data
                         
                         # Calculate compression ratio
-                        compression_ratio = original_size / compressed_size if compressed_size > 0 else 1
+                        compressed_size = len(compressed_data)
+                        compression_ratio = original_size / compressed_size
                         
-                        # Only compress if we get significant savings (>30% reduction)
-                        if compression_ratio > 1.3:
-                            # Store compressed data with metadata
-                            self._cache[f'{cache_key}_compressed'] = {
-                                'data': compressed_data,
-                                'original_size': original_size,
-                                'compressed_size': compressed_size,
-                                'compression_ratio': compression_ratio
-                            }
-                            
-                            # Remove original data to save memory
-                            self._cache[cache_key] = None
-                            
-                            results['compressed_caches'].append(cache_key)
-                            results['memory_saved_mb'] += (original_size - compressed_size) / 1024 / 1024
-                            results['compression_ratios'][cache_key] = compression_ratio
-                            
-                            print(f"  Compressed {cache_key}: {compression_ratio:.1f}x reduction")
+                        self.logger.info(f"  Compressed {cache_key}: {compression_ratio:.1f}x reduction")
                         
-                    except Exception as e:
-                        print(f"  Failed to compress {cache_key}: {str(e)}")
-        
-        return results
+                        # Remove original to save memory
+                        del self._cache[cache_key]
+                        compressed_count += 1
+                        
+                except Exception as e:
+                    self.logger.error(f"  Failed to compress {cache_key}: {str(e)}")
+            
+            if compressed_count > 0:
+                self.logger.info(f"Compressed {compressed_count}/{total_count} cache entries")
     
-    def decompress_cache_data(self, cache_key: str) -> bool:
+    def decompress_cache_data(self, cache_key: str) -> Any:
         """
-        Decompress cached data if it exists in compressed form
-        
-        Parameters:
-            cache_key: str
-                Cache key to decompress
-                
-        Returns:
-            bool: True if decompression successful
+        Decompress cache data if it exists in compressed form
         """
-        import pickle
-        import gzip
+        compressed_key = f"{cache_key}_compressed"
         
-        compressed_key = f'{cache_key}_compressed'
-        
-        if compressed_key in self._cache and self._cache[compressed_key] is not None:
+        if compressed_key in self._cache:
             try:
-                compressed_info = self._cache[compressed_key]
-                compressed_data = compressed_info['data']
+                # Decompress the data
+                decompressed_data = pickle.loads(self._cache[compressed_key])
                 
-                # Decompress
-                decompressed_data = pickle.loads(gzip.decompress(compressed_data))
-                
-                # Store decompressed data
+                # Store decompressed version back in cache
                 self._cache[cache_key] = decompressed_data
                 
-                # Remove compressed version
-                self._cache[compressed_key] = None
-                
-                print(f"Decompressed {cache_key} successfully")
-                return True
+                self.logger.info(f"Decompressed {cache_key} successfully")
+                return decompressed_data
                 
             except Exception as e:
-                print(f"Failed to decompress {cache_key}: {str(e)}")
-                return False
+                self.logger.error(f"Failed to decompress {cache_key}: {str(e)}")
+                return None
         
-        return False
+        return None
     
     def get_or_decompress(self, key: str, default: Any = None) -> Any:
         """

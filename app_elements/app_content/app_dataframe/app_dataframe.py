@@ -104,7 +104,7 @@ class AppDataFrame:
             # Return empty dataframe with required columns to avoid breaking the UI
             return create_empty_dataframe_structure()
         
-        print(f"📊 Starting data formatting with {len(original_df)} sessions")
+        print(f"Starting data formatting with {len(original_df)} sessions")
         
         # STEP 1: Get optimized data using business logic
         recent_sessions = get_optimized_table_data(self.app_utils, use_cache=True)

@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Any, Tuple
 from ..app_analysis.overall_percentile_calculator import OverallPercentileCalculator
+from dash import html, dcc
+import dash_bootstrap_components as dbc
+from app_utils.simple_logger import get_logger
 
 class AlertService:
     """
@@ -29,11 +32,13 @@ class AlertService:
             config (Dict[str, Any]): Optional configuration for the AlertService
         """
         self.app_utils = app_utils
+        self.logger = get_logger('alerts')
 
         # Initialize configuation with default
         self.config = {
             'percentile_categories': self.DEFAULT_PERCENTILE_CATEGORIES.copy(),
-            "feature_config": {} # Feature specific configuration
+            "feature_config": {}, # Feature specific configuration
+            'min_sessions': self.DEFAULT_MIN_SESSIONS
         }
 
         # Override defaults if provided with config
@@ -329,15 +334,6 @@ class AlertService:
         if df.empty:
             return df
             
-        print(" DEBUG: Checking threshold alert values...")
-        
-        # Validate alert patterns for debugging
-        validation_results = self.validate_alert_patterns(df)
-        
-        # Print debug information from validation
-        for alert_type, values in validation_results.get('value_counts', {}).items():
-            print(f"  {alert_type} values: {values}")
-        
         # Generate threshold alert mask using the extracted logic
         threshold_mask = self.get_alert_category_mask(df, 'T')
         
@@ -346,7 +342,7 @@ class AlertService:
         filtered_df = df[threshold_mask]
         after_count = len(filtered_df)
         
-        print(f"Threshold filter applied: {before_count} → {after_count} subjects")
+        self.logger.info(f"Threshold filter applied: {before_count} → {after_count} subjects")
         
         return filtered_df
     
@@ -714,7 +710,7 @@ class AlertService:
                     zip(overall_df['subject_id'], overall_df['session_overall_percentile'])
                 )
         except Exception as e:
-            print(f"Error calculating session-level overall percentiles: {e}")
+            self.logger.error(f"Error calculating session-level overall percentiles: {e}")
         
         # Add subjects that don't have alerts yet and get NS reasons
         subjects_without_alerts = all_subjects - set(unified_alerts.keys())

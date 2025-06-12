@@ -1,7 +1,18 @@
+"""
+Session card component for AIND Dashboard
+
+This module creates individual session information cards with session metadata,
+image integration, and hover details.
+"""
+
+import sys
+import traceback
 from dash import html, dcc
 import dash_bootstrap_components as dbc
 from .app_subject_image_loader import AppSubjectImageLoader
-import sys
+from app_utils.simple_logger import get_logger
+
+logger = get_logger('session_card')
 
 class AppSessionCard:
     def __init__(self):
@@ -25,8 +36,7 @@ class AppSessionCard:
             The session card component
         """
         # Debug session data
-        print(f"\n=== SESSION CARD DEBUG ===")
-        print(f"Building card for session data: {session_data.get('subject_id')}, session: {session_data.get('session')}")
+        logger.info(f"Building card for session data: {session_data.get('subject_id')}, session: {session_data.get('session')}")
         
         # Extract session data
         session_num = session_data.get('session', 'N/A')
@@ -51,9 +61,9 @@ class AppSessionCard:
                 nwb_suffix=nwb_suffix,
                 figure_suffix="choice_history.png"
             )
-            print(f"Generated image URL: {choice_url}")
+            logger.info(f"Generated image URL: {choice_url}")
         except Exception as e:
-            print(f"ERROR generating image URL: {str(e)}", file=sys.stderr)
+            logger.error(f"ERROR generating image URL: {str(e)}")
             choice_url = ""  # Fallback empty URL
         
         # Extract water total
@@ -133,12 +143,11 @@ class AppSessionCard:
                style={"cursor": "pointer"},
                **debug_wrapper)
             
-            print(f"Successfully created session card component")
+            logger.info(f"Successfully created session card component")
             return card
             
         except Exception as e:
-            print(f"ERROR building session card: {str(e)}", file=sys.stderr)
-            import traceback
+            logger.error(f"ERROR building session card: {str(e)}")
             print(traceback.format_exc(), file=sys.stderr)
             
             # Return a simple error card as fallback
