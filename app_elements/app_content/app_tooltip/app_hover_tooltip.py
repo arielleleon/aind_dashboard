@@ -18,24 +18,6 @@ class AppHoverTooltip:
         """
         self.app_utils = app_utils
         
-        # Feature display order for consistent comparison
-        self.feature_display_order = [
-            'finished_trials',
-            'ignore_rate', 
-            'total_trials',
-            'foraging_performance',
-            'abs(bias_naive)'
-        ]
-        
-        # Feature display names (clean formatting)
-        self.feature_display_names = {
-            'finished_trials': 'Finished Trials',
-            'ignore_rate': 'Ignore Rate',
-            'total_trials': 'Total Trials', 
-            'foraging_performance': 'Foraging Performance',
-            'abs(bias_naive)': 'Bias'
-        }
-        
         # Color mapping matching DataTable alert schema
         self.alert_colors = {
             'SB': '#FF6B35',  # Dark orange (Severely Below)

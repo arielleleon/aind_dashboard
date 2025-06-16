@@ -8,7 +8,6 @@ over time with rolling averages and outlier detection.
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from typing import Dict, List, Optional, Any
 from app_utils.simple_logger import get_logger
 from dash import html, dcc

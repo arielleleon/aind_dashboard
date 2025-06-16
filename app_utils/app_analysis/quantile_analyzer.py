@@ -196,35 +196,6 @@ class QuantileAnalyzer:
             # Return empty DataFrame with expected columns if no data
             return pd.DataFrame(columns=['subject_id', 'strata', 'is_current'])
 
-    def get_subject_history(self, subject_id: str) -> pd.DataFrame:
-        """
-        Get the complete strata history for a specific subject with percentile ranks
-        
-        Parameters:
-            subject_id: str
-                The ID of the subject to retrieve history for
-                
-        Returns:
-            pd.DataFrame
-                DataFrame containing the subject's performance across all strata they've been in,
-                ordered chronologically
-        """
-        # Create comprehensive dataframe with all subject-strata combinations
-        all_data = self.create_comprehensive_dataframe(include_history=True)
-        
-        # Filter for the requested subject
-        subject_data = all_data[all_data['subject_id'] == subject_id]
-        
-        if subject_data.empty:
-            logger.info(f"Subject {subject_id} not found in the data")
-            return pd.DataFrame()
-        
-        # Sort by date to get chronological progression if date columns exist
-        if 'first_date' in subject_data.columns:
-            subject_data = subject_data.sort_values('first_date')
-        
-        return subject_data
-    
     def calculate_session_level_percentiles(self, session_data: pd.DataFrame) -> pd.DataFrame:
         """ 
         Calculate session-level percentile ranks for each subject in each strata

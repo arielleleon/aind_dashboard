@@ -81,67 +81,6 @@ class StatisticalUtils:
         return (lower_bound, upper_bound)
     
     @staticmethod
-    def calculate_enhanced_wilson_ci(
-        reference_data: np.ndarray,
-        target_percentile: float,
-        confidence_level: float = 0.95
-    ) -> Tuple[float, float]:
-        """
-        Calculate enhanced Wilson confidence interval with better small-sample performance
-        
-        This enhanced version provides more accurate confidence intervals especially
-        for small to medium sample sizes commonly seen in behavioral data.
-        
-        Parameters:
-            reference_data: np.ndarray
-                Reference distribution data
-            target_percentile: float
-                The percentile value (0-100) for which to calculate CI
-            confidence_level: float
-                Confidence level (default: 0.95 for 95% CI)
-                
-        Returns:
-            Tuple[float, float]
-                (lower_bound, upper_bound) of confidence interval
-        """
-        if len(reference_data) < 3:
-            return (np.nan, np.nan)
-        
-        # Remove NaN values
-        clean_data = reference_data[~np.isnan(reference_data)]
-        n = len(clean_data)
-        
-        if n < 3:
-            return (np.nan, np.nan)
-        
-        # Convert percentile to proportion
-        p = target_percentile / 100.0
-        
-        # Calculate z-score for confidence level
-        alpha = 1 - confidence_level
-        z = stats.norm.ppf(1 - alpha/2)
-        
-        # Enhanced Wilson score with continuity correction for small samples
-        if n < 30:
-            # Apply continuity correction for small samples
-            continuity_correction = 0.5 / n
-        else:
-            continuity_correction = 0
-        
-        # Enhanced Wilson formula with correction
-        denominator = 1 + (z**2 / n)
-        center = (p + (z**2)/(2*n)) / denominator
-        
-        # Enhanced margin calculation with continuity correction
-        variance_term = (p*(1-p) + (z**2)/(4*n)) / n
-        margin = (z * np.sqrt(variance_term) + continuity_correction) / denominator
-        
-        lower_bound = max(0, center - margin) * 100
-        upper_bound = min(100, center + margin) * 100
-        
-        return (lower_bound, upper_bound)
-    
-    @staticmethod
     def detect_outliers_iqr(
         data: np.ndarray, 
         factor: float = 3.0

@@ -16,7 +16,6 @@ from typing import Dict, List, Optional, Any, Union
 import pandas as pd
 from datetime import datetime, timedelta
 import pickle
-import gzip
 import os
 import hashlib
 from app_utils.simple_logger import get_logger
@@ -42,22 +41,6 @@ class CacheManager:
             # Optimized structures for UI components
             'optimized_storage': None,
             'ui_structures': None
-        }
-        
-        # Timestamps for cache validation
-        self._timestamps = {
-            'last_data_load': None,
-            'last_process_time': None,
-            'last_reference_calculation': None,
-            'last_alert_calculation': None
-        }
-        
-        # Cache metadata
-        self._metadata = {
-            'data_hash': None,
-            'feature_config_hash': None,
-            'cache_size_bytes': 0,
-            'compression_enabled': True
         }
     
     def get(self, key: str, default: Any = None) -> Any:
@@ -111,16 +94,6 @@ class CacheManager:
         self._cache['last_reference_calculation'] = None
         self._cache['last_alert_calculation'] = None
     
-    def clear_all(self) -> None:
-        """Clear all cached data"""
-        for key in self._cache:
-            self._cache[key] = None
-    
-    def clear_key(self, key: str) -> None:
-        """Clear specific cache key"""
-        if key in self._cache:
-            self._cache[key] = None
-    
     def calculate_data_hash(self, df: pd.DataFrame) -> str:
         """
         Calculate a hash for data validation
@@ -134,60 +107,6 @@ class CacheManager:
         """
         data_str = f"{len(df)}_{df['subject_id'].nunique()}_{df['session_date'].max()}"
         return hashlib.md5(data_str.encode()).hexdigest()[:8]
-    
-    def is_cache_valid(self, key: str, data_hash: Optional[str] = None) -> bool:
-        """
-        Check if cached data is still valid
-        
-        Parameters:
-            key: str
-                Cache key to validate
-            data_hash: Optional[str]
-                Current data hash for validation
-                
-        Returns:
-            bool: True if cache is valid
-        """
-        if not self.has(key):
-            return False
-        
-        # If data hash provided, compare with cached hash
-        if data_hash is not None:
-            cached_hash = self.get('data_hash')
-            return cached_hash == data_hash
-        
-        return True
-    
-    def get_cache_info(self) -> Dict[str, Any]:
-        """
-        Get information about current cache state
-        
-        Returns:
-            Dict[str, Any]: Cache state information
-        """
-        cache_info = {}
-        
-        for key, value in self._cache.items():
-            if value is not None:
-                cache_info[key] = {
-                    'exists': True,
-                    'type': type(value).__name__
-                }
-                
-                # Add specific info for different cache types
-                if isinstance(value, pd.DataFrame):
-                    cache_info[key]['rows'] = len(value)
-                    cache_info[key]['columns'] = len(value.columns)
-                elif isinstance(value, dict):
-                    cache_info[key]['size'] = len(value)
-                elif isinstance(value, list):
-                    cache_info[key]['length'] = len(value)
-                elif isinstance(value, set):
-                    cache_info[key]['size'] = len(value)
-            else:
-                cache_info[key] = {'exists': False}
-        
-        return cache_info
     
     def get_memory_usage_summary(self) -> Dict[str, Any]:
         """
@@ -301,53 +220,6 @@ class CacheManager:
             if compressed_count > 0:
                 logger.info(f"Compressed {compressed_count}/{total_count} cache entries")
     
-    def decompress_cache_data(self, cache_key: str) -> Any:
-        """
-        Decompress cache data if it exists in compressed form
-        """
-        compressed_key = f"{cache_key}_compressed"
-        
-        if compressed_key in self._cache:
-            try:
-                # Decompress the data
-                decompressed_data = pickle.loads(self._cache[compressed_key])
-                
-                # Store decompressed version back in cache
-                self._cache[cache_key] = decompressed_data
-                
-                logger.info(f"Decompressed {cache_key} successfully")
-                return decompressed_data
-                
-            except Exception as e:
-                logger.error(f"Failed to decompress {cache_key}: {str(e)}")
-                return None
-        
-        return None
-    
-    def get_or_decompress(self, key: str, default: Any = None) -> Any:
-        """
-        Get cached value, decompressing if necessary
-        
-        Parameters:
-            key: str
-                Cache key to retrieve
-            default: Any
-                Default value if key not found
-                
-        Returns:
-            Any: Cached value or default
-        """
-        # First try to get directly
-        value = self.get(key, None)
-        if value is not None:
-            return value
-        
-        # Try to decompress if compressed version exists
-        if self.decompress_cache_data(key):
-            return self.get(key, default)
-        
-        return default
-    
     def set_timestamp(self, key: str = 'last_process_time') -> None:
         """
         Set current timestamp for cache validation
@@ -356,38 +228,4 @@ class CacheManager:
             key: str
                 Timestamp key to set
         """
-        self.set(key, datetime.now())
-    
-    def get_cache_age(self, key: str = 'last_process_time') -> Optional[float]:
-        """
-        Get age of cached data in seconds
-        
-        Parameters:
-            key: str
-                Timestamp key to check
-                
-        Returns:
-            Optional[float]: Age in seconds or None if no timestamp
-        """
-        timestamp = self.get(key)
-        if timestamp is not None and isinstance(timestamp, datetime):
-            return (datetime.now() - timestamp).total_seconds()
-        return None
-    
-    def is_cache_fresh(self, key: str = 'last_process_time', max_age_seconds: float = 3600) -> bool:
-        """
-        Check if cached data is fresh (within max age)
-        
-        Parameters:
-            key: str
-                Timestamp key to check
-            max_age_seconds: float
-                Maximum age in seconds before cache is stale
-                
-        Returns:
-            bool: True if cache is fresh
-        """
-        age = self.get_cache_age(key)
-        if age is None:
-            return False
-        return age <= max_age_seconds 
+        self.set(key, datetime.now()) 

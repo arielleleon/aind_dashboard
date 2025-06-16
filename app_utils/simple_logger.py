@@ -63,17 +63,4 @@ class SimpleLogger:
 
 def get_logger(name: str) -> SimpleLogger:
     """Get a logger instance for a module"""
-    return SimpleLogger(name)
-
-
-# Convenience function to replace most print statements
-def log_info(message: str, module: str = "dashboard"):
-    """Quick replacement for print() statements"""
-    logger = get_logger(module)
-    logger.info(message)
-
-
-def log_error(message: str, module: str = "dashboard"):
-    """Quick replacement for error print() statements"""
-    logger = get_logger(module)
-    logger.error(message) 
+    return SimpleLogger(name) 

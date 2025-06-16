@@ -63,29 +63,6 @@ class AppUtils:
         
         return self.pipeline_manager
         
-    def process_data(self, df: pd.DataFrame, use_cache: bool = True) -> pd.DataFrame:
-        """
-        Process raw session data using unified pipeline with Wilson CI support
-        
-        Parameters:
-            df: pd.DataFrame
-                Raw session data from data loader
-            use_cache: bool
-                Whether to use cached results if available
-                
-        Returns:
-            pd.DataFrame
-                Processed session data with percentiles and Wilson confidence intervals
-        """
-        # Initialize pipeline manager if needed
-        if self.pipeline_manager is None:
-            self.initialize_pipeline_manager()
-        
-        # Process data with pipeline
-        processed_data = self.pipeline_manager.process_data_pipeline(df, use_cache=use_cache)
-        
-        return processed_data
-
     def get_session_data(self, load_bpod: bool = False, use_cache: bool = True) -> pd.DataFrame:
         """Get session data with caching support"""
         if use_cache and self.cache_manager.has('raw_data'):
@@ -257,10 +234,6 @@ class AppUtils:
     def _add_session_metadata(self, session_data: pd.DataFrame) -> pd.DataFrame:
         """Add metadata to session data (delegates to pipeline manager)"""
         return self.pipeline_manager._add_session_metadata(session_data)
-    
-    def _map_percentile_to_category(self, percentile: float) -> str:
-        """Map percentile to category (delegates to UI manager)"""
-        return self.ui_data_manager.map_percentile_to_category(percentile)
     
     def _get_strata_abbreviation(self, strata: str) -> str:
         """Get strata abbreviation (delegates to UI manager)"""

@@ -8,7 +8,6 @@ over time with confidence intervals using Wilson CI methodology.
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from typing import Dict, List, Optional, Any
 from app_utils.simple_logger import get_logger
 import dash_bootstrap_components as dbc

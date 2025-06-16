@@ -81,7 +81,7 @@ class AppDataFrame:
         """
         return [col for col in all_columns if col['id'] in visible_column_ids]
 
-    def format_dataframe(self, df: pd.DataFrame, reference_date: datetime = None, visible_columns: list = None) -> pd.DataFrame:
+    def format_dataframe(self, df: pd.DataFrame, visible_columns: list = None) -> pd.DataFrame:
         """
         Format the dataframe for display in the table with unified session-level metrics
         

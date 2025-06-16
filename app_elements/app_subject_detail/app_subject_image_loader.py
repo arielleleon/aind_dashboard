@@ -4,7 +4,6 @@ Subject image loader for AIND Dashboard
 This module handles image URL generation and loading for subject session data.
 """
 
-import requests
 import pandas as pd
 import numpy as np
 import sys
