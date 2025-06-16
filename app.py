@@ -21,8 +21,8 @@ session_level_data = app_utils.process_data_pipeline(raw_data, use_cache=False)
 # Ensure all cache structures are properly initialized
 logger.info("Ensuring all cache structures are initialized...")
 table_data = app_utils.get_table_display_data(use_cache=True)
-optimized_storage = app_utils._cache.get('optimized_storage')
-ui_structures = app_utils._cache.get('ui_structures')
+optimized_storage = app_utils.cache_manager.get('optimized_storage')
+ui_structures = app_utils.cache_manager.get('ui_structures')
 
 # Cache validation (simplified, removed verbose details)
 session_count = len(session_level_data)

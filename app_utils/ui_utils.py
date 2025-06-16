@@ -83,7 +83,7 @@ class UIDataManager:
         
         return strata.replace(" ", "")
     
-    def optimize_session_data_storage(self, session_data: pd.DataFrame, bootstrap_manager=None, cache_manager=None) -> Dict[str, Any]:
+    def optimize_session_data_storage(self, session_data: pd.DataFrame, cache_manager=None) -> Dict[str, Any]:
         """
         Optimize session-level data storage for efficient lookup and memory usage
         
@@ -91,16 +91,15 @@ class UIDataManager:
         1. Subject-indexed session data
         2. Strata-indexed reference distributions  
         3. Compressed historical data
-        4. PHASE 3: Bootstrap indicators and coverage statistics
+        4. Wilson confidence intervals for statistical robustness
         
         Parameters:
             session_data: pd.DataFrame
                 Complete session-level data from unified pipeline
-            bootstrap_manager: Optional bootstrap manager for coverage stats
             cache_manager: Optional cache manager for data hashing
                 
         Returns:
-            Dict[str, Any]: Optimized storage structure with bootstrap support
+            Dict[str, Any]: Optimized storage structure with Wilson CI support
         """
         
         # Handle empty DataFrame case
@@ -108,14 +107,12 @@ class UIDataManager:
             return {
                 'subjects': {},
                 'strata_reference': {},
-                'bootstrap_coverage': {},
                 'metadata': {
                     'total_subjects': 0,
                     'total_sessions': 0,
                     'total_strata': 0,
                     'data_hash': '',
-                    'phase3_enhanced': True,
-                    'bootstrap_enabled_strata': 0,
+                    'wilson_ci_enabled': True,
                     'optimization_timestamp': datetime.now().isoformat()
                 }
             }
@@ -123,10 +120,6 @@ class UIDataManager:
         # Create subject-indexed storage for fast subject lookups
         subject_data = {}
         strata_reference = {}
-        
-        # PHASE 3: Initialize bootstrap coverage tracking
-        bootstrap_coverage = {}
-        bootstrap_enabled_strata_set = set()
         
         # Group by subject for efficient subject-based operations
         for subject_id, subject_sessions in session_data.groupby('subject_id'):
@@ -148,9 +141,7 @@ class UIDataManager:
                 'total_trials', 'finished_trials', 'ignore_rate', 'foraging_performance',
                 'abs(bias_naive)', 'finished_rate',
                 # AUTOWATER COLUMNS: Add all autowater metrics to table display cache
-                'total_trials_with_autowater', 'finished_trials_with_autowater', 'finished_rate_with_autowater', 'ignore_rate_with_autowater', 'autowater_collected', 'autowater_ignored', 'water_day_total_last_session', 'water_after_session_last_session',
-                # PHASE 3: Add bootstrap enhancement indicators
-                'session_overall_bootstrap_enhanced'
+                'total_trials_with_autowater', 'finished_trials_with_autowater', 'finished_rate_with_autowater', 'ignore_rate_with_autowater', 'autowater_collected', 'autowater_ignored', 'water_day_total_last_session', 'water_after_session_last_session'
             ]
             
             # Add feature-specific columns
@@ -158,15 +149,10 @@ class UIDataManager:
                              if col.endswith(('_session_percentile', '_category', '_processed_rolling_avg'))]
             essential_columns.extend(feature_columns)
             
-            # PHASE 3: Add confidence interval columns for bootstrap support
+            # Add Wilson confidence interval columns
             ci_columns = [col for col in subject_sessions.columns 
                          if col.endswith(('_ci_lower', '_ci_upper'))]
             essential_columns.extend(ci_columns)
-            
-            # PHASE 3: Add bootstrap indicator columns
-            bootstrap_indicator_columns = [col for col in subject_sessions.columns 
-                                         if col.endswith('_bootstrap_enhanced')]
-            essential_columns.extend(bootstrap_indicator_columns)
             
             # Filter to available columns and ensure uniqueness
             available_columns = [col for col in essential_columns if col in subject_sessions.columns]
@@ -193,57 +179,6 @@ class UIDataManager:
             # Store only the reference distribution data needed for percentile calculations
             processed_features = [col for col in strata_sessions.columns if col.endswith('_processed_rolling_avg')]
             
-            # PHASE 3: Check for bootstrap availability and calculate coverage statistics
-            bootstrap_enabled = False
-            feature_bootstrap_coverage = {}
-            
-            if bootstrap_manager is not None:
-                # Check if bootstrap is available for this strata and any features
-                for feature_col in processed_features:
-                    feature_name = feature_col.replace('_processed_rolling_avg', '')
-                    if bootstrap_manager.is_bootstrap_available(strata, feature_name):
-                        bootstrap_enabled = True
-                        bootstrap_enabled_strata_set.add(strata)
-                        
-                        # Calculate coverage statistics for this feature
-                        # Look for CI columns in the session data
-                        ci_lower_col = f"{feature_name}_session_percentile_ci_lower"
-                        ci_upper_col = f"{feature_name}_session_percentile_ci_upper"
-                        
-                        if ci_lower_col in strata_sessions.columns and ci_upper_col in strata_sessions.columns:
-                            valid_ci_count = strata_sessions[[ci_lower_col, ci_upper_col]].dropna().shape[0]
-                            total_sessions = len(strata_sessions)
-                            coverage_rate = valid_ci_count / total_sessions if total_sessions > 0 else 0
-                            
-                            feature_bootstrap_coverage[feature_name] = {
-                                'bootstrap_available': True,
-                                'ci_coverage_rate': coverage_rate,
-                                'valid_ci_sessions': valid_ci_count,
-                                'total_sessions': total_sessions
-                            }
-                        else:
-                            feature_bootstrap_coverage[feature_name] = {
-                                'bootstrap_available': True,
-                                'ci_coverage_rate': 0.0,
-                                'valid_ci_sessions': 0,
-                                'total_sessions': len(strata_sessions),
-                                'warning': 'Bootstrap available but CI columns missing'
-                            }
-                    else:
-                        feature_bootstrap_coverage[feature_name] = {
-                            'bootstrap_available': False,
-                            'ci_coverage_rate': 0.0,
-                            'reason': 'Bootstrap not available for this strata/feature combination'
-                        }
-            
-            # Store bootstrap coverage statistics for this strata
-            bootstrap_coverage[strata] = {
-                'bootstrap_enabled': bootstrap_enabled,
-                'feature_coverage': feature_bootstrap_coverage,
-                'subject_count': len(strata_sessions['subject_id'].unique()),
-                'session_count': len(strata_sessions)
-            }
-            
             # Create strata reference even if no processed features exist
             reference_distributions = {}
             if processed_features:
@@ -257,12 +192,10 @@ class UIDataManager:
             strata_reference[strata] = {
                 'subject_count': len(strata_sessions['subject_id'].unique()),
                 'session_count': len(strata_sessions),
-                'reference_distributions': reference_distributions,
-                # PHASE 3: Add bootstrap indicator to strata reference
-                'bootstrap_enabled': bootstrap_enabled
+                'reference_distributions': reference_distributions
             }
         
-        # Create optimized storage structure with Phase 3 enhancements
+        # Create optimized storage structure
         data_hash = self._calculate_data_hash(session_data, cache_manager)
         optimized_storage = {
             'subjects': subject_data,
@@ -273,13 +206,8 @@ class UIDataManager:
                 'total_strata': len(strata_reference),
                 'storage_timestamp': pd.Timestamp.now(),
                 'data_hash': data_hash,
-                # PHASE 3: Bootstrap metadata
-                'bootstrap_enabled_strata_count': len(bootstrap_enabled_strata_set),
-                'bootstrap_enabled_strata_list': list(bootstrap_enabled_strata_set),
-                'phase3_enhanced': True
-            },
-            # PHASE 3: Bootstrap coverage statistics as separate cache structure
-            'bootstrap_coverage': bootstrap_coverage
+                'wilson_ci_enabled': True
+            }
         }
         
         # Log single consolidated message about UI structures creation
@@ -297,78 +225,44 @@ class UIDataManager:
         data_str = f"{len(df)}_{df['subject_id'].nunique()}_{df['session_date'].max()}"
         return hashlib.md5(data_str.encode()).hexdigest()[:8]
 
-    def create_ui_optimized_structures(self, session_data: pd.DataFrame, bootstrap_manager=None) -> Dict[str, Any]:
+    def create_ui_optimized_structures(self, session_data: pd.DataFrame) -> Dict[str, Any]:
         """
-        Create UI-optimized data structures for fast component rendering
+        Create UI-optimized data structures for fast rendering
         
-        Specialized structures for:
-        1. Feature rank plot data
-        2. Subject detail views
-        3. Table display optimization
-        4. Time series visualization
+        This creates optimized data structures for:
+        1. Subject detail views (time series data)
+        2. Table display cache (most recent sessions)
+        3. Strata lookup optimization
+        4. Wilson confidence intervals for visualization
         
         Parameters:
             session_data: pd.DataFrame
-                Complete session-level data from unified pipeline
-            bootstrap_manager: Optional bootstrap manager for CI calculations
+                Complete session-level data from pipeline
                 
         Returns:
-            Dict[str, Any]: UI-optimized data structures
+            Dict[str, Any]: UI-optimized structures with Wilson CI support
         """
-        
-        # DEBUG: Check what columns are available in session_data
-        logger.info(f"Pipeline processed {len(session_data.columns)} columns across {len(session_data.groupby('strata'))} strata")
-        
-        # Check if we have sample data with percentiles
-        if len(session_data) > 0:
-            logger.info(f"Sample data validation: {len(session_data)} sessions with percentile data")
-        
-        # Log single consolidated summary message
-        logger.info(f"Unified pipeline complete: {len(session_data)} sessions processed")
-        
+        # Initialize UI structure
         ui_structures = {
-            'feature_rank_data': {},
-            'subject_lookup': {},
-            'strata_lookup': {},
             'time_series_data': {},
-            'table_display_cache': {}
+            'table_display_cache': [],
+            'subject_lookup': {},
+            'strata_lookup': {}
         }
         
-        # 1. Feature Rank Plot Optimization
-        # Pre-compute feature ranking data for each subject
-        for subject_id, subject_sessions in session_data.groupby('subject_id'):
-            # Get most recent session data
-            latest_session = subject_sessions.sort_values('session_date').iloc[-1]
-            
-            feature_ranks = {}
-            for feature in self.features:
-                session_percentile_col = f"{feature}_session_percentile"
-                category_col = f"{feature}_category"
-                
-                if session_percentile_col in latest_session:
-                    feature_ranks[feature] = {
-                        'percentile': latest_session[session_percentile_col],
-                        'category': latest_session.get(category_col, 'NS'),
-                        'value': latest_session.get(feature, None)
-                    }
-            
-            ui_structures['feature_rank_data'][subject_id] = {
-                'features': feature_ranks,
-                'overall_percentile': latest_session.get('session_overall_percentile'),
-                'overall_category': latest_session.get('overall_percentile_category', 'NS'),
-                'strata': latest_session.get('strata', 'Unknown'),
-                'session_date': latest_session.get('session_date'),
-                'session_count': latest_session.get('session', 0)
-            }
+        # Handle edge case where session_data is empty
+        if session_data.empty:
+            return ui_structures
         
-        # 2. Subject Detail Lookup Optimization
-        # Create fast subject lookup with essential display data
+        # 1. Subject Lookup Optimization
+        # Pre-compute subject summaries to avoid repeated calculations in components
         for subject_id, subject_sessions in session_data.groupby('subject_id'):
+            # Sort by date to get proper order
             subject_sessions = subject_sessions.sort_values('session_date')
             latest_session = subject_sessions.iloc[-1]
             
             ui_structures['subject_lookup'][subject_id] = {
-                'latest': {
+                'latest_session': {
                     'session_date': latest_session['session_date'],
                     'session': latest_session['session'],
                     'strata': latest_session['strata'],
@@ -406,10 +300,10 @@ class UIDataManager:
         
         # 4. Time Series Data Optimization
         # Pre-compute time series data for subjects with compressed format
-        ui_structures['time_series_data'] = self._create_time_series_data(session_data, bootstrap_manager)
+        ui_structures['time_series_data'] = self._create_time_series_data(session_data)
         
         # 5. Table Display Cache
-        ui_structures['table_display_cache'] = self._create_table_display_cache(session_data, bootstrap_manager)
+        ui_structures['table_display_cache'] = self._create_table_display_cache(session_data)
         
         # Store data hash in UI structures for cache validation
         ui_structures['data_hash'] = self._calculate_data_hash(session_data)
@@ -419,15 +313,15 @@ class UIDataManager:
         
         return ui_structures 
     
-    def _create_time_series_data(self, session_data: pd.DataFrame, bootstrap_manager=None) -> Dict[str, Any]:
-        """Create time series data for visualization components"""
+    def _create_time_series_data(self, session_data: pd.DataFrame) -> Dict[str, Any]:
+        """Create time series data for visualization components with Wilson CIs"""
         time_series_data = {}
         
         # Counters for aggregate reporting instead of per-subject spam
         total_subjects_processed = 0
-        feature_stats = {feature: {'subjects_with_data': 0, 'total_valid_points': 0, 'ci_sessions': 0, 'bootstrap_sessions': 0} 
+        feature_stats = {feature: {'subjects_with_data': 0, 'total_valid_points': 0, 'ci_sessions': 0} 
                         for feature in self.features}
-        overall_stats = {'subjects_with_data': 0, 'total_valid_points': 0, 'ci_sessions': 0, 'bootstrap_sessions': 0}
+        overall_stats = {'subjects_with_data': 0, 'total_valid_points': 0, 'ci_sessions': 0}
         
         # Initialize tracking for high outlier subjects
         high_outlier_subjects = []
@@ -445,7 +339,7 @@ class UIDataManager:
                 'strata': subject_sessions['strata'].tolist()
             }
             
-            # Add confidence intervals for overall percentiles
+            # Add Wilson confidence intervals for overall percentiles
             if 'session_overall_percentile_ci_lower' in subject_sessions.columns:
                 time_series['overall_percentiles_ci_lower'] = subject_sessions['session_overall_percentile_ci_lower'].fillna(-1).tolist()
                 time_series['overall_percentiles_ci_upper'] = subject_sessions['session_overall_percentile_ci_upper'].fillna(-1).tolist()
@@ -477,7 +371,7 @@ class UIDataManager:
                 if percentile_col in subject_sessions.columns:
                     time_series[f"{feature}_percentiles"] = subject_sessions[percentile_col].fillna(-1).tolist()
                 
-                # Add confidence intervals for feature percentiles (Wilson CIs)
+                # Add Wilson confidence intervals for feature percentiles
                 ci_lower_col = f"{feature}_session_percentile_ci_lower"
                 ci_upper_col = f"{feature}_session_percentile_ci_upper"
                 
@@ -486,52 +380,6 @@ class UIDataManager:
                     time_series[f"{feature}_percentile_ci_upper"] = subject_sessions[ci_upper_col].fillna(-1).tolist()
                     valid_ci_count = len(subject_sessions[ci_lower_col].dropna())
                     feature_stats[feature]['ci_sessions'] += valid_ci_count
-                
-                # PHASE 3: Add bootstrap indicators for feature percentiles
-                bootstrap_indicator_col = f"{feature}_bootstrap_enhanced"
-                if bootstrap_indicator_col in subject_sessions.columns:
-                    # Fix FutureWarning by using infer_objects()
-                    bootstrap_data = subject_sessions[bootstrap_indicator_col].fillna(False).infer_objects(copy=False)
-                    time_series[f"{feature}_bootstrap_enhanced"] = bootstrap_data.tolist()
-                    bootstrap_count = subject_sessions[bootstrap_indicator_col].sum()
-                    feature_stats[feature]['bootstrap_sessions'] += bootstrap_count
-                
-                # Add bootstrap CIs for raw rolling averages (separate from percentile CIs)
-                if bootstrap_manager is not None:
-                    # Get pre-computed bootstrap CI columns from session data
-                    ci_lower_col = f"{feature}_bootstrap_ci_lower"
-                    ci_upper_col = f"{feature}_bootstrap_ci_upper"
-                    
-                    if ci_lower_col in subject_sessions.columns and ci_upper_col in subject_sessions.columns:
-                        # Use pre-computed values (replace NaN with -1 for UI compatibility)
-                        bootstrap_ci_lower_values = subject_sessions[ci_lower_col].fillna(-1).tolist()
-                        bootstrap_ci_upper_values = subject_sessions[ci_upper_col].fillna(-1).tolist()
-                    else:
-                        # Fallback: create empty arrays if pre-computed CIs not available
-                        bootstrap_ci_lower_values = [-1] * len(subject_sessions)
-                        bootstrap_ci_upper_values = [-1] * len(subject_sessions)
-                    
-                    # Add bootstrap CI arrays to time series
-                    time_series[f"{feature}_bootstrap_ci_lower"] = bootstrap_ci_lower_values
-                    time_series[f"{feature}_bootstrap_ci_upper"] = bootstrap_ci_upper_values
-                    
-                    # Calculate CI width for time series
-                    bootstrap_ci_width_values = []
-                    for lower, upper in zip(bootstrap_ci_lower_values, bootstrap_ci_upper_values):
-                        if lower != -1 and upper != -1:
-                            bootstrap_ci_width_values.append(upper - lower)
-                        else:
-                            bootstrap_ci_width_values.append(-1)
-                    time_series[f"{feature}_bootstrap_ci_width"] = bootstrap_ci_width_values
-            
-            # PHASE 3: Add overall percentile bootstrap indicator
-            overall_bootstrap_col = "session_overall_bootstrap_enhanced"
-            if overall_bootstrap_col in subject_sessions.columns:
-                # Fix FutureWarning by using infer_objects()
-                overall_bootstrap_data = subject_sessions[overall_bootstrap_col].fillna(False).infer_objects(copy=False)
-                time_series["overall_bootstrap_enhanced"] = overall_bootstrap_data.tolist()
-                bootstrap_count = subject_sessions[overall_bootstrap_col].sum()
-                overall_stats['bootstrap_sessions'] += bootstrap_count
             
             time_series_data[subject_id] = time_series
         
@@ -546,19 +394,14 @@ class UIDataManager:
         features_with_data = [f for f, stats in feature_stats.items() if stats['subjects_with_data'] > 0]
         if features_with_data:
             logger.info(f"Features with data: {len(features_with_data)} ({', '.join(features_with_data)})")
-            
-            # Report bootstrap enhancement summary
-            total_bootstrap_sessions = sum(stats['bootstrap_sessions'] for stats in feature_stats.values())
-            if total_bootstrap_sessions > 0:
-                logger.info(f"Bootstrap enhancement: {total_bootstrap_sessions} total feature-sessions enhanced")
         
         # Report overall percentile summary
         if overall_stats['subjects_with_data'] > 0:
-            logger.info(f"Overall percentiles: {overall_stats['subjects_with_data']} subjects with CI data, {overall_stats['bootstrap_sessions']} bootstrap-enhanced sessions")
+            logger.info(f"Overall percentiles: {overall_stats['subjects_with_data']} subjects with Wilson CI data")
         
         return time_series_data
     
-    def _create_table_display_cache(self, session_data: pd.DataFrame, bootstrap_manager=None) -> List[Dict[str, Any]]:
+    def _create_table_display_cache(self, session_data: pd.DataFrame) -> List[Dict[str, Any]]:
         """Create table display cache for fast rendering"""
         # Get most recent session for each subject
         most_recent = session_data.sort_values('session_date').groupby('subject_id').last().reset_index()
@@ -698,8 +541,6 @@ class UIDataManager:
                 # PHASE 2: Add outlier detection information
                 'outlier_weight': row.get('outlier_weight', 1.0),  # Default to normal weight
                 'is_outlier': row.get('is_outlier', False),         # Default to not outlier
-                # PHASE 3: Add bootstrap enhancement indicators
-                'session_overall_bootstrap_enhanced': row.get('session_overall_bootstrap_enhanced', False)
             }
             
             # Add feature-specific data (both percentiles and rolling averages)
@@ -710,8 +551,6 @@ class UIDataManager:
                 # Wilson CI columns for percentiles
                 ci_lower_col = f"{feature}_session_percentile_ci_lower"
                 ci_upper_col = f"{feature}_session_percentile_ci_upper"
-                # PHASE 3: Add bootstrap indicator columns
-                bootstrap_indicator_col = f"{feature}_bootstrap_enhanced"
                 
                 display_row[f"{feature}_session_percentile"] = row.get(percentile_col)
                 display_row[f"{feature}_category"] = row.get(category_col, 'NS')
@@ -720,63 +559,43 @@ class UIDataManager:
                 display_row[f"{feature}_processed_rolling_avg"] = row.get(rolling_avg_col)
                 
                 # Wilson CI columns (for percentile CIs)
-                display_row[f"{feature}_session_percentile_ci_lower"] = row.get(ci_lower_col)
-                display_row[f"{feature}_session_percentile_ci_upper"] = row.get(ci_upper_col)
+                ci_lower = row.get(ci_lower_col)
+                ci_upper = row.get(ci_upper_col)
+                display_row[f"{feature}_session_percentile_ci_lower"] = ci_lower
+                display_row[f"{feature}_session_percentile_ci_upper"] = ci_upper
                 
-                # PHASE 3: Add bootstrap indicator columns to table display cache
-                display_row[f"{feature}_bootstrap_enhanced"] = row.get(bootstrap_indicator_col, False)
-                
-                # Add bootstrap CIs for raw rolling averages - use pre-computed values from session data
-                bootstrap_ci_lower_col = f"{feature}_bootstrap_ci_lower"
-                bootstrap_ci_upper_col = f"{feature}_bootstrap_ci_upper"
-                
-                # Get pre-computed bootstrap CI values from the session data
-                ci_lower_value = row.get(bootstrap_ci_lower_col, np.nan)
-                ci_upper_value = row.get(bootstrap_ci_upper_col, np.nan)
-                
-                display_row[f"{feature}_bootstrap_ci_lower"] = ci_lower_value
-                display_row[f"{feature}_bootstrap_ci_upper"] = ci_upper_value
-                
-                # Calculate CI width if both bounds are available
-                if not pd.isna(ci_lower_value) and not pd.isna(ci_upper_value):
-                    ci_width = ci_upper_value - ci_lower_value
-                    display_row[f"{feature}_bootstrap_ci_certainty"] = self._calculate_ci_certainty_moderate(
-                        ci_width, row.get(rolling_avg_col, 0), feature
-                    )
+                # Calculate and add certainty classification for this feature
+                if ci_lower is not None and ci_upper is not None and not pd.isna(ci_lower) and not pd.isna(ci_upper):
+                    ci_width = ci_upper - ci_lower
+                    percentile_value = row.get(percentile_col)
+                    if percentile_value is not None and not pd.isna(percentile_value):
+                        certainty = self._calculate_ci_certainty_moderate(ci_width, percentile_value, feature)
+                        display_row[f"{feature}_certainty"] = certainty
+                    else:
+                        display_row[f"{feature}_certainty"] = 'unknown'
                 else:
-                    display_row[f"{feature}_bootstrap_ci_width"] = np.nan
-                    display_row[f"{feature}_bootstrap_ci_certainty"] = 'intermediate'
+                    display_row[f"{feature}_certainty"] = 'unknown'
             
-            # Add overall percentile CI columns (Wilson CIs)
+            # Add overall percentile CI columns (Wilson CIs) - outside the feature loop
             overall_ci_lower_col = "session_overall_percentile_ci_lower"
             overall_ci_upper_col = "session_overall_percentile_ci_upper"
-            display_row[overall_ci_lower_col] = row.get(overall_ci_lower_col)
-            display_row[overall_ci_upper_col] = row.get(overall_ci_upper_col)
+            overall_ci_lower = row.get(overall_ci_lower_col)
+            overall_ci_upper = row.get(overall_ci_upper_col)
+            display_row[overall_ci_lower_col] = overall_ci_lower
+            display_row[overall_ci_upper_col] = overall_ci_upper
             
-            # Add overall bootstrap CIs for table display - use pre-computed values from session data
-            overall_bootstrap_ci_lower_col = "session_overall_bootstrap_ci_lower"
-            overall_bootstrap_ci_upper_col = "session_overall_bootstrap_ci_upper"
-            
-            # Get pre-computed overall bootstrap CI values from the session data
-            overall_ci_lower_value = row.get(overall_bootstrap_ci_lower_col, np.nan)
-            overall_ci_upper_value = row.get(overall_bootstrap_ci_upper_col, np.nan)
-            
-            display_row["session_overall_bootstrap_ci_lower"] = overall_ci_lower_value
-            display_row["session_overall_bootstrap_ci_upper"] = overall_ci_upper_value
-            
-            # Calculate overall CI width if both bounds are available
-            if not pd.isna(overall_ci_lower_value) and not pd.isna(overall_ci_upper_value):
-                overall_ci_width = overall_ci_upper_value - overall_ci_lower_value
-                display_row["session_overall_bootstrap_ci_width"] = overall_ci_width
-                
-                # MODERATE: Use improved but more lenient certainty classification for overall percentile
-                overall_rolling_avg = row.get('session_overall_rolling_avg', 0)
-                display_row["session_overall_bootstrap_ci_certainty"] = self._calculate_ci_certainty_moderate(
-                    overall_ci_width, overall_rolling_avg
-                )
+            # Calculate overall percentile certainty
+            if (overall_ci_lower is not None and overall_ci_upper is not None and 
+                not pd.isna(overall_ci_lower) and not pd.isna(overall_ci_upper)):
+                overall_ci_width = overall_ci_upper - overall_ci_lower
+                overall_percentile = row.get('session_overall_percentile')
+                if overall_percentile is not None and not pd.isna(overall_percentile):
+                    overall_certainty = self._calculate_ci_certainty_moderate(overall_ci_width, overall_percentile, 'overall')
+                    display_row['session_overall_percentile_certainty'] = overall_certainty
+                else:
+                    display_row['session_overall_percentile_certainty'] = 'unknown'
             else:
-                display_row["session_overall_bootstrap_ci_width"] = np.nan
-                display_row["session_overall_bootstrap_ci_certainty"] = 'intermediate'
+                display_row['session_overall_percentile_certainty'] = 'unknown'
             
             table_data.append(display_row)
         
@@ -934,152 +753,86 @@ def process_unified_alerts_integration(recent_sessions: pd.DataFrame, app_utils,
     """
     logger.info("Processing unified alerts integration...")
     
-    # Step 1: Initialize alert service if needed
-    if app_utils.alert_service is None:
-        app_utils.initialize_alert_service()
-    
-    # Step 2: Get all subject IDs
-    subject_ids = recent_sessions['subject_id'].unique().tolist()
-    
-    # Step 3: Get unified alerts for these subjects  
-    unified_alerts = app_utils.get_unified_alerts(subject_ids)
-    logger.info(f"Got unified alerts for {len(unified_alerts)} subjects")
-    
-    # Step 4: Apply alerts and format output dataframe
-    # Start with the most recent sessions and add alert columns
+    # Initialize output dataframe with basic alert columns
     output_df = recent_sessions.copy()
     
-    logger.info(f"Pipeline complete: {len(output_df.columns)} columns processed for {len(output_df)} subjects")
-    
-    # Step 5: Initialize alert columns if not already present (for UI cache compatibility)
+    # Initialize alert columns with default values
     for col in ['percentile_category', 'threshold_alert', 'combined_alert', 'ns_reason', 'strata_abbr',
                'total_sessions_alert', 'stage_sessions_alert', 'water_day_total_alert']:
         if col not in output_df.columns:
             default_val = 'NS' if col in ['percentile_category', 'combined_alert'] else ('N' if col.endswith('_alert') else '')
             output_df[col] = default_val
     
-    # Step 6: THRESHOLD ALERTS: Check if threshold alerts are already computed in UI cache
-    threshold_alerts_precomputed = 'threshold_alert' in output_df.columns and output_df['threshold_alert'].notna().any()
-    
-    if threshold_alerts_precomputed:
-        logger.info("Using pre-computed threshold alerts from UI cache")
-    else:
-        logger.info("Computing threshold alerts (UI cache not available)")
+    # Try to get alerts - if it fails, continue with default values
+    try:
+        # Step 1: Ensure pipeline has been run and analyzers are available
+        if not hasattr(app_utils, 'reference_processor') or app_utils.reference_processor is None:
+            logger.info("Reference processor not available, initializing data pipeline first...")
+            # Run the pipeline to ensure analyzers are initialized
+            raw_data = app_utils.get_session_data(use_cache=True)
+            app_utils.process_data_pipeline(raw_data.head(100), use_cache=False)
         
-        # Only compute if we have threshold configuration
-        if threshold_config is not None and stage_thresholds is not None:
-            from app_utils.app_analysis.threshold_analyzer import ThresholdAnalyzer
+        # Step 2: Initialize alert service if needed (now that analyzers are available)
+        if app_utils.alert_coordinator.alert_service is None:
+            app_utils.initialize_alert_service()
+        
+        # Step 3: Get all subject IDs
+        subject_ids = recent_sessions['subject_id'].unique().tolist()
+        
+        # Step 4: Get unified alerts for these subjects  
+        unified_alerts = app_utils.get_unified_alerts(subject_ids)
+        logger.info(f"Got unified alerts for {len(unified_alerts)} subjects")
+        
+        # Step 5: Apply alerts from unified_alerts
+        for subject_id, alerts in unified_alerts.items():
+            # Create mask for this subject
+            mask = output_df['subject_id'] == subject_id
+            if not mask.any():
+                continue
             
-            # Initialize threshold analyzer with configuration
-            # Combine general thresholds with stage-specific thresholds
-            combined_config = threshold_config.copy()
-            for stage, threshold in stage_thresholds.items():
-                combined_config[f"stage_{stage}_sessions"] = {
-                    'condition': 'gt',
-                    'value': threshold
-                }
+            # Add alert category
+            alert_category = alerts.get('alert_category', 'NS')
+            output_df.loc[mask, 'percentile_category'] = alert_category
             
-            threshold_analyzer = ThresholdAnalyzer(combined_config)
+            # Add NS reason if applicable
+            if alert_category == 'NS' and 'ns_reason' in alerts:
+                output_df.loc[mask, 'ns_reason'] = alerts['ns_reason']
             
-            # Calculate threshold alerts for each subject
-            for idx, row in output_df.iterrows():
-                subject_id = row['subject_id']
-                
-                # Get all sessions for this subject (needed for session count calculations)
-                subject_sessions = app_utils.get_subject_sessions(subject_id)
-                if subject_sessions is not None and not subject_sessions.empty:
-                    
-                    # 1. Check total sessions alert
-                    total_sessions_alert = threshold_analyzer.check_total_sessions(subject_sessions)
-                    output_df.loc[idx, 'total_sessions_alert'] = total_sessions_alert['display_format']
-                    
-                    # 2. Check stage-specific sessions alert
-                    current_stage = row.get('current_stage_actual')
-                    if current_stage and current_stage in stage_thresholds:
-                        stage_sessions_alert = threshold_analyzer.check_stage_sessions(subject_sessions, current_stage)
-                        output_df.loc[idx, 'stage_sessions_alert'] = stage_sessions_alert['display_format']
-                    
-                    # 3. Check water day total alert
-                    water_day_total = row.get('water_day_total')
-                    if not pd.isna(water_day_total):
-                        water_alert = threshold_analyzer.check_water_day_total(water_day_total)
-                        output_df.loc[idx, 'water_day_total_alert'] = water_alert['display_format']
+            # Apply threshold alerts from unified alerts structure
+            threshold_data = alerts.get('threshold', {})
             
-            logger.info(f"Threshold alerts calculated for {len(output_df)} subjects")
-    
-    # Step 7: Apply alerts from unified_alerts
-    for subject_id, alerts in unified_alerts.items():
-        # Create mask for this subject
-        mask = output_df['subject_id'] == subject_id
-        if not mask.any():
-            continue
-        
-        # Add alert category
-        alert_category = alerts.get('alert_category', 'NS')
-        output_df.loc[mask, 'percentile_category'] = alert_category
-        
-        # Add NS reason if applicable
-        if alert_category == 'NS' and 'ns_reason' in alerts:
-            output_df.loc[mask, 'ns_reason'] = alerts['ns_reason']
-        
-        # Apply threshold alerts from unified alerts structure
-        threshold_data = alerts.get('threshold', {})
-        
-        # Check if there's an overall threshold alert 
-        overall_threshold_alert = threshold_data.get('threshold_alert', 'N')
-        
-        # If we don't have pre-computed threshold alerts, apply from unified alerts
-        if not threshold_alerts_precomputed:
+            # Check if there's an overall threshold alert 
+            overall_threshold_alert = threshold_data.get('threshold_alert', 'N')
+            
             if overall_threshold_alert == 'T':
                 output_df.loc[mask, 'threshold_alert'] = 'T'
-                
-                # Apply specific threshold alerts if available
-                specific_alerts = threshold_data.get('specific_alerts', {})
-                
-                # Apply total sessions alert
-                total_alert = specific_alerts.get('total_sessions', {})
-                if total_alert.get('alert') == 'T':
-                    value = total_alert.get('value', '')
-                    output_df.loc[mask, 'total_sessions_alert'] = f"T | {value}"
-                
-                # Apply stage sessions alert
-                stage_alert = specific_alerts.get('stage_sessions', {})
-                if stage_alert.get('alert') == 'T':
-                    value = stage_alert.get('value', '')
-                    stage = stage_alert.get('stage', '')
-                    output_df.loc[mask, 'stage_sessions_alert'] = f"T | {stage} | {value}"
-                
-                # Apply water day total alert
-                water_alert = specific_alerts.get('water_day_total', {})
-                if water_alert.get('alert') == 'T':
-                    value = water_alert.get('value', '')
-                    output_df.loc[mask, 'water_day_total_alert'] = f"T | {value:.1f}"
-        else:
-            # Even with precomputed threshold alerts, we still need to apply them from unified alerts
-            if overall_threshold_alert == 'T':
-                output_df.loc[mask, 'threshold_alert'] = 'T'
-        
-        # Step 8: Combine percentile and threshold alerts for display
-        current_threshold_alert = output_df.loc[mask, 'threshold_alert'].iloc[0] if mask.any() else 'N'
-        
-        if current_threshold_alert == 'T':
-            # Combine alerts
-            if alert_category != 'NS':
-                output_df.loc[mask, 'combined_alert'] = f"{alert_category}, T"
+            
+            # Combine percentile and threshold alerts for display
+            current_threshold_alert = output_df.loc[mask, 'threshold_alert'].iloc[0] if mask.any() else 'N'
+            
+            if current_threshold_alert == 'T':
+                # Combine alerts
+                if alert_category != 'NS':
+                    output_df.loc[mask, 'combined_alert'] = f"{alert_category}, T"
+                else:
+                    output_df.loc[mask, 'combined_alert'] = 'T'
             else:
-                output_df.loc[mask, 'combined_alert'] = 'T'
-        else:
-            output_df.loc[mask, 'combined_alert'] = alert_category
+                output_df.loc[mask, 'combined_alert'] = alert_category
+        
+        logger.info(f"Applied alerts to {len(output_df)} subjects")
+        
+    except Exception as e:
+        logger.warning(f"Alert processing failed: {str(e)}")
+        logger.info("Continuing with default alert values...")
+        
+        # Ensure we have the basic alert columns with default values
+        for subject_id in output_df['subject_id'].unique():
+            mask = output_df['subject_id'] == subject_id
+            output_df.loc[mask, 'percentile_category'] = 'NS'
+            output_df.loc[mask, 'combined_alert'] = 'NS'
+            output_df.loc[mask, 'ns_reason'] = 'Alert service unavailable'
     
-    logger.info(f"Applied alerts to {len(output_df)} subjects")
-    
-    # Report final alert counts  
-    threshold_alert_count = output_df['threshold_alert'].str.contains(r'T \|', na=False).sum()
-    total_sessions_alert_count = output_df['total_sessions_alert'].str.contains(r'T \|', na=False).sum()
-    stage_sessions_alert_count = output_df['stage_sessions_alert'].str.contains(r'T \|', na=False).sum() 
-    water_day_alert_count = output_df['water_day_total_alert'].str.contains(r'T \|', na=False).sum()
-    
-    logger.info(f"Alert summary: {threshold_alert_count} threshold, {total_sessions_alert_count} total sessions, {stage_sessions_alert_count} stage sessions, {water_day_alert_count} water day alerts")
+    logger.info(f"Pipeline complete: {len(output_df.columns)} columns processed for {len(output_df)} subjects")
     
     return output_df
 

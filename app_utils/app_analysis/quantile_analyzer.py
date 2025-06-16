@@ -15,10 +15,10 @@ class QuantileAnalyzer:
     """
     Analyzer for calculating and retrieving quantile-based metrics for subject performance
     ENHANCED IN PHASE 2: Now supports weighted percentile ranking for robust outlier handling
-    ENHANCED IN PHASE 3: Now supports bootstrap-enhanced confidence intervals for improved statistical robustness
+    Uses Wilson confidence intervals for statistical robustness
     """
     
-    def __init__(self, stratified_data: Dict[str, pd.DataFrame], historical_data: Optional[pd.DataFrame] = None, bootstrap_manager=None):
+    def __init__(self, stratified_data: Dict[str, pd.DataFrame], historical_data: Optional[pd.DataFrame] = None):
         """
         Initialize the QuantileAnalyzer with stratified subject data
         
@@ -27,8 +27,6 @@ class QuantileAnalyzer:
                 Dictionary of dataframes with subject averages, keyed by strata
             historical_data: Optional[pd.DataFrame]
                 DataFrame containing historical strata data for all subjects
-            bootstrap_manager: Optional[BootstrapManager]
-                PHASE 3: Bootstrap manager for enhanced confidence intervals
         """
         self.stratified_data = stratified_data
         self.historical_data = historical_data
@@ -36,8 +34,6 @@ class QuantileAnalyzer:
         self.historical_percentile_data = None
         self.percentile_calculator = OverallPercentileCalculator()
         self.statistical_utils = StatisticalUtils()
-        # PHASE 3: Bootstrap manager integration
-        self.bootstrap_manager = bootstrap_manager
         self.calculate_percentiles()
         
     def calculate_percentiles(self):
@@ -235,15 +231,6 @@ class QuantileAnalyzer:
         Enhanced with 95% confidence interval calculations and weighted percentile ranking
         
         ENHANCED IN PHASE 2: Now supports weighted percentile ranking when outlier weights are available
-        ENHANCED IN PHASE 3: Now uses bootstrap-enhanced confidence intervals when available
-
-        Parameters:
-            session_data: pd.DataFrame
-                Dataframe containing session-level data with rolling averages
-        
-        Returns:
-            pd.DataFrame
-                DataFrame with calculated percentiles and confidence intervals for each session
         """
         # Create a copy to avoid modifying the input
         result_df = session_data.copy()
@@ -258,52 +245,20 @@ class QuantileAnalyzer:
         # Track how many session-level percentiles we create
         created_columns = 0
         created_ci_columns = 0
-        bootstrap_enhanced_columns = 0
         
         # Check if session data has outlier weights
         session_has_weights = 'outlier_weight' in session_data.columns
         if session_has_weights:
             logger.info("Session data contains outlier weights - will use weighted percentiles where available")
         
-        # PHASE 3: Check for bootstrap manager availability
-        bootstrap_available = self.bootstrap_manager is not None
-        if bootstrap_available:
-            logger.info("Bootstrap manager available for enhanced CIs")
-            
-        # Track processing summary for consolidated logging
-        processing_summary = {
-            'total_strata': 0,
-            'processed_strata': 0,
-            'skipped_strata': 0,
-            'bootstrap_enhanced_strata': 0
-        }
-            
         # Process each strata separately to maintain consistent reference distributions
         for strata, strata_df in session_data.groupby('strata'):
-            processing_summary['total_strata'] += 1
-            
             # Check if we have percentile data for this strata
             if strata not in self.percentile_data:
-                processing_summary['skipped_strata'] += 1
                 continue
                 
             # Get reference distribution for this strata
             reference_df = self.percentile_data[strata]
-            processing_summary['processed_strata'] += 1
-            
-            # Check if reference distribution has outlier weights
-            reference_has_weights = 'outlier_weight' in reference_df.columns
-            
-            # PHASE 3: Check for bootstrap availability for this strata
-            strata_bootstrap_available = False
-            if bootstrap_available:
-                # Check if any feature has bootstrap for this strata
-                for rolling_col in rolling_avg_cols:
-                    feature_name = rolling_col.replace('_rolling_avg', '').replace('_processed', '')
-                    if self.bootstrap_manager.is_bootstrap_available(strata, feature_name):
-                        strata_bootstrap_available = True
-                        processing_summary['bootstrap_enhanced_strata'] += 1
-                        break
             
             # For each rolling average feature, calculate percentile using reference distribution
             for rolling_col in rolling_avg_cols:
@@ -323,7 +278,7 @@ class QuantileAnalyzer:
                 reference_values = reference_df[processed_col].values
                 
                 # Get reference weights if available
-                if reference_has_weights:
+                if 'outlier_weight' in reference_df.columns:
                     reference_weights = reference_df['outlier_weight'].values
                 else:
                     reference_weights = np.ones(len(reference_values))  # Equal weights
@@ -337,18 +292,6 @@ class QuantileAnalyzer:
                     logger.info(f"Insufficient reference data for CI calculation in {processed_col}, strata '{strata}'")
                     continue
                 
-                # PHASE 3: Check for bootstrap distribution for this specific feature
-                clean_feature_name = feature_name.replace('_processed', '')
-                bootstrap_dist = None
-                use_bootstrap_ci = False
-                
-                if bootstrap_available:
-                    bootstrap_dist = self.bootstrap_manager.get_bootstrap_distribution(strata, clean_feature_name)
-                    use_bootstrap_ci = bootstrap_dist is not None and bootstrap_dist.get('bootstrap_enabled', False)
-                    
-                    if use_bootstrap_ci:
-                        logger.info(f"    Using bootstrap-enhanced CI for {clean_feature_name}")
-                
                 # For each session in this strata
                 for idx, row in strata_df.iterrows():
                     # Get rolling average value
@@ -357,7 +300,7 @@ class QuantileAnalyzer:
                     if pd.isna(rolling_value):
                         continue
                     
-                    if reference_has_weights:
+                    if 'outlier_weight' in reference_df.columns:
                         # PHASE 2: Use weighted percentile ranking
                         percentile = self.statistical_utils.calculate_weighted_percentile_rank(
                             reference_values=clean_reference_values,
@@ -375,18 +318,11 @@ class QuantileAnalyzer:
                     
                     # Calculate confidence interval using Wilson Score method ONLY
                     # Wilson Score CIs are appropriate for percentile ranking uncertainty
-                    # Bootstrap CIs should only be used for raw value uncertainty (handled separately)
                     ci_lower, ci_upper = self.statistical_utils.calculate_percentile_confidence_interval(
                         clean_reference_values, 
                         percentile, 
                         confidence_level=0.95
                     )
-                    
-                    # Track if bootstrap distribution is available (for metadata)
-                    bootstrap_available = (use_bootstrap_ci and bootstrap_dist and 
-                                         bootstrap_dist.get('bootstrap_enabled', False))
-                    if bootstrap_available:
-                        bootstrap_enhanced_columns += 1
                     
                     # Store in result dataframe with correct column name
                     # Extract clean feature name for percentile column
@@ -400,9 +336,6 @@ class QuantileAnalyzer:
         
         logger.info(f"Created {created_columns} session-level percentile columns")
         logger.info(f"Created {created_ci_columns} confidence interval columns")
-        # PHASE 3: Report bootstrap enhancement usage
-        if bootstrap_enhanced_columns > 0:
-            logger.info(f"PHASE 3: {bootstrap_enhanced_columns} percentiles used bootstrap-enhanced CIs")
         if session_has_weights or any('outlier_weight' in self.percentile_data[strata].columns for strata in self.percentile_data):
             logger.info(f"Used weighted percentile ranking where outlier weights were available")
         

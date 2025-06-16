@@ -103,13 +103,6 @@ def real_strata_data():
     }
 
 @pytest.fixture
-def mock_bootstrap_manager():
-    """
-    Fixture providing a mock bootstrap manager for testing
-    """
-    return sample_data_provider.create_mock_bootstrap_manager()
-
-@pytest.fixture
 def mock_cache_manager():
     """
     Fixture providing a mock cache manager for testing

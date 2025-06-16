@@ -509,8 +509,9 @@ html, body {
 
 /* Make sure the details fit nicely in the viewport */
 .subject-detail-main-row {
-    max-height: calc(100vh - 400px);
-    overflow-y: auto;
+    /* Remove max-height and overflow-y to prevent encapsulating container from scrolling */
+    /* max-height: calc(100vh - 400px); */
+    /* overflow-y: auto; */
 }
 
 /* Session histogram bar color adjustments */

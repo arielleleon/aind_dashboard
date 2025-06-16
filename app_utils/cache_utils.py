@@ -1,42 +1,64 @@
+"""
+Cache utilities for AIND Dashboard
+
+This module provides centralized caching functionality for:
+- Session-level data 
+- Reference distributions and quantile data
+- Threshold alerts and analysis results
+- UI optimization structures
+- Temporal cache validation
+
+All caching is designed to reduce computation time for expensive operations
+while maintaining data consistency and freshness.
+"""
+
+from typing import Dict, List, Optional, Any, Union
 import pandas as pd
-import numpy as np
-from datetime import datetime
-from typing import Dict, List, Optional, Any
-import hashlib
-import psutil
+from datetime import datetime, timedelta
 import pickle
+import gzip
 import os
+import hashlib
 from app_utils.simple_logger import get_logger
 
+logger = get_logger('cache_utils')
 
 class CacheManager:
     """
-    Centralized cache management and memory optimization for the application.
-    
-    Handles all caching operations including:
-    - Raw data caching
-    - Session-level data caching  
-    - Optimized storage structures
-    - UI-optimized data structures
-    - Bootstrap coverage statistics
-    - Memory usage monitoring and optimization
+    Cache manager for AIND Dashboard providing intelligent caching, compression, and invalidation
     """
     
     def __init__(self):
         """Initialize cache manager with empty cache structure"""
+        # Main cache structure
         self._cache = {
-            'raw_data': None,
+            # Core data caches
+            'raw_session_data': None,
             'session_level_data': None,
+            'reference_distributions': None,
+            'quantile_data': None,
+            'threshold_alerts': None,
+            
+            # Optimized structures for UI components
             'optimized_storage': None,
-            'ui_structures': None,
-            'unified_alerts': None,
-            'last_process_time': None,
-            'data_hash': None,
-            # PHASE 3: Bootstrap cache for enhanced reference distributions
-            'bootstrap_coverage_stats': None,
-            'bootstrap_enabled_strata': None
+            'ui_structures': None
         }
-        self.logger = get_logger('cache')
+        
+        # Timestamps for cache validation
+        self._timestamps = {
+            'last_data_load': None,
+            'last_process_time': None,
+            'last_reference_calculation': None,
+            'last_alert_calculation': None
+        }
+        
+        # Cache metadata
+        self._metadata = {
+            'data_hash': None,
+            'feature_config_hash': None,
+            'cache_size_bytes': 0,
+            'compression_enabled': True
+        }
     
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -83,12 +105,11 @@ class CacheManager:
         self._cache['session_level_data'] = None
         self._cache['optimized_storage'] = None  # Optimized storage cache
         self._cache['ui_structures'] = None      # UI-optimized structures cache
-        self._cache['unified_alerts'] = None
+        self._cache['threshold_alerts'] = None
         self._cache['last_process_time'] = None
         self._cache['data_hash'] = None
-        # PHASE 3: Clear bootstrap caches when data changes
-        self._cache['bootstrap_coverage_stats'] = None
-        self._cache['bootstrap_enabled_strata'] = None
+        self._cache['last_reference_calculation'] = None
+        self._cache['last_alert_calculation'] = None
     
     def clear_all(self) -> None:
         """Clear all cached data"""
@@ -246,7 +267,7 @@ class CacheManager:
         process_memory = process.memory_info().rss / 1024 / 1024  # MB
         
         if process_memory > 1000:  # Only compress if using more than 1GB
-            self.logger.info(f"Compressing cache data (current memory: {process_memory:.1f}MB)...")
+            logger.info(f"Compressing cache data (current memory: {process_memory:.1f}MB)...")
             
             compressed_count = 0
             total_count = len(self._cache)
@@ -268,17 +289,17 @@ class CacheManager:
                         compressed_size = len(compressed_data)
                         compression_ratio = original_size / compressed_size
                         
-                        self.logger.info(f"  Compressed {cache_key}: {compression_ratio:.1f}x reduction")
+                        logger.info(f"  Compressed {cache_key}: {compression_ratio:.1f}x reduction")
                         
                         # Remove original to save memory
                         del self._cache[cache_key]
                         compressed_count += 1
                         
                 except Exception as e:
-                    self.logger.error(f"  Failed to compress {cache_key}: {str(e)}")
+                    logger.error(f"  Failed to compress {cache_key}: {str(e)}")
             
             if compressed_count > 0:
-                self.logger.info(f"Compressed {compressed_count}/{total_count} cache entries")
+                logger.info(f"Compressed {compressed_count}/{total_count} cache entries")
     
     def decompress_cache_data(self, cache_key: str) -> Any:
         """
@@ -294,11 +315,11 @@ class CacheManager:
                 # Store decompressed version back in cache
                 self._cache[cache_key] = decompressed_data
                 
-                self.logger.info(f"Decompressed {cache_key} successfully")
+                logger.info(f"Decompressed {cache_key} successfully")
                 return decompressed_data
                 
             except Exception as e:
-                self.logger.error(f"Failed to decompress {cache_key}: {str(e)}")
+                logger.error(f"Failed to decompress {cache_key}: {str(e)}")
                 return None
         
         return None

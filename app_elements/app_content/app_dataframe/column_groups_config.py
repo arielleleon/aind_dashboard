@@ -23,60 +23,24 @@ COLUMN_GROUPS = {
             'stage_sessions_alert', 'water_day_total_alert', 'ns_reason'
         ]
     },
-    'percentiles': {
-        'label': 'Percentiles & Wilson CIs',
+    'percentiles_and_confidence': {
+        'label': 'Percentiles & Wilson Confidence Intervals',
         'collapsible': True,
         'default_expanded': False,
         'icon': 'fas fa-chart-line',
         'columns': [
             # Core percentile columns (always shown when group is expanded)
             'session_overall_percentile', 'session_overall_percentile_rolling_avg',
-            # Overall percentile Wilson CIs
-            'session_overall_percentile_ci_lower', 'session_overall_percentile_ci_upper',
+            # Overall percentile Wilson CIs and certainty
+            'session_overall_percentile_ci_lower', 'session_overall_percentile_ci_upper', 'session_overall_percentile_certainty',
             # PHASE 2: Outlier Detection Information
             'outlier_weight', 'is_outlier',
-            # Feature-specific percentile columns - will be populated dynamically
-            'finished_trials_session_percentile', 'finished_trials_session_percentile_ci_lower', 'finished_trials_session_percentile_ci_upper',
-            'ignore_rate_session_percentile', 'ignore_rate_session_percentile_ci_lower', 'ignore_rate_session_percentile_ci_upper',
-            'total_trials_session_percentile', 'total_trials_session_percentile_ci_lower', 'total_trials_session_percentile_ci_upper',
-            'foraging_performance_session_percentile', 'foraging_performance_session_percentile_ci_lower', 'foraging_performance_session_percentile_ci_upper',
-            'abs(bias_naive)_session_percentile', 'abs(bias_naive)_session_percentile_ci_lower', 'abs(bias_naive)_session_percentile_ci_upper'
-        ]
-    },
-    'bootstrap': {
-        'label': 'Bootstrap Enhancement & Raw Value CIs', 
-        'collapsible': True,
-        'default_expanded': False,
-        'icon': 'fas fa-dice',
-        'columns': [
-            # PHASE 3: Bootstrap Enhancement Indicators
-            'session_overall_bootstrap_enhanced',
-            'finished_trials_bootstrap_enhanced',
-            'ignore_rate_bootstrap_enhanced', 
-            'total_trials_bootstrap_enhanced',
-            'foraging_performance_bootstrap_enhanced',
-            'abs(bias_naive)_bootstrap_enhanced',
-            # NEW: Bootstrap CIs for raw rolling average values
-            'session_overall_bootstrap_ci_lower', 'session_overall_bootstrap_ci_upper',
-            'finished_trials_bootstrap_ci_lower', 'finished_trials_bootstrap_ci_upper',
-            'ignore_rate_bootstrap_ci_lower', 'ignore_rate_bootstrap_ci_upper',
-            'total_trials_bootstrap_ci_lower', 'total_trials_bootstrap_ci_upper', 
-            'foraging_performance_bootstrap_ci_lower', 'foraging_performance_bootstrap_ci_upper',
-            'abs(bias_naive)_bootstrap_ci_lower', 'abs(bias_naive)_bootstrap_ci_upper',
-            # NEW: Bootstrap CI widths
-            'session_overall_bootstrap_ci_width',
-            'finished_trials_bootstrap_ci_width',
-            'ignore_rate_bootstrap_ci_width',
-            'total_trials_bootstrap_ci_width',
-            'foraging_performance_bootstrap_ci_width',
-            'abs(bias_naive)_bootstrap_ci_width',
-            # NEW: Bootstrap CI certainty categories
-            'session_overall_bootstrap_ci_certainty',
-            'finished_trials_bootstrap_ci_certainty',
-            'ignore_rate_bootstrap_ci_certainty',
-            'total_trials_bootstrap_ci_certainty',
-            'foraging_performance_bootstrap_ci_certainty',
-            'abs(bias_naive)_bootstrap_ci_certainty'
+            # Feature-specific percentile columns with Wilson CIs and certainty - will be populated dynamically
+            'finished_trials_session_percentile', 'finished_trials_session_percentile_ci_lower', 'finished_trials_session_percentile_ci_upper', 'finished_trials_certainty',
+            'ignore_rate_session_percentile', 'ignore_rate_session_percentile_ci_lower', 'ignore_rate_session_percentile_ci_upper', 'ignore_rate_certainty',
+            'total_trials_session_percentile', 'total_trials_session_percentile_ci_lower', 'total_trials_session_percentile_ci_upper', 'total_trials_certainty',
+            'foraging_performance_session_percentile', 'foraging_performance_session_percentile_ci_lower', 'foraging_performance_session_percentile_ci_upper', 'foraging_performance_certainty',
+            'abs(bias_naive)_session_percentile', 'abs(bias_naive)_session_percentile_ci_lower', 'abs(bias_naive)_session_percentile_ci_upper', 'abs(bias_naive)_certainty'
         ]
     },
     'processed_features': {

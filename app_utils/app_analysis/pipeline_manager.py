@@ -8,7 +8,6 @@ logger = get_logger('pipeline_manager')
 
 from .reference_processor import ReferenceProcessor
 from .quantile_analyzer import QuantileAnalyzer
-from .bootstrap_manager import BootstrapManager
 from .overall_percentile_calculator import OverallPercentileCalculator
 
 
@@ -23,7 +22,7 @@ class DataPipelineManager:
     - Initialize and coordinate analysis modules (reference processor, quantile analyzer, etc.)
     - Execute the main unified processing pipeline
     - Add session metadata for UI consumption
-    - Coordinate bootstrap enhancement and statistical robustness features
+    - Provide robust statistical analysis with Wilson confidence intervals
     """
     
     def __init__(self, cache_manager=None, ui_data_manager=None):
@@ -37,7 +36,6 @@ class DataPipelineManager:
         # Core analysis components
         self.reference_processor = None
         self.quantile_analyzer = None
-        self.bootstrap_manager = None
         
         # Support utilities
         self.percentile_calculator = OverallPercentileCalculator()
@@ -105,48 +103,23 @@ class DataPipelineManager:
     
     def initialize_quantile_analyzer(self, stratified_data: Dict[str, pd.DataFrame]) -> QuantileAnalyzer:
         """
-        Initialize quantile analyzer with Phase 3 bootstrap manager integration
+        Initialize quantile analyzer with Wilson confidence interval support
 
         Parameters:
             stratified_data: Dict[str, pd.DataFrame]
                 Dictionary of stratified data
 
         Returns:
-            QuantileAnalyzer: Initialized quantile analyzer with bootstrap support
+            QuantileAnalyzer: Initialized quantile analyzer with Wilson CI support
         """
         self.quantile_analyzer = QuantileAnalyzer(
             stratified_data=stratified_data,
             historical_data=None,  # Can be set later if needed
-            # PHASE 3: Pass bootstrap manager for enhanced confidence intervals
-            bootstrap_manager=self.bootstrap_manager
         )
         
-        # PHASE 3: Report bootstrap integration status
-        if self.bootstrap_manager is not None:
-            logger.info("QuantileAnalyzer initialized with bootstrap enhancement")
-        else:
-            logger.info("QuantileAnalyzer initialized with standard confidence intervals")
-        
-        logger.info(f"QuantileAnalyzer initialized with {'bootstrap' if self.bootstrap_manager else 'standard'} confidence intervals")
+        logger.info("QuantileAnalyzer initialized with Wilson confidence intervals")
         
         return self.quantile_analyzer
-    
-    def initialize_bootstrap_manager(self, bootstrap_config: Optional[Dict[str, Any]] = None) -> BootstrapManager:
-        """
-        Initialize bootstrap manager with configuration
-        
-        Parameters:
-            bootstrap_config: Optional[Dict[str, Any]]
-                Bootstrap configuration (uses defaults if None)
-                
-        Returns:
-            BootstrapManager: Initialized bootstrap manager
-        """
-        self.bootstrap_manager = BootstrapManager(bootstrap_config)
-        
-        logger.info("Bootstrap Manager initialized for statistical robustness")
-        
-        return self.bootstrap_manager
     
     def process_data_pipeline(self, df: pd.DataFrame, use_cache: bool = True) -> pd.DataFrame:
         """
@@ -204,32 +177,13 @@ class DataPipelineManager:
         
         # Step 4: Calculate reference distributions for percentile calculation
         if self.quantile_analyzer is None:
-            # PHASE 3: Initialize bootstrap manager before quantile analyzer if not already done
-            if self.bootstrap_manager is None:
-                logger.info("Initializing Bootstrap Manager")
-                self.initialize_bootstrap_manager()
-            
             # Create reference distributions for session percentiles
             stratified_data = self.reference_processor.prepare_for_quantile_analysis(
                 processed_df, include_history=True
             )
-            # PHASE 3: Pass bootstrap manager to quantile analyzer
+            # Create reference distributions for session percentiles
             self.initialize_quantile_analyzer(stratified_data)
-            logger.info("Bootstrap Manager initialized for statistical robustness")
-            
-            # PHASE 3: Generate bootstrap distributions for enhanced confidence intervals
-            logger.info("Generating bootstrap distributions")
-            bootstrap_result = self._generate_bootstrap_distributions(force_regenerate=False)
-            
-            # Report bootstrap generation results
-            if bootstrap_result.get('bootstrap_enabled_count', 0) > 0:
-                enabled_count = bootstrap_result['bootstrap_enabled_count']
-                total_strata = bootstrap_result['total_strata']
-                logger.info(f"Bootstrap enhancement enabled for {enabled_count}/{total_strata} strata")
-            else:
-                logger.info("No bootstrap distributions generated - using standard confidence intervals")
-                if bootstrap_result.get('warnings'):
-                    logger.warning(f"Bootstrap warnings: {len(bootstrap_result['warnings'])} issues detected")
+            logger.info("QuantileAnalyzer initialized with Wilson confidence intervals")
         
         # Step 5: Calculate session-level percentiles using reference distributions
         session_with_percentiles = self.quantile_analyzer.calculate_session_level_percentiles(session_level_data)
@@ -247,9 +201,6 @@ class DataPipelineManager:
         )
         logger.info("Calculated overall session rolling averages")
         
-        # Step 6.75: PHASE 1 OPTIMIZATION - Pre-compute bootstrap CIs during pipeline
-        comprehensive_data = self._calculate_session_bootstrap_cis(comprehensive_data)
-        
         # Step 7: Add alerts and metadata
         comprehensive_data = self._add_session_metadata(comprehensive_data)
         
@@ -262,15 +213,13 @@ class DataPipelineManager:
             if self.ui_data_manager:
                 optimized_storage = self.ui_data_manager.optimize_session_data_storage(
                     comprehensive_data, 
-                    bootstrap_manager=self.bootstrap_manager,
                     cache_manager=self.cache_manager
                 )
                 self.cache_manager.set('optimized_storage', optimized_storage)
                 
                 # Create UI-optimized structures for fast component rendering
                 ui_structures = self.ui_data_manager.create_ui_optimized_structures(
-                    comprehensive_data, 
-                    bootstrap_manager=self.bootstrap_manager
+                    comprehensive_data
                 )
                 self.cache_manager.set('ui_structures', ui_structures)
                 
@@ -334,77 +283,6 @@ class DataPipelineManager:
         else:
             result_df['is_outlier'] = False  # Default if no outlier detection applied
         
-        # PHASE 3: Add bootstrap enhancement indicators
-        if self.bootstrap_manager is not None:
-            logger.info("Adding bootstrap enhancement indicators to session metadata...")
-            
-            # Process each session to determine which percentiles used bootstrap
-            for idx, row in result_df.iterrows():
-                strata = row.get('strata', '')
-                
-                # Check bootstrap availability for each feature
-                for feature in feature_list:
-                    percentile_col = f"{feature}_session_percentile"
-                    ci_lower_col = f"{feature}_session_percentile_ci_lower"
-                    ci_upper_col = f"{feature}_session_percentile_ci_upper"
-                    bootstrap_indicator_col = f"{feature}_bootstrap_enhanced"
-                    
-                    # Check if this feature has bootstrap enhancement for this strata
-                    if (percentile_col in result_df.columns and 
-                        ci_lower_col in result_df.columns and 
-                        ci_upper_col in result_df.columns):
-                        
-                        # Check if bootstrap is available and CI values are not NaN
-                        bootstrap_available = self.bootstrap_manager.is_bootstrap_available(strata, feature)
-                        has_valid_ci = (not pd.isna(row[ci_lower_col]) and not pd.isna(row[ci_upper_col]))
-                        
-                        # Bootstrap enhanced if bootstrap is available AND we have valid CIs
-                        bootstrap_enhanced = bootstrap_available and has_valid_ci
-                        
-                        result_df.loc[idx, bootstrap_indicator_col] = bootstrap_enhanced
-                    else:
-                        result_df.loc[idx, bootstrap_indicator_col] = False
-
-                # Check bootstrap enhancement for overall percentile
-                overall_ci_lower_col = "session_overall_percentile_ci_lower"
-                overall_ci_upper_col = "session_overall_percentile_ci_upper"
-                overall_bootstrap_indicator_col = "session_overall_bootstrap_enhanced"
-                
-                if (overall_ci_lower_col in result_df.columns and 
-                    overall_ci_upper_col in result_df.columns):
-                    
-                    # Overall percentile is bootstrap enhanced if ANY feature percentile is bootstrap enhanced
-                    feature_bootstrap_indicators = [f"{feature}_bootstrap_enhanced" for feature in feature_list]
-                    any_feature_bootstrap = any(
-                        result_df.loc[idx, col] for col in feature_bootstrap_indicators 
-                        if col in result_df.columns
-                    )
-                    
-                    has_overall_ci = (not pd.isna(row[overall_ci_lower_col]) and not pd.isna(row[overall_ci_upper_col]))
-                    
-                    result_df.loc[idx, overall_bootstrap_indicator_col] = any_feature_bootstrap and has_overall_ci
-                else:
-                    result_df.loc[idx, overall_bootstrap_indicator_col] = False
-            
-            # Count and report bootstrap enhancement summary
-            bootstrap_enhanced_sessions = 0
-            for feature in feature_list:
-                bootstrap_indicator_col = f"{feature}_bootstrap_enhanced"
-                if bootstrap_indicator_col in result_df.columns:
-                    enhanced_count = result_df[bootstrap_indicator_col].sum()
-                    if enhanced_count > 0:
-                        logger.info(f"  {feature}: {enhanced_count} sessions with bootstrap-enhanced CIs")
-                        bootstrap_enhanced_sessions += enhanced_count
-            
-            # Report overall bootstrap enhancement
-            overall_bootstrap_col = "session_overall_bootstrap_enhanced"
-            if overall_bootstrap_col in result_df.columns:
-                overall_enhanced_count = result_df[overall_bootstrap_col].sum()
-                logger.info(f"  Overall percentile: {overall_enhanced_count} sessions with bootstrap-enhanced CIs")
-            
-            unique_bootstrap_sessions = len(result_df[result_df[[f"{feature}_bootstrap_enhanced" for feature in feature_list if f"{feature}_bootstrap_enhanced" in result_df.columns]].any(axis=1)])
-            logger.info(f"Total sessions with any bootstrap enhancement: {unique_bootstrap_sessions}")
-
         return result_df
     
     def _simple_percentile_to_category(self, percentile: float) -> str:
@@ -427,75 +305,4 @@ class DataPipelineManager:
         elif percentile <= 95:
             return 'G'   # Good
         else:
-            return 'SG'  # Significantly Good
-    
-    def _generate_bootstrap_distributions(self, 
-                                        force_regenerate: bool = False,
-                                        strata_filter: Optional[List[str]] = None) -> Dict[str, Any]:
-        """
-        Generate bootstrap distributions for eligible strata using the current data
-        
-        Parameters:
-            force_regenerate: bool
-                Force regeneration of all bootstrap distributions
-            strata_filter: Optional[List[str]]
-                List of specific strata to process (None = all strata)
-                
-        Returns:
-            Dict[str, Any]: Bootstrap generation results
-        """
-        # REFACTORING: Delegate to enhanced StatisticalUtils
-        from .statistical_utils import StatisticalUtils
-        return StatisticalUtils.generate_bootstrap_distributions(
-            bootstrap_manager=self.bootstrap_manager,
-            quantile_analyzer=self.quantile_analyzer,
-            reference_processor=self.reference_processor,
-            cache_manager=self.cache_manager,
-            force_regenerate=force_regenerate,
-            strata_filter=strata_filter
-        )
-    
-    def _calculate_session_bootstrap_cis(self, session_data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Calculate bootstrap CIs for all session rolling averages during pipeline processing
-        
-        This pre-computes bootstrap CIs once and stores them in session data to avoid
-        expensive real-time calculations during UI creation.
-        
-        Parameters:
-            session_data: pd.DataFrame
-                Session-level data with rolling averages and percentiles
-                
-        Returns:
-            pd.DataFrame
-                Session data with bootstrap CI columns added
-        """
-        # REFACTORING: Delegate to enhanced StatisticalUtils
-        from .statistical_utils import StatisticalUtils
-        return StatisticalUtils.calculate_session_bootstrap_cis(
-            session_data=session_data,
-            bootstrap_manager=self.bootstrap_manager,
-            reference_processor=self.reference_processor,
-            quantile_analyzer=self.quantile_analyzer
-        )
-
-    def get_bootstrap_enhancement_summary(self, use_cache: bool = True) -> Dict[str, Any]:
-        """
-        Generate a comprehensive summary of bootstrap enhancement coverage
-        
-        Parameters:
-            use_cache: bool
-                Whether to use cached data if available
-                
-        Returns:
-            Dict[str, Any]
-                Bootstrap enhancement summary with statistics and subject details
-        """
-        # REFACTORING: Delegate to enhanced StatisticalUtils
-        from .statistical_utils import StatisticalUtils
-        return StatisticalUtils.get_bootstrap_enhancement_summary(
-            cache_manager=self.cache_manager,
-            bootstrap_manager=self.bootstrap_manager,
-            reference_processor=self.reference_processor,
-            use_cache=use_cache
-        ) 
+            return 'SG'  # Significantly Good 

@@ -34,7 +34,6 @@
             └── alert_service.py
         └── 📁app_analysis
             └── __init__.py
-            └── bootstrap_manager.py
             └── overall_percentile_calculator.py
             └── pipeline_manager.py
             └── quantile_analyzer.py
@@ -48,6 +47,7 @@
         └── app_utils.py
         └── cache_utils.py
         └── percentile_utils.py
+        └── simple_logger.py
         └── ui_utils.py
     └── 📁assets
         └── column_toggle_styles.css

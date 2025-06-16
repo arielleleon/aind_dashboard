@@ -56,10 +56,6 @@ def real_strata_data():
 @pytest.fixture
 def mock_app_utils():
     """Mock AppUtils with realistic return values"""
-
-@pytest.fixture
-def mock_bootstrap_manager():
-    """Mock bootstrap manager for statistical tests"""
 ```
 
 ### Using Real Data in Your Tests
@@ -211,6 +207,20 @@ To regenerate fixtures (if needed):
 from sample_data_generator import main
 main()
 ```
+
+## Test Fixtures
+
+The `conftest.py` file provides shared fixtures for all tests:
+
+- `sample_session_data`: Realistic session data for testing
+- `simple_session_data`: Minimal session data for lightweight tests  
+- `table_display_data`: Pre-formatted table data for UI tests
+- `statistical_data`: Statistical analysis test data
+- `strata_test_cases`: Strata abbreviation test cases
+- `mock_cache_manager`: Mock cache manager for testing
+- `sample_data_provider`: Global data provider instance
+
+These fixtures ensure consistent, realistic test data across all test modules.
 
 ---
 

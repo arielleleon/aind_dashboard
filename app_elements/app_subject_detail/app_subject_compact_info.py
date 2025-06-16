@@ -30,7 +30,7 @@ class AppSubjectCompactInfo:
             ], className="compact-info-section")
         
         # Extract data
-        latest_data = subject_display_data.get('latest', {})
+        latest_data = subject_display_data.get('latest_session', {})
         strata = latest_data.get('strata', 'Unknown')
         
         # Get table display data for threshold alerts

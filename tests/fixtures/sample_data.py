@@ -111,7 +111,6 @@ class SampleDataProvider:
             'current_stage_actual': ['STAGE_1', 'STAGE_3', 'STAGE_FINAL', 'STAGE_2', 'STAGE_3', 'STAGE_FINAL', 'GRADUATED', 'GRADUATED', 'STAGE_3', 'STAGE_FINAL'],
             'is_outlier': [False, False, False, False, False, False, False, False, False, True],
             'outlier_weight': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5],
-            'session_overall_bootstrap_enhanced': [False, False, False, False, False, False, False, False, False, False],
             'is_current_strata': [True, False, True, True, False, True, True, True, False, True],
             'is_last_session': [False, False, False, False, False, True, False, False, False, False],
             'curriculum_name': ['Uncoupled Without Baiting', 'Uncoupled Without Baiting', 'Uncoupled Without Baiting', 'Uncoupled Without Baiting', 'Coupled Baiting', 'Coupled Baiting', 'Coupled Baiting', 'Coupled Baiting', 'Coupled Baiting', 'Coupled Baiting'],
@@ -192,7 +191,6 @@ class SampleDataProvider:
         return {
             'values': np.random.normal(100, 15, 1000),
             'percentiles': [25, 50, 75, 90, 95],
-            'bootstrap_samples': 1000,
             'confidence_level': 0.95,
             'features': self.features,
             'strata_reference': {
@@ -235,14 +233,6 @@ class SampleDataProvider:
                 'description': 'Simple format fallback'
             }
         ]
-    
-    def create_mock_bootstrap_manager(self) -> Any:
-        """Create a mock bootstrap manager for testing"""
-        from unittest.mock import Mock
-        mock_bootstrap = Mock()
-        mock_bootstrap.is_bootstrap_available.return_value = False
-        mock_bootstrap.statistical_utils = Mock()
-        return mock_bootstrap
     
     def create_mock_cache_manager(self) -> Any:
         """Create a mock cache manager for testing"""

@@ -1,5 +1,5 @@
 from .app_data_load import EnhancedDataLoader
-from .app_analysis import ReferenceProcessor, QuantileAnalyzer, ThresholdAnalyzer, BootstrapManager, DataPipelineManager
+from .app_analysis import ReferenceProcessor, QuantileAnalyzer, ThresholdAnalyzer, DataPipelineManager
 from .app_analysis.overall_percentile_calculator import OverallPercentileCalculator
 from .app_alerts import AlertService, AlertCoordinator
 from .cache_utils import CacheManager
@@ -16,49 +16,75 @@ logger = get_logger('app_utils')
 
 class AppUtils:
     """
-    Slim coordinator class for AIND Dashboard app utilities
-    
-    This class serves as the main entry point for all app functionality,
-    delegating to specialized modules while maintaining backward compatibility.
-    All heavy lifting is done by specialized utility classes.
+    Central utility class providing access to all data processing and analysis functions
+    for the AIND Dashboard with enhanced statistical robustness using Wilson confidence intervals.
     """
-
-    def __init__(self):
-        """Initialize app utils with specialized modules"""
-        # Core modules
-        self.data_loader = EnhancedDataLoader()
-        self.cache_manager = CacheManager()
-        self.ui_data_manager = UIDataManager()
+    
+    def __init__(self, cache_manager=None, ui_data_manager=None, alerts_manager=None):
+        """
+        Initialize AppUtils with component managers
         
-        # Specialized managers 
+        Parameters:
+            cache_manager: CacheManager instance for result caching
+            ui_data_manager: UIDataManager instance for UI optimization 
+            alerts_manager: AlertsManager instance for alert processing
+        """
+        # Core data loading
+        self.data_loader = EnhancedDataLoader()
+        
+        # Component managers
+        self.cache_manager = cache_manager or CacheManager()
+        self.ui_data_manager = ui_data_manager or UIDataManager()
+        self.alerts_manager = alerts_manager
+        
+        # Initialize alert coordinator
+        self.alert_coordinator = AlertCoordinator(self.cache_manager)
+        
+        # Initialize percentile coordinator
+        self.percentile_coordinator = PercentileCoordinator(self.cache_manager)
+        
+        # Analysis components - will be initialized on first use
+        self.reference_processor = None
+        self.quantile_analyzer = None
+        self.threshold_analyzer = None
+        
+        # Pipeline manager for unified processing
+        self.pipeline_manager = None
+        
+        # Cache access counter for logging
+        self._cache_access_count = 0
+        
+    def initialize_pipeline_manager(self, features_config: Optional[Dict[str, bool]] = None) -> DataPipelineManager:
+        """Initialize data pipeline manager with Wilson confidence intervals"""
         self.pipeline_manager = DataPipelineManager(
             cache_manager=self.cache_manager,
             ui_data_manager=self.ui_data_manager
         )
         
-        self.percentile_coordinator = PercentileCoordinator(
-            cache_manager=self.cache_manager,
-            pipeline_manager=self.pipeline_manager
-        )
+        return self.pipeline_manager
         
-        self.alert_coordinator = AlertCoordinator(
-            cache_manager=self.cache_manager,
-            pipeline_manager=self.pipeline_manager
-        )
+    def process_data(self, df: pd.DataFrame, use_cache: bool = True) -> pd.DataFrame:
+        """
+        Process raw session data using unified pipeline with Wilson CI support
         
-        # Backward compatibility references
-        self.reference_processor = None
-        self.quantile_analyzer = None
-        self.bootstrap_manager = None
-        self.alert_service = None
-        self.threshold_analyzer = None
+        Parameters:
+            df: pd.DataFrame
+                Raw session data from data loader
+            use_cache: bool
+                Whether to use cached results if available
+                
+        Returns:
+            pd.DataFrame
+                Processed session data with percentiles and Wilson confidence intervals
+        """
+        # Initialize pipeline manager if needed
+        if self.pipeline_manager is None:
+            self.initialize_pipeline_manager()
         
-        # Legacy compatibility
-        self.percentile_calculator = self.percentile_coordinator.percentile_calculator
-        self._cache = self.cache_manager._cache
+        # Process data with pipeline
+        processed_data = self.pipeline_manager.process_data_pipeline(df, use_cache=use_cache)
         
-        # Track cache access to reduce logging spam
-        self._cache_access_count = 0
+        return processed_data
 
     def get_session_data(self, load_bpod: bool = False, use_cache: bool = True) -> pd.DataFrame:
         """Get session data with caching support"""
@@ -99,12 +125,16 @@ class AppUtils:
 
     def process_data_pipeline(self, df: pd.DataFrame, use_cache: bool = True) -> pd.DataFrame:
         """Process raw data through the unified session-level pipeline"""
+        # Initialize pipeline manager if not already done
+        if self.pipeline_manager is None:
+            self.initialize_pipeline_manager()
+            
         result = self.pipeline_manager.process_data_pipeline(df, use_cache=use_cache)
         
         # Sync backward compatibility references
         self.reference_processor = self.pipeline_manager.reference_processor
         self.quantile_analyzer = self.pipeline_manager.quantile_analyzer
-        self.bootstrap_manager = self.pipeline_manager.bootstrap_manager
+        # Note: threshold_analyzer is not part of DataPipelineManager
         
         return result
     
@@ -125,19 +155,13 @@ class AppUtils:
         self.quantile_analyzer = analyzer
         return analyzer
     
-    def initialize_bootstrap_manager(self, bootstrap_config: Optional[Dict[str, Any]] = None) -> BootstrapManager:
-        """Initialize bootstrap manager"""
-        manager = self.pipeline_manager.initialize_bootstrap_manager(bootstrap_config)
-        self.bootstrap_manager = manager
-        return manager
-
     def initialize_alert_service(self, config: Optional[Dict[str, Any]] = None) -> AlertService:
         """Initialize alert service"""
-        self.alert_service = self.alert_coordinator.initialize_alert_service(
+        alert_service = self.alert_coordinator.initialize_alert_service(
             app_utils=self, 
             config=config
         )
-        return self.alert_service
+        return alert_service
 
     def get_session_overall_percentiles(self, subject_ids=None, use_cache=True, feature_weights=None):
         """Get session-level overall percentile scores"""
@@ -166,15 +190,13 @@ class AppUtils:
         """Create optimized data structures for UI components"""
         return self.ui_data_manager.optimize_session_data_storage(
             session_data, 
-            bootstrap_manager=self.bootstrap_manager,
             cache_manager=self.cache_manager
         )
     
     def create_ui_optimized_structures(self, session_data: pd.DataFrame) -> Dict[str, Any]:
         """Create UI-optimized data structures for fast rendering"""
         return self.ui_data_manager.create_ui_optimized_structures(
-            session_data, 
-            bootstrap_manager=self.bootstrap_manager
+            session_data
         )
     
     def get_subject_display_data(self, subject_id: str, use_cache: bool = True) -> Dict[str, Any]:
@@ -198,59 +220,6 @@ class AppUtils:
             use_cache
         )
 
-    def get_bootstrap_coverage_stats(self, use_cache: bool = True) -> Dict[str, Any]:
-        """Get bootstrap coverage statistics"""
-        from .app_analysis.statistical_utils import StatisticalUtils
-        return StatisticalUtils.get_bootstrap_coverage_stats(
-            cache_manager=self.cache_manager,
-            use_cache=use_cache
-        )
-    
-    def get_bootstrap_enabled_strata(self, use_cache: bool = True) -> set:
-        """Get strata with bootstrap enhancement enabled"""
-        from .app_analysis.statistical_utils import StatisticalUtils
-        return StatisticalUtils.get_bootstrap_enabled_strata(
-            cache_manager=self.cache_manager,
-            use_cache=use_cache
-        )
-    
-    def generate_bootstrap_distributions(self, force_regenerate: bool = False, strata_filter: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Generate bootstrap distributions for eligible strata"""
-        from .app_analysis.statistical_utils import StatisticalUtils
-        result = StatisticalUtils.generate_bootstrap_distributions(
-            bootstrap_manager=self.bootstrap_manager,
-            quantile_analyzer=self.quantile_analyzer,
-            reference_processor=self.reference_processor,
-            cache_manager=self.cache_manager,
-            force_regenerate=force_regenerate,
-            strata_filter=strata_filter
-        )
-        
-        if result.get('bootstrap_enabled_count', 0) > 0:
-            self._update_optimized_cache_with_bootstrap()
-        
-        return result
-
-    def get_bootstrap_enhancement_summary(self, use_cache: bool = True) -> Dict[str, Any]:
-        """Get comprehensive bootstrap enhancement summary"""
-        from .app_analysis.statistical_utils import StatisticalUtils
-        return StatisticalUtils.get_bootstrap_enhancement_summary(
-            cache_manager=self.cache_manager,
-            bootstrap_manager=self.bootstrap_manager,
-            reference_processor=self.reference_processor,
-            use_cache=use_cache
-        )
-
-    def calculate_session_bootstrap_cis(self, session_data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate bootstrap confidence intervals for session data"""
-        from .app_analysis.statistical_utils import StatisticalUtils
-        return StatisticalUtils.calculate_session_bootstrap_cis(
-            session_data=session_data,
-            bootstrap_manager=self.bootstrap_manager,
-            reference_processor=self.reference_processor,
-            quantile_analyzer=self.quantile_analyzer
-        )
-    
     def get_memory_usage_summary(self) -> Dict[str, Any]:
         """Get memory usage summary for monitoring"""
         return self.cache_manager.get_memory_usage_summary()
@@ -270,10 +239,6 @@ class AppUtils:
             self.percentile_coordinator.clear_percentile_cache()
         if hasattr(self, 'alert_coordinator'):
             self.alert_coordinator.clear_alert_cache()
-        if hasattr(self, 'bootstrap_manager') and self.bootstrap_manager is not None:
-            self.bootstrap_manager.clear_cache()
-        if hasattr(self, 'pipeline_manager') and self.pipeline_manager.bootstrap_manager is not None:
-            self.pipeline_manager.bootstrap_manager.clear_cache()
     
     def _get_ui_data_with_fallback(self, data_getter, use_cache: bool):
         """Helper method for UI data retrieval with cache fallback"""
@@ -288,13 +253,6 @@ class AppUtils:
         
         return {} if 'subject' in str(data_getter) else []
     
-    def _update_optimized_cache_with_bootstrap(self):
-        """Update optimized cache with new bootstrap information"""
-        print("Updating optimized cache with new bootstrap information...")
-        if self.cache_manager.has('session_level_data'):
-            optimized_storage = self.optimize_session_data_storage(self.cache_manager.get('session_level_data'))
-            self.cache_manager.set('optimized_storage', optimized_storage)
-
     # Legacy compatibility methods
     def _add_session_metadata(self, session_data: pd.DataFrame) -> pd.DataFrame:
         """Add metadata to session data (delegates to pipeline manager)"""
