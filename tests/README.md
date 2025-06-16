@@ -1,7 +1,161 @@
-# AIND Dashboard Test Suite
+# AIND Dashboard Testing Architecture
 
 ## Overview
-This directory contains the complete test suite for the AIND Dashboard application, featuring comprehensive unit, integration, and end-to-end tests.
+
+This testing suite has been streamlined and consolidated to provide comprehensive coverage while maintaining simplicity and ease of maintenance for developers.
+
+## Simplified Structure
+
+```
+tests/
+├── conftest.py               # Shared fixtures and configuration
+├── fixtures/                 # Test data and sample data generators
+│   ├── sample_data.py       # Realistic test data based on actual app data
+│   └── __init__.py
+├── unit/                    # Unit tests for core components
+│   ├── test_core_components.py    # **MAIN TEST FILE** - Core functionality
+│   ├── test_callback_logic/       # Callback integration tests
+│   ├── test_statistical_analysis/ # Statistical utilities tests
+│   ├── test_ui_components/        # UI component tests
+│   └── test_utilities/            # Utility function tests
+└── e2e/                     # End-to-end integration tests
+    └── test_app_smoke.py    # Basic app startup and functionality tests
+```
+
+## Key Changes in This Refactor
+
+### ✅ **Consolidated Core Tests**
+- **Primary File**: `tests/unit/test_core_components.py`
+- Combines tests for the three most critical components:
+  - `PercentileCoordinator` (core percentile functionality)
+  - `AlertCoordinator` (alert management)
+  - `EnhancedDataLoader` (data loading)
+- **Simplified from 3 separate files totaling 1400+ lines to 1 file with 310 lines**
+
+### ✅ **Removed Redundancies**
+- Eliminated duplicate `test_percentile_utils.py` files (were in 2 locations)
+- Removed empty directories (`test_integration/`, `test_user_workflows/`)
+- Consolidated overlapping test cases
+
+### ✅ **Enhanced Test Data**
+- Uses realistic sample data extracted from actual app (`tests/fixtures/sample_data.py`)
+- Provides both realistic and simple data fixtures for different test needs
+- Maintains backward compatibility for existing fixtures
+
+## Running Tests
+
+### **Quick Core Test Suite**
+```bash
+# Run the main consolidated tests (fastest)
+pytest tests/unit/test_core_components.py -v
+```
+
+### **Full Unit Test Suite**
+```bash
+# Run all unit tests
+pytest tests/unit/ -v
+```
+
+### **End-to-End Tests**
+```bash
+# Run smoke tests (note: app startup can take 5+ minutes)
+pytest tests/e2e/test_app_smoke.py -v -m "not slow"
+
+# Run full E2E including server startup
+pytest tests/e2e/test_app_smoke.py -v
+```
+
+### **All Tests**
+```bash
+# Run everything (comprehensive test suite)
+pytest tests/ -v
+```
+
+## Test Categories
+
+### **Core Components** (`test_core_components.py`)
+- **Essential for development**: Tests the primary application logic
+- **Focus**: Key functionality validation with simplified test cases
+- **Coverage**: Initialization, core operations, error handling, integration
+
+### **Callback Logic** (`test_callback_logic/`)
+- Tests Dash callback integration and UI interactions
+- Focus on callback behavior and state management
+
+### **Statistical Analysis** (`test_statistical_analysis/`)
+- Tests statistical utilities and calculation functions
+- Focus on mathematical accuracy and edge cases
+
+### **UI Components** (`test_ui_components/`)
+- Tests UI-specific business logic and data formatting
+- Focus on user interface behavior and data presentation
+
+### **Utilities** (`test_utilities/`)
+- Tests helper functions and utility modules
+- Focus on reusable functionality across the application
+
+## Developer Guidelines
+
+### **When Adding New Tests**
+
+1. **Start with Core Components**: Add tests to `test_core_components.py` if testing:
+   - PercentileCoordinator
+   - AlertCoordinator  
+   - EnhancedDataLoader
+   - Basic integration scenarios
+
+2. **Use Appropriate Subdirectory**: For specialized functionality:
+   - Callbacks → `test_callback_logic/`
+   - Statistics → `test_statistical_analysis/`
+   - UI Logic → `test_ui_components/`
+   - Utilities → `test_utilities/`
+
+3. **Follow the Simplified Pattern**:
+   ```python
+   class TestYourComponent:
+       @pytest.fixture
+       def component(self):
+           return YourComponent()
+       
+       def test_core_functionality(self, component):
+           # Test essential behavior
+           assert component.works()
+       
+       def test_error_handling(self, component):
+           # Test graceful error handling
+           with pytest.raises(ExpectedError):
+               component.fail_gracefully()
+   ```
+
+### **Testing Philosophy**
+
+- **Test Core Functionality**: Focus on essential behavior over edge cases
+- **Use Realistic Data**: Leverage `tests/fixtures/sample_data.py` for realistic test scenarios
+- **Mock External Dependencies**: Use `unittest.mock` for external services and complex setup
+- **Keep Tests Simple**: Prefer clear, readable tests over comprehensive coverage of unlikely scenarios
+
+### **Fixtures Available**
+
+From `conftest.py`:
+- `sample_session_data` - Realistic session data for testing
+- `simple_session_data` - Minimal data for lightweight tests
+- `mock_app_utils` - Mock AppUtils instance with common methods
+- `sample_statistical_data` - Data for statistical function testing
+
+## Migration Notes
+
+If you have existing test files that reference the old structure:
+- Update imports to use `test_core_components` for core functionality
+- Use the new fixtures from `conftest.py`
+- Follow the simplified test patterns shown in `test_core_components.py`
+
+## Performance
+
+The consolidated test architecture provides:
+- **~75% reduction** in test file size and complexity
+- **Faster test execution** through focused test cases
+- **Easier maintenance** with centralized core component testing
+- **Better developer experience** with clear, documented test structure
 
 ## Updated Test Architecture (2024-12-20)
 

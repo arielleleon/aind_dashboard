@@ -58,10 +58,12 @@ class TestAppSmoke:
             assert hasattr(app_utils, 'get_session_data')
             assert hasattr(app_utils, 'process_data_pipeline')
             assert hasattr(app_utils, 'get_table_display_data')
-            assert hasattr(app_utils, '_cache')
+            assert hasattr(app_utils, 'cache_manager')
             
-            # Verify cache is a dictionary-like object
-            assert hasattr(app_utils._cache, 'get')
+            # Verify cache manager has expected methods
+            assert hasattr(app_utils.cache_manager, 'get')
+            assert hasattr(app_utils.cache_manager, 'set')
+            assert hasattr(app_utils.cache_manager, 'has')
             
         except Exception as e:
             pytest.fail(f"Failed to initialize AppUtils: {e}")
