@@ -55,13 +55,20 @@ class QuantileAnalyzer:
         for strata, df in self.stratified_data.items():
             # Log strata size for debugging
             logger.info(
-                f"Processing strata '{strata}' with {len(df)} subjects (current + historical)"
+                "Processing strata "
+                + strata
+                + " with "
+                + str(len(df))
             )
 
             # Skip strata with too few subjects (consider increasing minimum)
             if len(df) < 10:  # Minimum number for meaningful percentiles
                 logger.info(
-                    f"  Skipping strata '{strata}' - too few subjects ({len(df)} < 10)"
+                    "  Skipping strata "
+                    + strata
+                    + " - too few subjects ("
+                    + str(len(df))
+                    + " < 10)"
                 )
                 continue
 
@@ -76,7 +83,7 @@ class QuantileAnalyzer:
 
             if has_outlier_weights:
                 logger.info(
-                    f"  Using weighted percentile ranking (outlier weights detected)"
+                    "  Using weighted percentile ranking (outlier weights detected)"
                 )
                 outlier_count = (df["outlier_weight"] < 1.0).sum()
                 logger.info(f"    Found {outlier_count} sessions with outlier weights")
@@ -358,7 +365,7 @@ class QuantileAnalyzer:
             for strata in self.percentile_data
         ):
             logger.info(
-                f"Used weighted percentile ranking where outlier weights were available"
+                "Used weighted percentile ranking where outlier weights were available"
             )
 
         return result_df

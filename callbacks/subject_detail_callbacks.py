@@ -67,7 +67,6 @@ def update_subject_detail(active_cell, table_data, page_current, page_size):
     )
 
     if not subject_data or not subject_id:
-        print(f"Failed to extract valid subject data")
         return default_page_style, empty_compact_info, empty_subject_store
 
     print(f"Selected subject: {subject_id}")
@@ -79,13 +78,11 @@ def update_subject_detail(active_cell, table_data, page_current, page_size):
         compact_subject_info = compact_info.build(
             subject_id=subject_id, app_utils=app_utils
         )
-        print(f"✓ Compact info built successfully")
 
     except Exception as e:
-        print(f"❌ Error building components: {str(e)}")
+        print(f"Error building components: {str(e)}")
         compact_subject_info = empty_compact_info
 
-    print(f"🖥️  SHOWING subject detail page with new layout")
 
     return (
         {"display": "block"},  # Show detail page

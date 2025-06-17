@@ -206,7 +206,7 @@ class AppSubjectTimeseries:
                     for session in valid_sessions
                 ]
                 hover_template = (
-                    f"<b>Strata: %{{customdata[2]}}</b><br><br>"  # Strata at top with spacing
+                    "<b>Strata: %{customdata[2]}</b><br><br>"  # Strata at top with spacing
                     + f"<b>{feature.replace('_', ' ').title()}</b><br>"
                     + "Raw Value: %{customdata[0]:.3f}<br>"
                     + "3-Session Avg: %{customdata[1]:.3f}<br>"

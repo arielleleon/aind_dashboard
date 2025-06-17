@@ -1,4 +1,3 @@
-import os
 import traceback
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -235,6 +234,37 @@ class EnhancedDataLoader:
                 "load_parameters": self.load_parameters,
             }
 
+    def _check_required_columns(self, data: pd.DataFrame, required_columns: list) -> list:
+        """Check for missing required columns"""
+        missing_columns = [
+            col for col in required_columns if col not in data.columns
+        ]
+        issues = []
+        if missing_columns:
+            issues.append(f"Missing required columns: {missing_columns}")
+        return issues
+
+    def _check_null_values(self, data: pd.DataFrame, required_columns: list) -> list:
+        """Check for null values in critical columns"""
+        issues = []
+        for col in required_columns:
+            if col in data.columns:
+                null_count = data[col].isnull().sum()
+                if null_count > 0:
+                    issues.append(f"Found {null_count} null values in {col}")
+        return issues
+
+    def _check_duplicate_sessions(self, data: pd.DataFrame) -> list:
+        """Check for duplicate sessions"""
+        issues = []
+        if "subject_id" in data.columns and "session" in data.columns:
+            duplicates = data.duplicated(subset=["subject_id", "session"]).sum()
+            if duplicates > 0:
+                issues.append(
+                    f"Found {duplicates} duplicate subject-session combinations"
+                )
+        return issues
+
     def validate_data(self) -> Dict[str, Any]:
         """
         Validate the loaded session data for common issues
@@ -248,30 +278,13 @@ class EnhancedDataLoader:
             if data.empty:
                 return {"valid": False, "issues": ["No data loaded"]}
 
+            required_columns = ["subject_id", "session_date", "session"]
             issues = []
 
-            # Check for required columns
-            required_columns = ["subject_id", "session_date", "session"]
-            missing_columns = [
-                col for col in required_columns if col not in data.columns
-            ]
-            if missing_columns:
-                issues.append(f"Missing required columns: {missing_columns}")
-
-            # Check for null values in critical columns
-            for col in required_columns:
-                if col in data.columns:
-                    null_count = data[col].isnull().sum()
-                    if null_count > 0:
-                        issues.append(f"Found {null_count} null values in {col}")
-
-            # Check for duplicate sessions
-            if "subject_id" in data.columns and "session" in data.columns:
-                duplicates = data.duplicated(subset=["subject_id", "session"]).sum()
-                if duplicates > 0:
-                    issues.append(
-                        f"Found {duplicates} duplicate subject-session combinations"
-                    )
+            # Run validation checks using helper methods
+            issues.extend(self._check_required_columns(data, required_columns))
+            issues.extend(self._check_null_values(data, required_columns))
+            issues.extend(self._check_duplicate_sessions(data))
 
             validation_result = {
                 "valid": len(issues) == 0,

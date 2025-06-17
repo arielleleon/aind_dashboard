@@ -3,7 +3,7 @@ import warnings
 import dash
 import dash_bootstrap_components as dbc
 
-from app_elements import *
+from app_elements import AppMain
 from app_utils.simple_logger import get_logger
 from shared_utils import app_utils
 
@@ -34,7 +34,14 @@ logger.info(
     f"App initialized: {session_count} sessions across {subject_count} subjects"
 )
 
-from callbacks import *
+from callbacks import (  # noqa: F401
+    filter_callbacks,
+    session_interaction_callbacks,
+    subject_detail_callbacks,
+    table_callbacks,
+    tooltip_callbacks,
+    visualization_callbacks,
+)
 
 app = dash.Dash(
     __name__,

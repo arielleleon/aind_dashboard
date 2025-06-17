@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 from sklearn.preprocessing import StandardScaler
 
 from .statistical_utils import StatisticalUtils
@@ -323,7 +322,7 @@ class ReferenceProcessor:
                 outlier_stats["total_outliers_detected"]
                 / outlier_stats["total_sessions"]
             ) * 100
-            logger.info(f"Outlier Detection Results:")
+            logger.info("Outlier Detection Results:")
             logger.info(
                 f"  Method: {self.outlier_config['method']}, Total: {outlier_stats['total_outliers_detected']}/{outlier_stats['total_sessions']} ({outlier_rate:.1f}%)"
             )

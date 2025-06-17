@@ -95,7 +95,7 @@ class AppDataFrame:
 
         # Add defensive check with detailed error message
         if original_df.empty or "session_date" not in original_df.columns:
-            print(f"ERROR: Invalid dataframe passed to format_dataframe.")
+            print("ERROR: Invalid dataframe passed to format_dataframe.")
             print(
                 f"DataFrame is {'empty' if original_df.empty else 'missing session_date column'}"
             )

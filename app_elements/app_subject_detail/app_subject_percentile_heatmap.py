@@ -5,7 +5,6 @@ This module creates interactive heatmap visualizations showing percentile data
 across sessions with strata transitions and outlier highlighting.
 """
 
-import pandas as pd
 import plotly.graph_objects as go
 from dash import dcc
 

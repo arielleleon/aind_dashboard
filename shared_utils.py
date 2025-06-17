@@ -11,3 +11,8 @@ app_utils = AppUtils()
 def get_shared_app_utils():
     """Get the shared app_utils instance"""
     return app_utils
+
+
+def get_app_utils():
+    """Get the shared app_utils instance (alias for compatibility)"""
+    return app_utils
