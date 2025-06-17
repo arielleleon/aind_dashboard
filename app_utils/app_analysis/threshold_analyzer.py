@@ -69,55 +69,80 @@ class ThresholdAnalyzer:
                 DataFrame with threshold_alert column added
         """
         if not self.threshold_config:
-            # No thresholds configured, return original dataframe with empty alerts
-            df_result = df.copy()
-            df_result["threshold_alert"] = "N"
-            return df_result
+            return self._create_default_result(df)
 
         # Create a copy of the dataframe to avoid modifying the original
         df_result = df.copy()
-
-        # Add threshold_alert column with default value
         df_result["threshold_alert"] = "N"  # Default to Normal
 
         # Process each threshold configuration
         for feature, config in self.threshold_config.items():
-            # Skip if feature not in dataframe
-            if feature not in df_result.columns:
-                continue
-
-            # Get condition and threshold value
-            condition = config.get("condition", "gt")
-            threshold = config.get("value")
-
-            if threshold is None:
-                continue
-
-            # Context filter if provided (e.g., specific stage)
-            context = config.get("context")
-
-            # Apply condition check for each row
-            if context:
-                # Get context column and value
-                context_col = context.get("column")
-                context_values = context.get("values", [])
-
-                if context_col and context_col in df_result.columns and context_values:
-                    # Only check rows matching the context
-                    for idx, row in df_result.iterrows():
-                        if row[context_col] in context_values:
-                            # Check threshold
-                            if self.evaluate_condition(
-                                row[feature], condition, threshold
-                            ):
-                                df_result.at[idx, "threshold_alert"] = "T"
-            else:
-                # Check all rows without context filtering
-                for idx, row in df_result.iterrows():
-                    if self.evaluate_condition(row[feature], condition, threshold):
-                        df_result.at[idx, "threshold_alert"] = "T"
+            self._process_threshold_feature(df_result, feature, config)
 
         return df_result
+
+    def _create_default_result(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Create default result when no thresholds are configured"""
+        df_result = df.copy()
+        df_result["threshold_alert"] = "N"
+        return df_result
+
+    def _process_threshold_feature(
+        self, df_result: pd.DataFrame, feature: str, config: Dict[str, Any]
+    ):
+        """Process threshold checking for a single feature"""
+        # Skip if feature not in dataframe
+        if feature not in df_result.columns:
+            return
+
+        # Get condition and threshold value
+        condition = config.get("condition", "gt")
+        threshold = config.get("value")
+
+        if threshold is None:
+            return
+
+        # Context filter if provided (e.g., specific stage)
+        context = config.get("context")
+
+        if context:
+            self._apply_contextual_threshold(
+                df_result, feature, condition, threshold, context
+            )
+        else:
+            self._apply_global_threshold(df_result, feature, condition, threshold)
+
+    def _apply_contextual_threshold(
+        self,
+        df_result: pd.DataFrame,
+        feature: str,
+        condition: str,
+        threshold: Any,
+        context: Dict[str, Any],
+    ):
+        """Apply threshold check with context filtering"""
+        context_col = context.get("column")
+        context_values = context.get("values", [])
+
+        if not (context_col and context_col in df_result.columns and context_values):
+            return
+
+        # Only check rows matching the context
+        context_mask = df_result[context_col].isin(context_values)
+        matching_rows = df_result[context_mask]
+
+        for idx in matching_rows.index:
+            row_value = df_result.at[idx, feature]
+            if self.evaluate_condition(row_value, condition, threshold):
+                df_result.at[idx, "threshold_alert"] = "T"
+
+    def _apply_global_threshold(
+        self, df_result: pd.DataFrame, feature: str, condition: str, threshold: Any
+    ):
+        """Apply threshold check to all rows without context filtering"""
+        for idx, row in df_result.iterrows():
+            if self.evaluate_condition(row[feature], condition, threshold):
+                df_result.at[idx, "threshold_alert"] = "T"
 
     def generate_alert(self, condition_met, alert_type, value=None, stage=None):
         """

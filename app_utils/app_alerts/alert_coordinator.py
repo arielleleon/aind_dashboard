@@ -316,73 +316,81 @@ class AlertCoordinator:
         Returns:
             Dict[str, int]: Dictionary mapping alert categories to subject counts
         """
-        aggregation_results = {}
-
         if df.empty:
-            return aggregation_results
+            return {}
 
         # Ensure alert service is initialized
         if self.alert_service is None:
             print(" Alert service not initialized, returning basic aggregation")
-            # Fallback to basic percentile column counting
-            percentile_col = (
-                "overall_percentile_category"
-                if "overall_percentile_category" in df.columns
-                else "percentile_category"
-            )
-            if percentile_col in df.columns:
-                return df[percentile_col].value_counts().to_dict()
-            return {}
+            return self._fallback_aggregation(df)
 
         # Get comprehensive aggregation using AlertService
         try:
-            # Count subjects in each standard percentile category
-            standard_categories = ["NS", "SB", "B", "N", "G", "SG"]
+            aggregation_results = self._count_standard_categories(df)
+            self._count_threshold_alerts(df, aggregation_results)
+            self._validate_and_adjust_counts(df, aggregation_results)
 
-            for category in standard_categories:
-                try:
-                    mask = self.alert_service.get_alert_category_mask(df, category)
-                    count = mask.sum() if hasattr(mask, "sum") else 0
-                    if count > 0:
-                        aggregation_results[category] = count
-                except Exception as e:
-                    print(f"Error counting category '{category}': {str(e)}")
-                    aggregation_results[category] = 0
-
-            # Count threshold alerts separately using business logic
-            try:
-                threshold_mask = self.alert_service.get_alert_category_mask(df, "T")
-                threshold_count = (
-                    threshold_mask.sum() if hasattr(threshold_mask, "sum") else 0
-                )
-                if threshold_count > 0:
-                    aggregation_results["T"] = threshold_count
-            except Exception as e:
-                print(f"Error counting threshold alerts: {str(e)}")
-                aggregation_results["T"] = 0
-
-            # Validate aggregation results
-            total_aggregated = sum(aggregation_results.values())
-            actual_total = len(df)
-
-            print(f"Alert category aggregation: {aggregation_results}")
-            print(f"Total subjects: {actual_total}, Aggregated: {total_aggregated}")
-
-            # Add any missing subjects to 'Unknown' category if needed
-            if total_aggregated < actual_total:
-                missing_count = actual_total - total_aggregated
-                aggregation_results["Unknown"] = missing_count
-                print(f"Added {missing_count} subjects to 'Unknown' category")
+            return aggregation_results
 
         except Exception as e:
             print(f"Error in alert category aggregation: {str(e)}")
-            # Fallback to basic counting
-            percentile_col = (
-                "overall_percentile_category"
-                if "overall_percentile_category" in df.columns
-                else "percentile_category"
-            )
-            if percentile_col in df.columns:
-                aggregation_results = df[percentile_col].value_counts().to_dict()
+            return self._fallback_aggregation(df)
+
+    def _fallback_aggregation(self, df: pd.DataFrame) -> Dict[str, int]:
+        """Fallback aggregation method when alert service is not available"""
+        percentile_col = (
+            "overall_percentile_category"
+            if "overall_percentile_category" in df.columns
+            else "percentile_category"
+        )
+        if percentile_col in df.columns:
+            return df[percentile_col].value_counts().to_dict()
+        return {}
+
+    def _count_standard_categories(self, df: pd.DataFrame) -> Dict[str, int]:
+        """Count subjects in each standard percentile category"""
+        aggregation_results = {}
+        standard_categories = ["NS", "SB", "B", "N", "G", "SG"]
+
+        for category in standard_categories:
+            try:
+                mask = self.alert_service.get_alert_category_mask(df, category)
+                count = mask.sum() if hasattr(mask, "sum") else 0
+                if count > 0:
+                    aggregation_results[category] = count
+            except Exception as e:
+                print(f"Error counting category '{category}': {str(e)}")
+                aggregation_results[category] = 0
 
         return aggregation_results
+
+    def _count_threshold_alerts(
+        self, df: pd.DataFrame, aggregation_results: Dict[str, int]
+    ):
+        """Count threshold alerts and add to aggregation results"""
+        try:
+            threshold_mask = self.alert_service.get_alert_category_mask(df, "T")
+            threshold_count = (
+                threshold_mask.sum() if hasattr(threshold_mask, "sum") else 0
+            )
+            if threshold_count > 0:
+                aggregation_results["T"] = threshold_count
+        except Exception as e:
+            print(f"Error counting threshold alerts: {str(e)}")
+            aggregation_results["T"] = 0
+
+    def _validate_and_adjust_counts(
+        self, df: pd.DataFrame, aggregation_results: Dict[str, int]
+    ):
+        """Validate aggregation results and adjust for any missing subjects"""
+        total_aggregated = sum(aggregation_results.values())
+        actual_total = len(df)
+
+        print(f"Alert category aggregation: {aggregation_results}")
+        print(f"Total subjects: {actual_total}, Aggregated: {total_aggregated}")
+
+        # Add any missing subjects to 'Unknown' category if needed
+        if total_aggregated < actual_total:
+            missing_count = actual_total - total_aggregated
+            aggregation_results["Unknown"] = missing_count
+            print(f"Added {missing_count} subjects to 'Unknown' category")

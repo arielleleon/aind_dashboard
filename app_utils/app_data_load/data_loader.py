@@ -234,11 +234,11 @@ class EnhancedDataLoader:
                 "load_parameters": self.load_parameters,
             }
 
-    def _check_required_columns(self, data: pd.DataFrame, required_columns: list) -> list:
+    def _check_required_columns(
+        self, data: pd.DataFrame, required_columns: list
+    ) -> list:
         """Check for missing required columns"""
-        missing_columns = [
-            col for col in required_columns if col not in data.columns
-        ]
+        missing_columns = [col for col in required_columns if col not in data.columns]
         issues = []
         if missing_columns:
             issues.append(f"Missing required columns: {missing_columns}")

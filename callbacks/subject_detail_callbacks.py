@@ -83,7 +83,6 @@ def update_subject_detail(active_cell, table_data, page_current, page_size):
         print(f"Error building components: {str(e)}")
         compact_subject_info = empty_compact_info
 
-
     return (
         {"display": "block"},  # Show detail page
         compact_subject_info,  # Compact info component

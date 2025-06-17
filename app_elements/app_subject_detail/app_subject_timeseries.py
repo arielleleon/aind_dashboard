@@ -135,14 +135,32 @@ class AppSubjectTimeseries:
             return self._create_empty_figure()
 
         sessions = subject_data["sessions"]
-        strata_data = subject_data.get("strata", [])
-
         if not sessions:
             return self._create_empty_figure()
 
         fig = go.Figure()
+        features_to_plot = self._determine_features_to_plot(selected_features)
 
-        # Determine which features to plot
+        if not features_to_plot:
+            return self._create_empty_figure()
+
+        logger.info(f"Features to plot: {features_to_plot}")
+
+        # Create strata abbreviation mapping for hover info
+        strata_sessions_map = self._create_strata_mapping(subject_data, sessions)
+
+        # Plot each feature
+        self._add_feature_traces(
+            fig, subject_data, sessions, features_to_plot, strata_sessions_map
+        )
+
+        # Add additional plot elements
+        self._finalize_plot_layout(fig, subject_data, sessions, highlighted_session)
+
+        return fig
+
+    def _determine_features_to_plot(self, selected_features):
+        """Determine which features to plot based on selection"""
         features_to_plot = []
         if "all" in selected_features:
             features_to_plot = list(self.features_config.keys())
@@ -154,96 +172,140 @@ class AppSubjectTimeseries:
         if not features_to_plot:
             features_to_plot = list(self.features_config.keys())
 
-        logger.info(f"Features to plot: {features_to_plot}")
+        return features_to_plot
 
-        # Create strata abbreviation mapping for hover info
+    def _create_strata_mapping(self, subject_data, sessions):
+        """Create mapping of sessions to strata abbreviations"""
+        strata_data = subject_data.get("strata", [])
         strata_sessions_map = {}
+
         if strata_data and len(strata_data) == len(sessions):
             for session, strata in zip(sessions, strata_data):
                 strata_sessions_map[session] = self._get_strata_abbreviation(strata)
 
-        # Plot each feature using raw values with our own rolling average
+        return strata_sessions_map
+
+    def _add_feature_traces(
+        self, fig, subject_data, sessions, features_to_plot, strata_sessions_map
+    ):
+        """Add feature traces to the plot"""
         for i, feature in enumerate(features_to_plot):
-            # Look for raw feature data
-            raw_key = f"{feature}_raw"
+            self._add_single_feature_trace(
+                fig, subject_data, sessions, feature, i, strata_sessions_map
+            )
 
-            if raw_key not in subject_data:
-                logger.info(f"No raw data found for {feature}, skipping")
-                continue
+    def _add_single_feature_trace(
+        self, fig, subject_data, sessions, feature, trace_index, strata_sessions_map
+    ):
+        """Add a single feature trace to the plot"""
+        raw_key = f"{feature}_raw"
 
-            raw_data = subject_data[raw_key]
-            logger.info(f"Using raw data for {feature}: {len(raw_data)} values")
+        if raw_key not in subject_data:
+            logger.info(f"No raw data found for {feature}, skipping")
+            return
 
-            # Filter out invalid values (-1 or NaN represents missing data)
-            valid_data = []
-            for j, (session, value) in enumerate(zip(sessions, raw_data)):
-                if value is not None and not pd.isna(value) and value != -1:
-                    valid_data.append((session, value))
+        raw_data = subject_data[raw_key]
+        logger.info(f"Using raw data for {feature}: {len(raw_data)} values")
 
-            if len(valid_data) < 2:
-                logger.info(
-                    f"Insufficient valid data for {feature}: {len(valid_data)} points"
-                )
-                continue
+        # Process the raw data
+        valid_data = self._filter_valid_data(sessions, raw_data)
 
-            valid_sessions, valid_raw_values = zip(*valid_data)
-            valid_sessions = list(valid_sessions)
-            valid_raw_values = list(valid_raw_values)
-
+        if len(valid_data) < 2:
             logger.info(
-                f"Valid raw data for {feature}: {len(valid_raw_values)} points, range: {min(valid_raw_values):.3f} to {max(valid_raw_values):.3f}"
+                f"Insufficient valid data for {feature}: {len(valid_data)} points"
             )
+            return
 
-            # Apply 3-session rolling average to raw values
-            rolling_avg_values = self._apply_rolling_average(valid_raw_values, window=3)
+        valid_sessions, valid_raw_values = zip(*valid_data)
+        valid_sessions = list(valid_sessions)
+        valid_raw_values = list(valid_raw_values)
 
-            # Normalize values for better visualization (shows relative performance)
-            normalized_values = self._normalize_for_display(rolling_avg_values, feature)
+        logger.info(
+            f"Valid raw data for {feature}: {len(valid_raw_values)} points, range: {min(valid_raw_values):.3f} to {max(valid_raw_values):.3f}"
+        )
 
-            if i == 0:  # First trace gets strata info
-                strata_hover_info = [
-                    strata_sessions_map.get(session, "Unknown")
-                    for session in valid_sessions
-                ]
-                hover_template = (
-                    "<b>Strata: %{customdata[2]}</b><br><br>"  # Strata at top with spacing
-                    + f"<b>{feature.replace('_', ' ').title()}</b><br>"
-                    + "Raw Value: %{customdata[0]:.3f}<br>"
-                    + "3-Session Avg: %{customdata[1]:.3f}<br>"
-                    + "Normalized: %{y:.2f}<extra></extra>"
-                )
-                custom_data = list(
-                    zip(valid_raw_values, rolling_avg_values, strata_hover_info)
-                )
-            else:  # Subsequent traces don't include strata
-                hover_template = (
-                    f"<b>{feature.replace('_', ' ').title()}</b><br>"
-                    + "Raw Value: %{customdata[0]:.3f}<br>"
-                    + "3-Session Avg: %{customdata[1]:.3f}<br>"
-                    + "Normalized: %{y:.2f}<extra></extra>"
-                )
-                custom_data = list(zip(valid_raw_values, rolling_avg_values))
+        # Apply processing and add trace
+        rolling_avg_values = self._apply_rolling_average(valid_raw_values, window=3)
+        normalized_values = self._normalize_for_display(rolling_avg_values, feature)
 
-            # Create trace with integer session numbers and enhanced hover info
-            fig.add_trace(
-                go.Scatter(
-                    x=valid_sessions,  # Keep original integer sessions
-                    y=normalized_values,
-                    mode="lines",
-                    name=feature.replace("_", " ")
-                    .replace("abs(", "|")
-                    .replace(")", "|")
-                    .title(),
-                    line=dict(
-                        color=self.feature_colors.get(feature, "#000000"),
-                        width=3,
-                        shape="spline",  # Use plotly's spline smoothing
-                        smoothing=1.3,  # Plotly smoothing parameter
-                    ),
-                    hovertemplate=hover_template,
-                    customdata=custom_data,
-                )
+        # Create hover template and custom data
+        hover_template, custom_data = self._create_hover_data(
+            feature,
+            valid_raw_values,
+            rolling_avg_values,
+            valid_sessions,
+            strata_sessions_map,
+            trace_index,
+        )
+
+        # Add the trace
+        fig.add_trace(
+            go.Scatter(
+                x=valid_sessions,
+                y=normalized_values,
+                mode="lines",
+                name=feature.replace("_", " ")
+                .replace("abs(", "|")
+                .replace(")", "|")
+                .title(),
+                line=dict(
+                    color=self.feature_colors.get(feature, "#000000"),
+                    width=3,
+                    shape="spline",
+                    smoothing=1.3,
+                ),
+                hovertemplate=hover_template,
+                customdata=custom_data,
             )
+        )
+
+    def _filter_valid_data(self, sessions, raw_data):
+        """Filter out invalid values from raw data"""
+        valid_data = []
+        for session, value in zip(sessions, raw_data):
+            if value is not None and not pd.isna(value) and value != -1:
+                valid_data.append((session, value))
+        return valid_data
+
+    def _create_hover_data(
+        self,
+        feature,
+        valid_raw_values,
+        rolling_avg_values,
+        valid_sessions,
+        strata_sessions_map,
+        trace_index,
+    ):
+        """Create hover template and custom data for traces"""
+        if trace_index == 0:  # First trace gets strata info
+            strata_hover_info = [
+                strata_sessions_map.get(session, "Unknown")
+                for session in valid_sessions
+            ]
+            hover_template = (
+                "<b>Strata: %{customdata[2]}</b><br><br>"
+                + f"<b>{feature.replace('_', ' ').title()}</b><br>"
+                + "Raw Value: %{customdata[0]:.3f}<br>"
+                + "3-Session Avg: %{customdata[1]:.3f}<br>"
+                + "Normalized: %{y:.2f}<extra></extra>"
+            )
+            custom_data = list(
+                zip(valid_raw_values, rolling_avg_values, strata_hover_info)
+            )
+        else:  # Subsequent traces don't include strata
+            hover_template = (
+                f"<b>{feature.replace('_', ' ').title()}</b><br>"
+                + "Raw Value: %{customdata[0]:.3f}<br>"
+                + "3-Session Avg: %{customdata[1]:.3f}<br>"
+                + "Normalized: %{y:.2f}<extra></extra>"
+            )
+            custom_data = list(zip(valid_raw_values, rolling_avg_values))
+
+        return hover_template, custom_data
+
+    def _finalize_plot_layout(self, fig, subject_data, sessions, highlighted_session):
+        """Finalize plot layout and add additional elements"""
+        strata_data = subject_data.get("strata", [])
 
         # Add strata transition lines
         if strata_data and len(strata_data) == len(sessions):
@@ -255,9 +317,7 @@ class AppSubjectTimeseries:
             xaxis_title="Session Number",
             yaxis_title="3-Session Rolling Average (Normalized & Smoothed)",
             template="plotly_white",
-            margin=dict(
-                l=40, r=20, t=40, b=40
-            ),  # Increased top margin for hover tooltips
+            margin=dict(l=40, r=20, t=40, b=40),
             height=550,
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
@@ -275,19 +335,16 @@ class AppSubjectTimeseries:
         )
 
         # Add session highlight if specified
-        if highlighted_session and sessions:
-            if highlighted_session in sessions:
-                fig.add_vline(
-                    x=highlighted_session,
-                    line=dict(color="rgba(65, 105, 225, 0.6)", width=3, dash="solid"),
-                    annotation_text=f"Session {highlighted_session}",
-                    annotation_position="top",
-                )
+        if highlighted_session and sessions and highlighted_session in sessions:
+            fig.add_vline(
+                x=highlighted_session,
+                line=dict(color="rgba(65, 105, 225, 0.6)", width=3, dash="solid"),
+                annotation_text=f"Session {highlighted_session}",
+                annotation_position="top",
+            )
 
-        # PHASE 2: Add outlier markers to time series plot
+        # Add outlier markers
         self._add_outlier_markers(fig, sessions, subject_data.get("is_outlier", []))
-
-        return fig
 
     def _apply_rolling_average(self, values, window=3):
         """

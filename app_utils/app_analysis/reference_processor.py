@@ -109,13 +109,53 @@ class ReferenceProcessor:
             pd.DataFrame
                 Processed dataframe with strata-specific standardized features and outlier weights
         """
+        # Prepare and clean the data
+        df_clean = self._prepare_input_data(df)
+
+        # Assign strata before standardization
+        df_with_strata = self._assign_strata_for_processing(df_clean)
+
+        # Determine outlier detection approach
+        apply_outlier_detection = self._determine_outlier_detection(remove_outliers)
+
+        # Process data by strata
+        processed_df_list, outlier_stats, processing_summary = self._process_strata(
+            df_with_strata, apply_outlier_detection
+        )
+
+        # Finalize and log results
+        return self._finalize_processing(
+            processed_df_list,
+            outlier_stats,
+            processing_summary,
+            apply_outlier_detection,
+        )
+
+    def _prepare_input_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Prepare and clean input data"""
         df = df.copy()
 
         # Convert to datetime if necessary
         if not pd.api.types.is_datetime64_any_dtype(df["session_date"]):
             df["session_date"] = pd.to_datetime(df["session_date"])
 
-        # Enhanced filtering of off-curriculum sessions (check for both None value and string "None")
+        # Enhanced filtering of off-curriculum sessions
+        df = self._filter_off_curriculum_sessions(df)
+
+        # Clean data - additional filtering
+        df_clean = df.query(
+            'curriculum_name != "None" and curriculum_version != "0.1"'
+        ).copy()
+
+        # Map curriculum versions
+        df_clean["curriculum_version_group"] = df_clean["curriculum_version"].map(
+            self._map_curriculum_ver
+        )
+
+        return df_clean
+
+    def _filter_off_curriculum_sessions(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Filter out off-curriculum sessions"""
         off_curriculum_mask = (
             df["curriculum_name"].isna()
             | (df["curriculum_name"] == "None")
@@ -133,171 +173,277 @@ class ReferenceProcessor:
             )
             df = df[~off_curriculum_mask].copy()
 
-        # Clean data - additional filtering
-        df_clean = df.query(
-            'curriculum_name != "None" and curriculum_version != "0.1"'
-        ).copy()
+        return df
 
-        def _map_curriculum_ver(ver):
-            if "2.3" in ver:
-                return "v3"
-            elif "1.0" in ver:
-                return "v1"
-            else:
-                return "v2"
+    def _map_curriculum_ver(self, ver):
+        """Map curriculum version to version group"""
+        if "2.3" in ver:
+            return "v3"
+        elif "1.0" in ver:
+            return "v1"
+        else:
+            return "v2"
 
-        df_clean["curriculum_version_group"] = df_clean["curriculum_version"].map(
-            _map_curriculum_ver
-        )
-
-        # CRITICAL CHANGE: Assign strata BEFORE standardization
+    def _assign_strata_for_processing(self, df_clean: pd.DataFrame) -> pd.DataFrame:
+        """Assign strata before standardization"""
         logger.info(
             "Assigning strata before standardization for strata-specific processing..."
         )
-        df_with_strata = self.assign_subject_strata(df_clean, use_simplified=True)
+        return self.assign_subject_strata(df_clean, use_simplified=True)
 
-        # Determine outlier detection approach
+    def _determine_outlier_detection(self, remove_outliers: bool) -> bool:
+        """Determine whether to apply outlier detection"""
         apply_outlier_detection = remove_outliers
         if apply_outlier_detection is None:
             apply_outlier_detection = self.outlier_config["handling"] != "none"
+        return apply_outlier_detection
 
-        # PHASE 2 ENHANCEMENT: Enhanced outlier detection and weighted standardization
+    def _process_strata(
+        self, df_with_strata: pd.DataFrame, apply_outlier_detection: bool
+    ):
+        """Process each strata with standardization and outlier detection"""
         logger.info(
             "Applying strata-specific standardization with enhanced outlier detection..."
         )
-        processed_df_list = []
 
-        # Track outlier detection statistics
-        outlier_stats = {
+        processed_df_list = []
+        outlier_stats = self._initialize_outlier_stats()
+        processing_summary = self._initialize_processing_summary()
+
+        # Process each strata separately
+        for strata, strata_df in df_with_strata.groupby("strata"):
+            strata_processed, strata_outlier_count = self._process_single_strata(
+                strata,
+                strata_df,
+                apply_outlier_detection,
+                processing_summary,
+                outlier_stats,
+            )
+
+            # Update statistics
+            self._update_outlier_stats(
+                outlier_stats, strata, strata_outlier_count, len(strata_df)
+            )
+
+            processed_df_list.append(strata_processed)
+
+        return processed_df_list, outlier_stats, processing_summary
+
+    def _initialize_outlier_stats(self) -> Dict:
+        """Initialize outlier detection statistics"""
+        return {
             "total_sessions": 0,
             "total_outliers_detected": 0,
             "outliers_by_feature": {},
             "outliers_by_strata": {},
         }
 
-        # Track processing summary for consolidated logging
-        processing_summary = {
+    def _initialize_processing_summary(self) -> Dict:
+        """Initialize processing summary statistics"""
+        return {
             "total_strata": 0,
             "processed_strata": 0,
             "insufficient_strata": 0,
             "features_processed": set(),
         }
 
-        # Process each strata separately
-        for strata, strata_df in df_with_strata.groupby("strata"):
-            processing_summary["total_strata"] += 1
-            strata_processed = strata_df.copy()
+    def _process_single_strata(
+        self,
+        strata: str,
+        strata_df: pd.DataFrame,
+        apply_outlier_detection: bool,
+        processing_summary: Dict,
+        outlier_stats: Dict,
+    ):
+        """Process a single strata with standardization and outlier detection"""
+        processing_summary["total_strata"] += 1
+        strata_processed = strata_df.copy()
 
-            # Initialize outlier weights for this strata (default to 1.0 = no outlier detected)
-            strata_processed["outlier_weight"] = 1.0
-            strata_outlier_count = 0
+        # Initialize outlier weights
+        strata_processed["outlier_weight"] = 1.0
+        strata_outlier_count = 0
 
-            # Check if we have enough subjects for meaningful standardization
-            unique_subjects = strata_df["subject_id"].nunique()
-            min_subjects_for_standardization = (
-                5  # Minimum subjects needed for standardization
+        # Check if we have enough subjects for meaningful standardization
+        unique_subjects = strata_df["subject_id"].nunique()
+        min_subjects_for_standardization = 5
+
+        if unique_subjects >= min_subjects_for_standardization:
+            processing_summary["processed_strata"] += 1
+            strata_outlier_count = self._process_features_for_strata(
+                strata,
+                strata_df,
+                strata_processed,
+                apply_outlier_detection,
+                processing_summary,
+                outlier_stats,
+            )
+        else:
+            self._handle_insufficient_subjects(
+                strata_df, strata_processed, processing_summary
             )
 
-            if unique_subjects >= min_subjects_for_standardization:
-                processing_summary["processed_strata"] += 1
-                # Apply enhanced outlier detection and standardization within this strata
-                for feature, lower_is_better in self.features_config.items():
-                    if feature not in strata_df.columns:
-                        continue
+        return strata_processed, strata_outlier_count
 
-                    processing_summary["features_processed"].add(feature)
+    def _process_features_for_strata(
+        self,
+        strata: str,
+        strata_df: pd.DataFrame,
+        strata_processed: pd.DataFrame,
+        apply_outlier_detection: bool,
+        processing_summary: Dict,
+        outlier_stats: Dict,
+    ) -> int:
+        """Process features for a strata with sufficient subjects"""
+        total_outlier_count = 0
 
-                    # Get non-null feature values for this strata
-                    feature_values = strata_df[feature].dropna()
+        for feature, lower_is_better in self.features_config.items():
+            if feature not in strata_df.columns:
+                continue
 
-                    if (
-                        len(feature_values) < 3
-                    ):  # Need minimum data points for standardization
-                        continue
+            processing_summary["features_processed"].add(feature)
+            feature_values = strata_df[feature].dropna()
 
-                    # PHASE 2: Apply outlier detection before standardization
-                    if (
-                        apply_outlier_detection
-                        and len(feature_values)
-                        >= self.outlier_config["min_data_points"]
-                    ):
+            if len(feature_values) < 3:  # Need minimum data points
+                continue
 
-                        # Get outlier detection results
-                        feature_values_array = strata_df[feature].values
-                        outlier_mask, feature_weights = self._detect_outliers(
-                            feature_values_array
-                        )
+            # Apply outlier detection and standardization
+            outlier_count = self._process_single_feature(
+                feature,
+                lower_is_better,
+                strata,
+                strata_df,
+                strata_processed,
+                apply_outlier_detection,
+                outlier_stats,
+            )
+            total_outlier_count += outlier_count
 
-                        # Update outlier weights for detected outliers
-                        outlier_indices = strata_df.index[outlier_mask]
-                        strata_processed.loc[outlier_indices, "outlier_weight"] = (
-                            feature_weights[outlier_mask]
-                        )
+        return total_outlier_count
 
-                        # Track outlier statistics
-                        feature_outlier_count = np.sum(outlier_mask)
-                        strata_outlier_count += feature_outlier_count
+    def _process_single_feature(
+        self,
+        feature: str,
+        lower_is_better: bool,
+        strata: str,
+        strata_df: pd.DataFrame,
+        strata_processed: pd.DataFrame,
+        apply_outlier_detection: bool,
+        outlier_stats: Dict,
+    ) -> int:
+        """Process a single feature with outlier detection and standardization"""
+        outlier_count = 0
 
-                        if feature not in outlier_stats["outliers_by_feature"]:
-                            outlier_stats["outliers_by_feature"][feature] = 0
-                        outlier_stats["outliers_by_feature"][
-                            feature
-                        ] += feature_outlier_count
+        # Apply outlier detection if enabled
+        if (
+            apply_outlier_detection
+            and len(strata_df[feature].dropna())
+            >= self.outlier_config["min_data_points"]
+        ):
+            outlier_count = self._apply_outlier_detection(
+                feature, strata_df, strata_processed
+            )
 
-                    # Create and fit scaler for this strata and feature
-                    scaler = StandardScaler()
+            # Track outlier statistics by feature
+            if feature not in outlier_stats["outliers_by_feature"]:
+                outlier_stats["outliers_by_feature"][feature] = 0
+            outlier_stats["outliers_by_feature"][feature] += outlier_count
 
-                    try:
-                        # Fit on all non-null values in this strata
-                        scaler.fit(feature_values.values.reshape(-1, 1))
+        # Apply standardization
+        self._apply_standardization(
+            feature, lower_is_better, strata, strata_df, strata_processed
+        )
 
-                        # Transform all values (including nulls which will remain null)
-                        scaled_values = np.full(len(strata_df), np.nan)
-                        non_null_mask = strata_df[feature].notna()
+        return outlier_count
 
-                        if non_null_mask.any():
-                            scaled_values[non_null_mask] = scaler.transform(
-                                strata_df.loc[non_null_mask, feature].values.reshape(
-                                    -1, 1
-                                )
-                            ).flatten()
+    def _apply_outlier_detection(
+        self, feature: str, strata_df: pd.DataFrame, strata_processed: pd.DataFrame
+    ) -> int:
+        """Apply outlier detection for a feature"""
+        feature_values_array = strata_df[feature].values
+        outlier_mask, feature_weights = self._detect_outliers(feature_values_array)
 
-                        # Invert if lower is better (higher values always mean better performance)
-                        if lower_is_better:
-                            scaled_values = -scaled_values
+        # Update outlier weights for detected outliers
+        outlier_indices = strata_df.index[outlier_mask]
+        strata_processed.loc[outlier_indices, "outlier_weight"] = feature_weights[
+            outlier_mask
+        ]
 
-                        # Add processed feature to strata dataframe
-                        strata_processed[f"{feature}_processed"] = scaled_values
+        return np.sum(outlier_mask)
 
-                    except Exception as e:
-                        logger.warning(
-                            f"Error standardizing {feature} in strata {strata}: {e}"
-                        )
-                        # If standardization fails, copy original values
-                        strata_processed[f"{feature}_processed"] = strata_df[feature]
+    def _apply_standardization(
+        self,
+        feature: str,
+        lower_is_better: bool,
+        strata: str,
+        strata_df: pd.DataFrame,
+        strata_processed: pd.DataFrame,
+    ):
+        """Apply standardization to a feature"""
+        feature_values = strata_df[feature].dropna()
+        scaler = StandardScaler()
 
-            else:
-                processing_summary["insufficient_strata"] += 1
-                # If insufficient subjects, just copy raw values as "processed"
-                for feature, lower_is_better in self.features_config.items():
-                    if feature in strata_df.columns:
-                        # Still apply inversion if needed
-                        if lower_is_better:
-                            strata_processed[f"{feature}_processed"] = -strata_df[
-                                feature
-                            ]
-                        else:
-                            strata_processed[f"{feature}_processed"] = strata_df[
-                                feature
-                            ]
+        try:
+            # Fit on all non-null values in this strata
+            scaler.fit(feature_values.values.reshape(-1, 1))
 
-            # Track strata outlier statistics
-            outlier_stats["outliers_by_strata"][strata] = strata_outlier_count
-            outlier_stats["total_sessions"] += len(strata_df)
-            outlier_stats["total_outliers_detected"] += strata_outlier_count
+            # Transform all values
+            scaled_values = np.full(len(strata_df), np.nan)
+            non_null_mask = strata_df[feature].notna()
 
-            processed_df_list.append(strata_processed)
+            if non_null_mask.any():
+                scaled_values[non_null_mask] = scaler.transform(
+                    strata_df.loc[non_null_mask, feature].values.reshape(-1, 1)
+                ).flatten()
 
+            # Invert if lower is better
+            if lower_is_better:
+                scaled_values = -scaled_values
+
+            # Add processed feature to strata dataframe
+            strata_processed[f"{feature}_processed"] = scaled_values
+
+        except Exception as e:
+            logger.warning(f"Error standardizing {feature} in strata {strata}: {e}")
+            # If standardization fails, copy original values
+            strata_processed[f"{feature}_processed"] = strata_df[feature]
+
+    def _handle_insufficient_subjects(
+        self,
+        strata_df: pd.DataFrame,
+        strata_processed: pd.DataFrame,
+        processing_summary: Dict,
+    ):
+        """Handle strata with insufficient subjects for standardization"""
+        processing_summary["insufficient_strata"] += 1
+
+        for feature, lower_is_better in self.features_config.items():
+            if feature in strata_df.columns:
+                # Still apply inversion if needed
+                if lower_is_better:
+                    strata_processed[f"{feature}_processed"] = -strata_df[feature]
+                else:
+                    strata_processed[f"{feature}_processed"] = strata_df[feature]
+
+    def _update_outlier_stats(
+        self,
+        outlier_stats: Dict,
+        strata: str,
+        strata_outlier_count: int,
+        strata_size: int,
+    ):
+        """Update outlier statistics"""
+        outlier_stats["outliers_by_strata"][strata] = strata_outlier_count
+        outlier_stats["total_sessions"] += strata_size
+        outlier_stats["total_outliers_detected"] += strata_outlier_count
+
+    def _finalize_processing(
+        self,
+        processed_df_list: list,
+        outlier_stats: Dict,
+        processing_summary: Dict,
+        apply_outlier_detection: bool,
+    ) -> pd.DataFrame:
+        """Combine processed strata and log results"""
         # Combine all processed strata back together
         if processed_df_list:
             df_final = pd.concat(processed_df_list, ignore_index=True)
@@ -309,6 +455,15 @@ class ReferenceProcessor:
             return pd.DataFrame()
 
         # Log processing summary
+        self._log_processing_summary(processing_summary)
+
+        # Log outlier detection results
+        self._log_outlier_results(outlier_stats, apply_outlier_detection)
+
+        return df_final
+
+    def _log_processing_summary(self, processing_summary: Dict):
+        """Log processing summary statistics"""
         logger.info(
             f"Strata processing: {processing_summary['processed_strata']}/{processing_summary['total_strata']} processed ({processing_summary['insufficient_strata']} insufficient)"
         )
@@ -316,12 +471,14 @@ class ReferenceProcessor:
             f"Features processed: {len(processing_summary['features_processed'])} ({', '.join(sorted(processing_summary['features_processed']))})"
         )
 
-        # Report outlier detection statistics (only key metrics)
+    def _log_outlier_results(self, outlier_stats: Dict, apply_outlier_detection: bool):
+        """Log outlier detection results"""
         if apply_outlier_detection and outlier_stats["total_sessions"] > 0:
             outlier_rate = (
                 outlier_stats["total_outliers_detected"]
                 / outlier_stats["total_sessions"]
             ) * 100
+
             logger.info("Outlier Detection Results:")
             logger.info(
                 f"  Method: {self.outlier_config['method']}, Total: {outlier_stats['total_outliers_detected']}/{outlier_stats['total_sessions']} ({outlier_rate:.1f}%)"
@@ -330,17 +487,12 @@ class ReferenceProcessor:
                 f"  Handling: {self.outlier_config['handling']} (weight={self.outlier_config['outlier_weight']})"
             )
 
-            # Only log feature rates, skip detailed strata breakdown
+            # Log feature rates
             feature_summary = []
             for feature, count in outlier_stats["outliers_by_feature"].items():
                 feature_rate = (count / outlier_stats["total_sessions"]) * 100
                 feature_summary.append(f"{feature}: {count} ({feature_rate:.1f}%)")
             logger.info(f"  By feature: {', '.join(feature_summary)}")
-
-        # PHASE 2: Remove old 3-sigma outlier removal (replaced with weighted approach above)
-        # The old remove_outliers logic has been replaced with the enhanced outlier detection
-
-        return df_final
 
     def _detect_outliers(self, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
