@@ -1,5 +1,14 @@
+"""
+Reference processor for AIND Dashboard
+
+This module provides a processor for subject performance data that provides:
+- Subject eligibility filtering
+- Data preprocessing with enhanced outlier detection
+- Data stratification
+- Feature averaging for quantile analysis
+"""
+
 import logging
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np

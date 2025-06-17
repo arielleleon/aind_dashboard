@@ -146,13 +146,9 @@
 
 /* Subject detail page container - make seamless */
 .subject-detail-page-container {
-    background-color: white; /* Change from #f9f9f9 to white */
-    padding: 15px;  /* Keep padding */
-    margin-top: 0; /* Remove top margin */
-    border-top: none; /* Remove blue border */
-    border: none; /* Remove any border */
-    box-shadow: none; /* Remove any shadow */
-    border-radius: 0; /* Remove border radius */
+    padding: 20px;
+    background-color: #f8f9fa;
+    min-height: calc(100vh - 50px);
 }
 
 /* Detail page content - make seamless */
@@ -333,11 +329,12 @@
 
 .percentile-timeseries-section {
     flex: 0 0 auto;
-    height: 350px;
+    height: 670px;  /* Increased by 20px to ensure bottom of plot is not cut off */
     background-color: white;
     border: 1px solid #e0e0e0;
     border-radius: 6px;
     padding: 15px;
+    overflow: hidden;  /* Prevent any content from overflowing the container */
 }
 
 .timeseries-title {
@@ -403,7 +400,8 @@
     }
     
     .percentile-timeseries-section {
-        height: 320px;
+        height: 620px;  /* Increased proportionally to prevent bottom cutoff on smaller screens */
+        overflow: hidden;  /* Ensure overflow is also handled on smaller screens */
     }
     
     .timeseries-plot-container {
@@ -503,11 +501,39 @@
     padding-bottom: 5px;
 }
 
-/* Subject detail page container */
-.subject-detail-page-container {
+/* Subject Detail Footer Styles */
+.subject-detail-footer-row {
+    margin-top: 30px;  /* Increased from 20px to provide more clearance */
+    padding: 0 15px;
+    clear: both;  /* Ensure footer clears any floating elements */
+}
+
+.subject-detail-footer-column {
+    padding: 0;
+}
+
+.subject-detail-footer-content {
+    background-color: white;
+    border-radius: 6px;
     padding: 20px;
-    background-color: #f8f9fa;
-    min-height: calc(100vh - 50px);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    border: 1px solid #e0e0e0;
+    position: relative;  /* Ensure footer has proper stacking context */
+    z-index: 1;  /* Place footer above any background elements */
+}
+
+.footer-separator {
+    margin: 0 0 15px 0;
+    border-top: 2px solid #e9ecef;
+    opacity: 0.6;
+}
+
+.footer-text {
+    font-size: 14px;
+    font-weight: 500;
+    color: #6c757d;
+    margin: 0;
+    letter-spacing: 0.5px;
 }
 
 /* Responsive adjustments */
@@ -541,5 +567,19 @@
     .timeseries-column {
         padding: 0 10px;
         margin-bottom: 20px;
+    }
+    
+    /* Footer responsive adjustments */
+    .subject-detail-footer-row {
+        margin-top: 25px;  /* Increased from 15px to provide more clearance on mobile */
+        padding: 0 10px;
+    }
+    
+    .subject-detail-footer-content {
+        padding: 15px;
+    }
+    
+    .footer-text {
+        font-size: 13px;
     }
 }

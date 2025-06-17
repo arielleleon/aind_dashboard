@@ -5,14 +5,12 @@ This module creates interactive heatmap visualizations showing percentile data
 across sessions with strata transitions and outlier highlighting.
 """
 
-from typing import Any, Dict, List, Optional
-
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from dash import dcc
 
 from app_utils.simple_logger import get_logger
+from app_utils.strata_utils import get_strata_abbreviation
 
 logger = get_logger("subject_percentile_heatmap")
 
@@ -296,41 +294,7 @@ class AppSubjectPercentileHeatmap:
 
     def _get_strata_abbreviation(self, strata):
         """Get abbreviated strata name for display (same as time series)"""
-        if not strata:
-            return "Unknown"
-
-        # Hard coded mappings for common terms
-        strata_mappings = {
-            "Uncoupled Baiting": "UB",
-            "Coupled Baiting": "CB",
-            "Uncoupled Without Baiting": "UWB",
-            "Coupled Without Baiting": "CWB",
-            "BEGINNER": "B",
-            "INTERMEDIATE": "I",
-            "ADVANCED": "A",
-            "v1": "1",
-            "v2": "2",
-            "v3": "3",
-        }
-
-        # Split the strata name
-        parts = strata.split("_")
-
-        # Handle different strata formats
-        if len(parts) >= 3:
-            # Format: curriculum_Stage_Version
-            curriculum = "_".join(parts[:-2])
-            stage = parts[-2]
-            version = parts[-1]
-
-            # Get abbreviations
-            curriculum_abbr = strata_mappings.get(curriculum, curriculum[:2].upper())
-            stage_abbr = strata_mappings.get(stage, stage[0])
-            version_abbr = strata_mappings.get(version, version[-1])
-
-            return f"{curriculum_abbr}{stage_abbr}{version_abbr}"
-
-        return strata.replace(" ", "")
+        return get_strata_abbreviation(strata)
 
     def _add_outlier_markers(self, fig, sessions, outlier_data, num_feature_rows):
         """

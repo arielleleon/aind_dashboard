@@ -8,6 +8,6 @@ from app_utils import AppUtils
 app_utils = AppUtils()
 
 
-def get_app_utils():
+def get_shared_app_utils():
     """Get the shared app_utils instance"""
     return app_utils

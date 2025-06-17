@@ -1,16 +1,11 @@
-import traceback
-from datetime import datetime, timedelta
-from typing import Any, Dict
-
 import pandas as pd
-from dash import Input, Output, callback_context, clientside_callback, dash_table, html
+from dash import dash_table, html
 
 from app_utils import AppUtils
 from app_utils.app_analysis.overall_percentile_calculator import (
     OverallPercentileCalculator,
 )
 from app_utils.app_analysis.reference_processor import ReferenceProcessor
-from app_utils.app_analysis.threshold_analyzer import ThresholdAnalyzer
 from app_utils.ui_utils import (
     create_empty_dataframe_structure,
     format_strata_abbreviations,
@@ -18,11 +13,7 @@ from app_utils.ui_utils import (
     process_unified_alerts_integration,
 )
 
-from .column_groups_config import (
-    COLUMN_GROUPS,
-    get_columns_for_groups,
-    get_default_visible_columns,
-)
+from .column_groups_config import get_default_visible_columns
 
 
 class AppDataFrame:
@@ -114,8 +105,6 @@ class AppDataFrame:
             # Return empty dataframe with required columns to avoid breaking the UI
             return create_empty_dataframe_structure()
 
-        print(f"Starting data formatting with {len(original_df)} sessions")
-
         # STEP 1: Get optimized data using business logic
         recent_sessions = get_optimized_table_data(self.app_utils, use_cache=True)
 
@@ -137,7 +126,6 @@ class AppDataFrame:
                 col for col in visible_columns if col in recent_sessions.columns
             ]
             recent_sessions = recent_sessions[existing_visible_cols]
-            print(f"Filtered to {len(existing_visible_cols)} visible columns")
 
         # Return the formatted dataframe
         return recent_sessions
@@ -350,23 +338,6 @@ class AppDataFrame:
         visible_columns = self.get_filtered_columns(
             all_columns, default_visible_columns
         )
-
-        # DEBUG: Show column count and key session-level columns for verification
-        session_cols = [
-            col for col in formatted_data.columns if col.endswith("_session_percentile")
-        ]
-        rolling_cols = [
-            col for col in formatted_data.columns if col.endswith("_rolling_avg")
-        ]
-        print(f"\nDataTable build - Total columns available: {len(all_columns)}")
-        print(f"  Default visible columns: {len(visible_columns)}")
-        print(f"  Session percentile columns: {len(session_cols)}")
-        print(f"  Rolling average columns: {len(rolling_cols)}")
-        if session_cols:
-            print(f"  Example session columns: {session_cols[:3]}")
-        if rolling_cols:
-            print(f"  Example rolling columns: {rolling_cols[:2]}")
-        print("")
 
         # Build the complete component with toggle controls and table
         return html.Div(
@@ -728,15 +699,6 @@ class AppDataFrame:
                             },
                             "borderLeft": "4px solid #F44336",  # Red left border for uncertain
                         },
-                        # Certainty column styling (keep these for the certainty columns themselves)
-                        # NOTE: Only apply background formatting to certainty columns when they appear in raw values context
-                        # NOT when they appear in the percentiles/Wilson CI column group
-                        # Overall percentile certainty - only format when in core/raw context
-                        # Remove background formatting for percentile context
-                        # Feature certainty columns - only format when in core/raw value context
-                        # Remove the conditional formatting that was applying to certainty columns in percentile context
-                        # Background formatting for certainty columns is removed for percentile/Wilson CI context
-                        # The border indicators on the actual value columns remain unchanged
                     ]
                     + self._get_percentile_formatting_rules(),
                     style_table={

@@ -1,5 +1,5 @@
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, callback, dcc, html
+from dash import dcc, html
 
 from app_elements.app_content.app_dataframe.column_groups_config import COLUMN_GROUPS
 from shared_utils import app_utils

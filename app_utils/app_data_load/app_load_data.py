@@ -1,6 +1,3 @@
-import os
-
-import pandas as pd
 from aind_analysis_arch_result_access.han_pipeline import get_session_table
 
 

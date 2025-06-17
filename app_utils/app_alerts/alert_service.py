@@ -1,13 +1,15 @@
-from typing import Any, Dict, List, Optional, Tuple
+"""
+Alert service for AIND Dashboard
 
-import dash_bootstrap_components as dbc
+This module provides services for managing and calculating alerts based on percentile rankings.
+"""
+
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 import pandas as pd
-from dash import dcc, html
 
 from app_utils.simple_logger import get_logger
-
-from ..app_analysis.overall_percentile_calculator import OverallPercentileCalculator
 
 
 class AlertService:

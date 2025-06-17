@@ -7,7 +7,6 @@ This module handles image URL generation and loading for subject session data.
 import sys
 import traceback
 
-import numpy as np
 import pandas as pd
 
 from app_utils.simple_logger import get_logger
@@ -18,7 +17,6 @@ logger = get_logger("subject_image_loader")
 class AppSubjectImageLoader:
     def __init__(self):
         """Initialize image loader"""
-        logger.info("Initializing AppSubjectImageLoader")
 
     def get_s3_public_url(
         self,

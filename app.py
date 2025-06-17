@@ -2,7 +2,6 @@ import warnings
 
 import dash
 import dash_bootstrap_components as dbc
-import pandas as pd
 
 from app_elements import *
 from app_utils.simple_logger import get_logger
@@ -35,7 +34,6 @@ logger.info(
     f"App initialized: {session_count} sessions across {subject_count} subjects"
 )
 
-# Import callbacks AFTER shared_utils is loaded
 from callbacks import *
 
 app = dash.Dash(

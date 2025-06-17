@@ -5,15 +5,13 @@ This module creates interactive timeseries plots showing raw feature values
 over time with rolling averages and outlier detection.
 """
 
-from typing import Any, Dict, List, Optional
-
-import dash_bootstrap_components as dbc
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from dash import dcc, html
 
 from app_utils.simple_logger import get_logger
+from app_utils.strata_utils import get_strata_abbreviation
 
 logger = get_logger("subject_timeseries")
 
@@ -314,7 +312,7 @@ class AppSubjectTimeseries:
                 window_values = values[: i + 1]
             else:
                 # Use fixed window for later values
-                window_values = values[i - window + 1: i + 1]
+                window_values = values[i - window + 1 : i + 1]
 
             avg_value = sum(window_values) / len(window_values)
             rolling_values.append(avg_value)
@@ -360,41 +358,7 @@ class AppSubjectTimeseries:
 
     def _get_strata_abbreviation(self, strata):
         """Get abbreviated strata name for display"""
-        if not strata:
-            return "Unknown"
-
-        # Hard coded mappings for common terms
-        strata_mappings = {
-            "Uncoupled Baiting": "UB",
-            "Coupled Baiting": "CB",
-            "Uncoupled Without Baiting": "UWB",
-            "Coupled Without Baiting": "CWB",
-            "BEGINNER": "B",
-            "INTERMEDIATE": "I",
-            "ADVANCED": "A",
-            "v1": "1",
-            "v2": "2",
-            "v3": "3",
-        }
-
-        # Split the strata name
-        parts = strata.split("_")
-
-        # Handle different strata formats
-        if len(parts) >= 3:
-            # Format: curriculum_Stage_Version
-            curriculum = "_".join(parts[:-2])
-            stage = parts[-2]
-            version = parts[-1]
-
-            # Get abbreviations
-            curriculum_abbr = strata_mappings.get(curriculum, curriculum[:2].upper())
-            stage_abbr = strata_mappings.get(stage, stage[0])
-            version_abbr = strata_mappings.get(version, version[-1])
-
-            return f"{curriculum_abbr}{stage_abbr}{version_abbr}"
-
-        return strata.replace(" ", "")
+        return get_strata_abbreviation(strata)
 
     def _add_strata_transitions(self, fig, sessions, strata_data):
         """Add vertical lines for strata transitions"""

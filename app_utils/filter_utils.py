@@ -1,5 +1,4 @@
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import pandas as pd
 
@@ -55,6 +54,66 @@ def apply_time_window_filter(df: pd.DataFrame, time_window_value: int) -> pd.Dat
     return df
 
 
+def _apply_subject_id_filter(df: pd.DataFrame, subject_id_value: Any) -> pd.DataFrame:
+    """
+    Apply subject ID filtering logic
+
+    This function handles both single subject ID and list of subject IDs,
+    converting them to strings for consistent comparison.
+
+    Parameters:
+        df: DataFrame to filter
+        subject_id_value: Subject ID value(s) to filter by
+
+    Returns:
+        Filtered DataFrame
+    """
+    if not subject_id_value:
+        return df
+
+    if isinstance(subject_id_value, list):
+        # Convert subject IDs to strings for consistent comparison
+        subject_id_strings = [str(sid) for sid in subject_id_value]
+        filtered_df = df[df["subject_id"].astype(str).isin(subject_id_strings)]
+        logger.info(
+            f"Applied subject ID filter for {len(subject_id_value)} subjects: {len(filtered_df)} subjects remaining"
+        )
+    else:
+        # Single subject ID
+        subject_id_string = str(subject_id_value)
+        filtered_df = df[df["subject_id"].astype(str) == subject_id_string]
+        logger.info(
+            f"Applied subject ID filter for {subject_id_string}: {len(filtered_df)} subjects remaining"
+        )
+
+    return filtered_df
+
+
+def _apply_single_filter(
+    df: pd.DataFrame, column_name: str, filter_value: Any
+) -> pd.DataFrame:
+    """
+    Apply a single filter to a specific column
+
+    This function handles both single values and lists of values for filtering.
+
+    Parameters:
+        df: DataFrame to filter
+        column_name: Name of the column to filter on
+        filter_value: Value(s) to filter by
+
+    Returns:
+        Filtered DataFrame
+    """
+    if not filter_value:
+        return df
+
+    if isinstance(filter_value, list):
+        return df[df[column_name].isin(filter_value)]
+    else:
+        return df[df[column_name] == filter_value]
+
+
 def apply_multi_select_filters(
     df: pd.DataFrame, filter_configs: Dict[str, Any]
 ) -> pd.DataFrame:
@@ -74,71 +133,23 @@ def apply_multi_select_filters(
 
     filtered_df = df.copy()
 
-    # Apply subject ID filter if specified
+    # Apply subject ID filter (special handling for string conversion)
     subject_id_value = filter_configs.get("subject_id")
-    if subject_id_value:
-        if isinstance(subject_id_value, list):
-            # Convert subject IDs to strings for consistent comparison
-            subject_id_strings = [str(sid) for sid in subject_id_value]
-            filtered_df = filtered_df[
-                filtered_df["subject_id"].astype(str).isin(subject_id_strings)
-            ]
-            logger.info(
-                f"Applied subject ID filter for {len(subject_id_value)} subjects: {len(filtered_df)} subjects remaining"
-            )
-        else:
-            # Single subject ID
-            subject_id_string = str(subject_id_value)
-            filtered_df = filtered_df[
-                filtered_df["subject_id"].astype(str) == subject_id_string
-            ]
-            logger.info(
-                f"Applied subject ID filter for {subject_id_string}: {len(filtered_df)} subjects remaining"
-            )
+    filtered_df = _apply_subject_id_filter(filtered_df, subject_id_value)
 
-    # Apply each filter if it has a value - handling multi-select
-    stage_value = filter_configs.get("stage")
-    if stage_value:
-        if isinstance(stage_value, list):
-            filtered_df = filtered_df[
-                filtered_df["current_stage_actual"].isin(stage_value)
-            ]
-        else:
-            filtered_df = filtered_df[
-                filtered_df["current_stage_actual"] == stage_value
-            ]
+    # Define mapping of filter keys to column names
+    filter_mappings = {
+        "stage": "current_stage_actual",
+        "curriculum": "curriculum_name",
+        "rig": "rig",
+        "trainer": "trainer",
+        "pi": "PI",
+    }
 
-    curriculum_value = filter_configs.get("curriculum")
-    if curriculum_value:
-        if isinstance(curriculum_value, list):
-            filtered_df = filtered_df[
-                filtered_df["curriculum_name"].isin(curriculum_value)
-            ]
-        else:
-            filtered_df = filtered_df[
-                filtered_df["curriculum_name"] == curriculum_value
-            ]
-
-    rig_value = filter_configs.get("rig")
-    if rig_value:
-        if isinstance(rig_value, list):
-            filtered_df = filtered_df[filtered_df["rig"].isin(rig_value)]
-        else:
-            filtered_df = filtered_df[filtered_df["rig"] == rig_value]
-
-    trainer_value = filter_configs.get("trainer")
-    if trainer_value:
-        if isinstance(trainer_value, list):
-            filtered_df = filtered_df[filtered_df["trainer"].isin(trainer_value)]
-        else:
-            filtered_df = filtered_df[filtered_df["trainer"] == trainer_value]
-
-    pi_value = filter_configs.get("pi")
-    if pi_value:
-        if isinstance(pi_value, list):
-            filtered_df = filtered_df[filtered_df["PI"].isin(pi_value)]
-        else:
-            filtered_df = filtered_df[filtered_df["PI"] == pi_value]
+    # Apply each filter using the helper function
+    for filter_key, column_name in filter_mappings.items():
+        filter_value = filter_configs.get(filter_key)
+        filtered_df = _apply_single_filter(filtered_df, column_name, filter_value)
 
     return filtered_df
 
@@ -161,14 +172,6 @@ def apply_alert_category_filter(df: pd.DataFrame, alert_category: str) -> pd.Dat
         return df
 
     try:
-        # Import AlertCoordinator here to avoid circular imports
-        from app_utils.app_alerts.alert_coordinator import AlertCoordinator
-
-        # For now, we need to get the alert coordinator from somewhere
-        # This is a temporary solution - ideally this would be injected
-        # or we'd have access to the app_utils instance here
-        # Check if we have app_utils available through some global mechanism
-        # If not, fallback to the old logic temporarily
         # Try to get app_utils from the common import pattern
         try:
             from callbacks.shared_callback_utils import app_utils

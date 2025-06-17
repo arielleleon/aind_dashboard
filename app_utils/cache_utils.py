@@ -13,10 +13,9 @@ while maintaining data consistency and freshness.
 """
 
 import hashlib
-import os
 import pickle
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union
+from datetime import datetime
+from typing import Any, Dict
 
 import pandas as pd
 
@@ -119,6 +118,7 @@ class CacheManager:
         """
         try:
             import sys
+
             import psutil
 
             # Get process memory info
@@ -200,9 +200,10 @@ class CacheManager:
         Compress stored cache data when memory usage is high
         """
         try:
-            import psutil
             import os
-            
+
+            import psutil
+
             process = psutil.Process(os.getpid())
             process_memory = process.memory_info().rss / 1024 / 1024  # MB
 

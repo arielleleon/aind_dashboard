@@ -258,7 +258,7 @@ html, body {
 
 /* Session List Styles */
 .session-list-wrapper {
-    height: 1250px;  /* Increased to match new combined timeseries height (2 plots × 550px + controls + spacing) */
+    height: 1280px;  /* Updated to match new combined timeseries height: raw (~580px) + percentile (670px) + spacing (~30px) */
     display: flex;
     flex-direction: column;
     border: 1px solid #f0f0f0; /* Add subtle border to match timeseries components */

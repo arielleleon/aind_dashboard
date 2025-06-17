@@ -5,13 +5,10 @@ This module provides statistical processing and confidence interval calculations
 for session data using Wilson Score intervals for robust uncertainty quantification.
 """
 
-import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import pandas as pd
 from scipy import stats
-from sklearn.preprocessing import StandardScaler
 
 from app_utils.simple_logger import get_logger
 

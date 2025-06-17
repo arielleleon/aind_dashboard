@@ -1,8 +1,4 @@
-import json
-from typing import Any, Dict, List, Optional
-
-import pandas as pd
-from dash import dcc, html
+from dash import html
 
 
 class AppHoverTooltip:

@@ -179,6 +179,72 @@ def update_active_filters(
     return active_filters, count_display
 
 
+# Helper functions to reduce complexity in remove_filter callback
+def _clear_all_filters():
+    """Clear all filters and return default values"""
+    print("🧹 CLEAR ALL FILTERS button pressed - resetting all values")
+    return [30, None, None, None, None, None, "none", "all", None]
+
+
+def _remove_individual_filter(
+    filter_type: str, filter_value: str, current_outputs: list
+) -> list:
+    """
+    Remove an individual filter and return updated outputs
+
+    Parameters:
+        filter_type: Type of filter to remove (e.g. 'stage-filter')
+        filter_value: Value of the filter to remove
+        current_outputs: Current filter values
+
+    Returns:
+        Updated list of filter values
+    """
+    outputs = current_outputs.copy()
+
+    print(f"Removing individual filter: {filter_type} = {filter_value}")
+
+    # Don't allow removing time window filter via badge (keep as is)
+    if filter_type == "time-window-filter":
+        return outputs
+
+    # Clear the corresponding filter - properly handles multi-select
+    if filter_type == "stage-filter":
+        outputs[1] = None  # Clear entire stage filter
+    elif filter_type == "curriculum-filter":
+        outputs[2] = None  # Clear entire curriculum filter
+    elif filter_type == "rig-filter":
+        outputs[3] = None  # Clear entire rig filter
+    elif filter_type == "trainer-filter":
+        outputs[4] = None  # Clear entire trainer filter
+    elif filter_type == "pi-filter":
+        outputs[5] = None  # Clear entire PI filter
+    elif filter_type == "sort-option":
+        outputs[6] = "none"  # Reset to default sort
+    elif filter_type == "alert-category-filter":
+        outputs[7] = "all"  # Reset to show all alerts
+    elif filter_type == "subject-id-filter":
+        outputs[8] = None  # Clear entire subject ID filter
+
+    return outputs
+
+
+def _find_clicked_filter(remove_clicks: list, remove_ids: list) -> tuple:
+    """
+    Find which filter was clicked to be removed
+
+    Returns:
+        Tuple of (filter_type, filter_value) or (None, None) if no filter found
+    """
+    for i, clicks in enumerate(remove_clicks):
+        if clicks:
+            # Get the filter info that needs to be removed
+            filter_id = remove_ids[i]["index"]
+            filter_type, filter_value = filter_id.split(":", 1)
+            return filter_type, filter_value
+    return None, None
+
+
 # Callback to handle filter badge removal
 @callback(
     [
@@ -245,42 +311,13 @@ def remove_filter(
 
     # If clear button was clicked, clear all filters
     if ctx.triggered_id == "clear-filters":
-        print("🧹 CLEAR ALL FILTERS button pressed - resetting all values")
-        return [30, None, None, None, None, None, "none", "all", None]
+        return _clear_all_filters()
 
     # Find which filter was clicked to be removed
-    for i, clicks in enumerate(remove_clicks):
-        if clicks:
-            # Get the filter info that needs to be removed
-            filter_id = remove_ids[i]["index"]
-            filter_type, filter_value = filter_id.split(":", 1)
+    filter_type, filter_value = _find_clicked_filter(remove_clicks, remove_ids)
 
-            print(f"Removing individual filter: {filter_type} = {filter_value}")
-
-            # Don't allow removing time window filter via badge (keep as is)
-            if filter_type == "time-window-filter":
-                continue
-
-            # Clear the corresponding filter - properly handles multi-select
-            if filter_type == "stage-filter":
-                outputs[1] = None  # Clear entire stage filter
-            elif filter_type == "curriculum-filter":
-                outputs[2] = None  # Clear entire curriculum filter
-            elif filter_type == "rig-filter":
-                outputs[3] = None  # Clear entire rig filter
-            elif filter_type == "trainer-filter":
-                outputs[4] = None  # Clear entire trainer filter
-            elif filter_type == "pi-filter":
-                outputs[5] = None  # Clear entire PI filter
-            elif filter_type == "sort-option":
-                outputs[6] = "none"  # Reset to default sort
-            elif filter_type == "alert-category-filter":
-                outputs[7] = "all"  # Reset to show all alerts
-            elif filter_type == "subject-id-filter":
-                outputs[8] = None  # Clear entire subject ID filter
-
-            # Only process one removal at a time
-            break
+    if filter_type and filter_value:
+        outputs = _remove_individual_filter(filter_type, filter_value, outputs)
 
     return outputs
 

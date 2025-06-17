@@ -5,15 +5,16 @@ This module creates interactive timeseries plots showing percentile progression
 over time with confidence intervals using Wilson CI methodology.
 """
 
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta
 
-import dash_bootstrap_components as dbc
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 from dash import dcc, html
 
 from app_utils.simple_logger import get_logger
+from app_utils.strata_utils import get_strata_abbreviation
 
 logger = get_logger("subject_percentile_timeseries")
 
@@ -118,7 +119,10 @@ class AppSubjectPercentileTimeseries:
             yaxis_title="Feature Percentiles",
             template="plotly_white",
             margin=dict(
-                l=40, r=20, t=40, b=40
+                l=40,
+                r=20,
+                t=40,
+                b=60,  # Increased bottom margin from 40 to 60 for consistency
             ),  # Increased top margin for hover tooltips
             height=550,  # Increased to match raw timeseries plot
             legend=dict(
@@ -167,28 +171,59 @@ class AppSubjectPercentileTimeseries:
             f"Creating percentile timeseries plot for subject with data keys: {list(subject_data.keys()) if subject_data else 'None'}"
         )
 
-        if not subject_data or "sessions" not in subject_data:
-            return self._create_empty_figure()
-
-        sessions = subject_data["sessions"]
-        strata_data = subject_data.get("strata", [])
-
-        if not sessions:
+        # Validate input data
+        if not self._validate_input_data(subject_data):
             return self._create_empty_figure()
 
         fig = go.Figure()
+        sessions = subject_data["sessions"]
 
-        # Determine which features to plot
+        # Prepare plot data
+        features_to_plot, show_overall_percentile = self._prepare_features_to_plot(
+            selected_features
+        )
+        strata_sessions_map = self._create_strata_mapping(subject_data)
+
+        # Plot individual features
+        self._add_feature_traces(
+            fig,
+            subject_data,
+            features_to_plot,
+            sessions,
+            strata_sessions_map,
+            show_confidence_intervals,
+        )
+
+        # Add overall percentile if selected
+        if show_overall_percentile:
+            self._add_overall_percentile_trace(
+                fig,
+                subject_data,
+                sessions,
+                strata_sessions_map,
+                show_confidence_intervals,
+                features_to_plot,
+            )
+
+        # Configure plot layout and enhancements
+        self._configure_plot_layout(fig)
+        self._add_plot_enhancements(fig, subject_data, sessions, highlighted_session)
+
+        return fig
+
+    def _validate_input_data(self, subject_data):
+        """Validate input data for plotting"""
+        return subject_data and "sessions" in subject_data and subject_data["sessions"]
+
+    def _prepare_features_to_plot(self, selected_features):
+        """Determine which features to plot based on selection"""
         features_to_plot = []
         show_overall_percentile = False
 
         if "all" in selected_features:
             features_to_plot = list(self.features_config.keys())
-            show_overall_percentile = (
-                True  # Include overall percentile when "all" is selected
-            )
+            show_overall_percentile = True
         else:
-            # Check for individual features
             for feature in selected_features:
                 if feature in self.features_config:
                     features_to_plot.append(feature)
@@ -202,468 +237,493 @@ class AppSubjectPercentileTimeseries:
 
         logger.info(f"Features to plot (percentiles): {features_to_plot}")
         logger.info(f"Show overall percentile: {show_overall_percentile}")
-        logger.info(f"Show confidence intervals: {show_confidence_intervals}")
 
-        # Create strata abbreviation mapping for hover info
+        return features_to_plot, show_overall_percentile
+
+    def _create_strata_mapping(self, subject_data):
+        """Create strata abbreviation mapping for hover info"""
+        sessions = subject_data["sessions"]
+        strata_data = subject_data.get("strata", [])
         strata_sessions_map = {}
+
         if strata_data and len(strata_data) == len(sessions):
             for session, strata in zip(sessions, strata_data):
                 strata_sessions_map[session] = self._get_strata_abbreviation(strata)
 
-        # Plot each feature using percentile data with confidence intervals
-        for i, feature in enumerate(features_to_plot):
-            # Look for percentile data
-            percentile_key = f"{feature}_percentiles"
-            ci_lower_key = f"{feature}_percentile_ci_lower"
-            ci_upper_key = f"{feature}_percentile_ci_upper"
+        return strata_sessions_map
 
+    def _add_feature_traces(
+        self,
+        fig,
+        subject_data,
+        features_to_plot,
+        sessions,
+        strata_sessions_map,
+        show_confidence_intervals,
+    ):
+        """Add traces for individual features with confidence intervals"""
+        for i, feature in enumerate(features_to_plot):
+            percentile_key = f"{feature}_percentiles"
             if percentile_key not in subject_data:
                 logger.info(f"No percentile data found for {feature}, skipping")
                 continue
 
-            percentile_data = subject_data[percentile_key]
-            ci_lower_data = subject_data.get(ci_lower_key, [])
-            ci_upper_data = subject_data.get(ci_upper_key, [])
-
-            logger.info(
-                f"Using percentile data for {feature}: {len(percentile_data)} values"
+            # Get and validate data
+            valid_data = self._get_valid_percentile_data(
+                subject_data, feature, sessions, show_confidence_intervals
             )
 
-            # Check if we have CI data
-            has_ci_data = (
-                len(ci_lower_data) == len(percentile_data)
-                and len(ci_upper_data) == len(percentile_data)
-                and show_confidence_intervals
-            )
-
-            if has_ci_data:
-                logger.info(f"CI data available for {feature}")
-
-            # Filter out invalid percentile values (-1 represents missing data)
-            valid_data = []
-            valid_ci_lower = []
-            valid_ci_upper = []
-
-            for j, (session, percentile) in enumerate(zip(sessions, percentile_data)):
-                if (
-                    percentile is not None
-                    and not pd.isna(percentile)
-                    and percentile != -1
-                ):
-                    valid_data.append((session, percentile))
-
-                    # Add CI data if available
-                    if (
-                        has_ci_data
-                        and j < len(ci_lower_data)
-                        and j < len(ci_upper_data)
-                    ):
-                        ci_lower = ci_lower_data[j]
-                        ci_upper = ci_upper_data[j]
-
-                        if (
-                            ci_lower is not None
-                            and not pd.isna(ci_lower)
-                            and ci_lower != -1
-                            and ci_upper is not None
-                            and not pd.isna(ci_upper)
-                            and ci_upper != -1
-                        ):
-                            valid_ci_lower.append(ci_lower)
-                            valid_ci_upper.append(ci_upper)
-                        else:
-                            valid_ci_lower.append(None)
-                            valid_ci_upper.append(None)
-
-            if len(valid_data) < 2:
-                logger.info(
-                    f"Insufficient valid percentile data for {feature}: {len(valid_data)} points"
-                )
+            if not valid_data or len(valid_data["sessions"]) < 2:
+                logger.info(f"Insufficient valid percentile data for {feature}")
                 continue
 
-            valid_sessions, valid_percentiles = zip(*valid_data)
-            valid_sessions = list(valid_sessions)
-            valid_percentiles = list(valid_percentiles)
-
-            logger.info(
-                f"Valid percentile data for {feature}: {len(valid_percentiles)} points, range: {min(valid_percentiles):.1f}% to {max(valid_percentiles):.1f}%"
-            )
-
-            # Get color for this feature
-            feature_color = self.feature_colors.get(feature, "#000000")
-
             # Add confidence interval bands if available
-            if has_ci_data and len(valid_ci_lower) == len(valid_sessions):
-                # Filter CI data to match valid sessions
-                valid_ci_lower_filtered = [
-                    ci for ci in valid_ci_lower if ci is not None
-                ]
-                valid_ci_upper_filtered = [
-                    ci for ci in valid_ci_upper if ci is not None
-                ]
-                valid_sessions_ci = [
-                    session
-                    for session, ci_lower, ci_upper in zip(
-                        valid_sessions, valid_ci_lower, valid_ci_upper
-                    )
-                    if ci_lower is not None and ci_upper is not None
-                ]
+            if valid_data["has_ci"]:
+                self._add_confidence_intervals(fig, feature, valid_data)
 
-                if len(valid_ci_lower_filtered) > 0 and len(valid_sessions_ci) > 0:
-                    # Add upper bound (invisible line)
-                    fig.add_trace(
-                        go.Scatter(
-                            x=valid_sessions_ci,
-                            y=valid_ci_upper_filtered,
-                            fill=None,
-                            mode="lines",
-                            line=dict(color="rgba(0,0,0,0)"),
-                            showlegend=False,
-                            hoverinfo="skip",
-                            name=f"{feature}_ci_upper",
-                        )
-                    )
-
-                    # Add lower bound with fill
-                    fig.add_trace(
-                        go.Scatter(
-                            x=valid_sessions_ci,
-                            y=valid_ci_lower_filtered,
-                            fill="tonexty",
-                            mode="lines",
-                            line=dict(color="rgba(0,0,0,0)"),
-                            fillcolor=f"rgba({self._hex_to_rgb(feature_color)}, 0.2)",
-                            showlegend=False,
-                            hoverinfo="skip",
-                            name=f"{feature}_ci_band",
-                        )
-                    )
-
-                    logger.info(
-                        f"Added CI bands for {feature}: {len(valid_sessions_ci)} sessions"
-                    )
-
-            # Prepare hover data
-            if i == 0:  # First trace gets strata info
-                strata_hover_info = [
-                    strata_sessions_map.get(session, "Unknown")
-                    for session in valid_sessions
-                ]
-
-                # Enhanced hover template with CI information
-                if has_ci_data and len(valid_ci_lower) == len(valid_sessions):
-                    hover_template = (
-                        f"<b>Strata: %{{customdata[1]}}</b><br><br>"
-                        + f"<b>{feature.replace('_', ' ').title()}</b><br>"
-                        + "Percentile: %{y:.1f}%<br>"
-                        + "95% CI: %{customdata[2]:.1f}% - %{customdata[3]:.1f}%<br>"
-                        + "CI Method: Wilson<extra></extra>"
-                    )
-
-                    # Create custom data for Wilson CIs
-                    custom_data = list(
-                        zip(
-                            valid_percentiles,
-                            strata_hover_info,
-                            [ci or 0 for ci in valid_ci_lower],
-                            [ci or 0 for ci in valid_ci_upper],
-                        )
-                    )
-                else:
-                    hover_template = (
-                        f"<b>Strata: %{{customdata[1]}}</b><br><br>"
-                        + f"<b>{feature.replace('_', ' ').title()}</b><br>"
-                        + "Percentile: %{y:.1f}%<extra></extra>"
-                    )
-                    custom_data = list(zip(valid_percentiles, strata_hover_info))
-            else:  # Subsequent traces don't include strata
-                if has_ci_data and len(valid_ci_lower) == len(valid_sessions):
-                    hover_template = (
-                        f"<b>{feature.replace('_', ' ').title()}</b><br>"
-                        + "Percentile: %{y:.1f}%<br>"
-                        + "95% CI: %{customdata[1]:.1f}% - %{customdata[2]:.1f}%<br>"
-                        + "CI Method: Wilson<extra></extra>"
-                    )
-
-                    custom_data = list(
-                        zip(
-                            valid_percentiles,
-                            [ci or 0 for ci in valid_ci_lower],
-                            [ci or 0 for ci in valid_ci_upper],
-                        )
-                    )
-                else:
-                    hover_template = (
-                        f"<b>{feature.replace('_', ' ').title()}</b><br>"
-                        + "Percentile: %{y:.1f}%<extra></extra>"
-                    )
-                    custom_data = list(zip(valid_percentiles))
-
-            # Create trace for feature percentiles (main line)
-            fig.add_trace(
-                go.Scatter(
-                    x=valid_sessions,
-                    y=valid_percentiles,
-                    mode="lines",
-                    name=feature.replace("_", " ")
-                    .replace("abs(", "|")
-                    .replace(")", "|")
-                    .title(),
-                    line=dict(
-                        color=feature_color, width=2, shape="spline", smoothing=1.0
-                    ),
-                    hovertemplate=hover_template,
-                    customdata=custom_data,
-                )
+            # Add main feature trace
+            self._add_feature_trace(
+                fig, feature, valid_data, strata_sessions_map, i == 0
             )
 
-        # Add overall percentile trace with CI (distinctive styling) - only if selected
-        if show_overall_percentile and "overall_percentiles" in subject_data:
-            overall_percentiles = subject_data["overall_percentiles"]
-            overall_ci_lower = subject_data.get("overall_percentiles_ci_lower", [])
-            overall_ci_upper = subject_data.get("overall_percentiles_ci_upper", [])
+    def _get_valid_percentile_data(
+        self, subject_data, feature, sessions, show_confidence_intervals
+    ):
+        """Extract and validate percentile data for a feature"""
+        percentile_key = f"{feature}_percentiles"
+        ci_lower_key = f"{feature}_percentile_ci_lower"
+        ci_upper_key = f"{feature}_percentile_ci_upper"
 
-            logger.info(
-                f"Adding overall percentile trace: {len(overall_percentiles)} values"
-            )
+        percentile_data = subject_data[percentile_key]
+        ci_lower_data = subject_data.get(ci_lower_key, [])
+        ci_upper_data = subject_data.get(ci_upper_key, [])
 
-            # Check if we have overall CI data
-            has_overall_ci = (
-                len(overall_ci_lower) == len(overall_percentiles)
-                and len(overall_ci_upper) == len(overall_percentiles)
-                and show_confidence_intervals
-            )
+        has_ci_data = (
+            len(ci_lower_data) == len(percentile_data)
+            and len(ci_upper_data) == len(percentile_data)
+            and show_confidence_intervals
+        )
 
-            # Filter out invalid values
-            valid_overall_data = []
-            valid_overall_ci_lower = []
-            valid_overall_ci_upper = []
+        # Filter out invalid values
+        valid_sessions, valid_percentiles, valid_ci_lower, valid_ci_upper = (
+            [],
+            [],
+            [],
+            [],
+        )
 
-            for j, (session, percentile) in enumerate(
-                zip(sessions, overall_percentiles)
-            ):
-                if (
-                    percentile is not None
-                    and not pd.isna(percentile)
-                    and percentile != -1
-                ):
-                    valid_overall_data.append((session, percentile))
+        for j, (session, percentile) in enumerate(zip(sessions, percentile_data)):
+            if percentile is not None and not pd.isna(percentile) and percentile != -1:
+                valid_sessions.append(session)
+                valid_percentiles.append(percentile)
+
+                if has_ci_data and j < len(ci_lower_data) and j < len(ci_upper_data):
+                    ci_lower = ci_lower_data[j]
+                    ci_upper = ci_upper_data[j]
 
                     if (
-                        has_overall_ci
-                        and j < len(overall_ci_lower)
-                        and j < len(overall_ci_upper)
+                        ci_lower is not None
+                        and not pd.isna(ci_lower)
+                        and ci_lower != -1
+                        and ci_upper is not None
+                        and not pd.isna(ci_upper)
+                        and ci_upper != -1
                     ):
-                        ci_lower = overall_ci_lower[j]
-                        ci_upper = overall_ci_upper[j]
-
-                        if (
-                            ci_lower is not None
-                            and not pd.isna(ci_lower)
-                            and ci_lower != -1
-                            and ci_upper is not None
-                            and not pd.isna(ci_upper)
-                            and ci_upper != -1
-                        ):
-                            valid_overall_ci_lower.append(ci_lower)
-                            valid_overall_ci_upper.append(ci_upper)
-                        else:
-                            valid_overall_ci_lower.append(None)
-                            valid_overall_ci_upper.append(None)
-
-            if valid_overall_data:
-                valid_sessions_overall, valid_percentiles_overall = zip(
-                    *valid_overall_data
-                )
-                valid_sessions_overall = list(valid_sessions_overall)
-                valid_percentiles_overall = list(valid_percentiles_overall)
-
-                logger.info(
-                    f"Valid overall percentile data: {len(valid_percentiles_overall)} points, range: {min(valid_percentiles_overall):.1f}% to {max(valid_percentiles_overall):.1f}%"
-                )
-
-                # Add overall CI bands if available
-                if has_overall_ci and len(valid_overall_ci_lower) == len(
-                    valid_sessions_overall
-                ):
-                    # Filter CI data to match valid sessions
-                    valid_overall_ci_lower_filtered = [
-                        ci for ci in valid_overall_ci_lower if ci is not None
-                    ]
-                    valid_overall_ci_upper_filtered = [
-                        ci for ci in valid_overall_ci_upper if ci is not None
-                    ]
-                    valid_sessions_overall_ci = [
-                        session
-                        for session, ci_lower, ci_upper in zip(
-                            valid_sessions_overall,
-                            valid_overall_ci_lower,
-                            valid_overall_ci_upper,
-                        )
-                        if ci_lower is not None and ci_upper is not None
-                    ]
-
-                    if len(valid_overall_ci_lower_filtered) > 0:
-                        # Add upper bound (invisible line)
-                        fig.add_trace(
-                            go.Scatter(
-                                x=valid_sessions_overall_ci,
-                                y=valid_overall_ci_upper_filtered,
-                                fill=None,
-                                mode="lines",
-                                line=dict(color="rgba(0,0,0,0)"),
-                                showlegend=False,
-                                hoverinfo="skip",
-                                name="overall_ci_upper",
-                            )
-                        )
-
-                        # Add lower bound with fill (sea green with transparency)
-                        fig.add_trace(
-                            go.Scatter(
-                                x=valid_sessions_overall_ci,
-                                y=valid_overall_ci_lower_filtered,
-                                fill="tonexty",
-                                mode="lines",
-                                line=dict(color="rgba(0,0,0,0)"),
-                                fillcolor="rgba(46, 139, 87, 0.2)",  # Sea green with transparency
-                                showlegend=False,
-                                hoverinfo="skip",
-                                name="overall_ci_band",
-                            )
-                        )
-
-                        logger.info(
-                            f"Added overall CI bands: {len(valid_sessions_overall_ci)} sessions"
-                        )
-
-                # Create strata info for overall percentile hover
-                strata_hover_info_overall = [
-                    strata_sessions_map.get(session, "Unknown")
-                    for session in valid_sessions_overall
-                ]
-
-                # Determine if this is the only trace being plotted
-                is_only_trace = len(features_to_plot) == 0
-
-                # Create enhanced hover template with CI info
-                if (
-                    is_only_trace or not features_to_plot
-                ):  # If overall percentile is the only thing selected
-                    if has_overall_ci and len(valid_overall_ci_lower) == len(
-                        valid_sessions_overall
-                    ):
-                        hover_template = (
-                            f"<b>Strata: %{{customdata[1]}}</b><br><br>"
-                            + "<b>Overall Percentile</b><br>"
-                            + "Percentile: %{y:.1f}%<br>"
-                            + "95% CI: %{customdata[2]:.1f}% - %{customdata[3]:.1f}%<br>"
-                            + "CI Method: Wilson<extra></extra>"
-                        )
-
-                        custom_data = list(
-                            zip(
-                                valid_percentiles_overall,
-                                strata_hover_info_overall,
-                                [ci or 0 for ci in valid_overall_ci_lower],
-                                [ci or 0 for ci in valid_overall_ci_upper],
-                            )
-                        )
+                        valid_ci_lower.append(ci_lower)
+                        valid_ci_upper.append(ci_upper)
                     else:
-                        hover_template = (
-                            f"<b>Strata: %{{customdata[1]}}</b><br><br>"
-                            + "<b>Overall Percentile</b><br>"
-                            + "Percentile: %{y:.1f}%<extra></extra>"
-                        )
-                        custom_data = list(
-                            zip(valid_percentiles_overall, strata_hover_info_overall)
-                        )
-                else:  # If there are other features, don't repeat strata info
-                    if has_overall_ci and len(valid_overall_ci_lower) == len(
-                        valid_sessions_overall
-                    ):
-                        hover_template = (
-                            "<b>Overall Percentile</b><br>"
-                            + "Percentile: %{y:.1f}%<br>"
-                            + "95% CI: %{customdata[1]:.1f}% - %{customdata[2]:.1f}%<br>"
-                            + "CI Method: Wilson<extra></extra>"
-                        )
+                        valid_ci_lower.append(None)
+                        valid_ci_upper.append(None)
 
-                        custom_data = list(
-                            zip(
-                                valid_percentiles_overall,
-                                [ci or 0 for ci in valid_overall_ci_lower],
-                                [ci or 0 for ci in valid_overall_ci_upper],
-                            )
-                        )
-                    else:
-                        hover_template = (
-                            "<b>Overall Percentile</b><br>"
-                            + "Percentile: %{y:.1f}%<extra></extra>"
-                        )
-                        custom_data = list(zip(valid_percentiles_overall))
+        return {
+            "sessions": valid_sessions,
+            "percentiles": valid_percentiles,
+            "ci_lower": valid_ci_lower,
+            "ci_upper": valid_ci_upper,
+            "has_ci": has_ci_data and len(valid_ci_lower) == len(valid_sessions),
+        }
 
-                # Add overall percentile trace with distinctive styling
-                fig.add_trace(
-                    go.Scatter(
-                        x=valid_sessions_overall,
-                        y=valid_percentiles_overall,
-                        mode="lines",
-                        name="Overall Percentile",
-                        line=dict(
-                            color="#2E8B57",  # Sea green color for distinction
-                            width=4,  # Thicker line
-                            dash="dash",  # Dashed line style for distinction
-                            shape="spline",
-                            smoothing=1.0,
-                        ),
-                        hovertemplate=hover_template,
-                        customdata=custom_data,
+    def _add_confidence_intervals(self, fig, feature, valid_data):
+        """Add confidence interval bands for a feature"""
+        # Filter CI data to match valid sessions
+        valid_ci_lower = [ci for ci in valid_data["ci_lower"] if ci is not None]
+        valid_ci_upper = [ci for ci in valid_data["ci_upper"] if ci is not None]
+        valid_sessions_ci = [
+            session
+            for session, ci_lower, ci_upper in zip(
+                valid_data["sessions"], valid_data["ci_lower"], valid_data["ci_upper"]
+            )
+            if ci_lower is not None and ci_upper is not None
+        ]
+
+        if not valid_ci_lower or not valid_sessions_ci:
+            return
+
+        feature_color = self.feature_colors.get(feature, "#000000")
+
+        # Add upper bound (invisible line)
+        fig.add_trace(
+            go.Scatter(
+                x=valid_sessions_ci,
+                y=valid_ci_upper,
+                fill=None,
+                mode="lines",
+                line=dict(color="rgba(0,0,0,0)"),
+                showlegend=False,
+                hoverinfo="skip",
+                name=f"{feature}_ci_upper",
+            )
+        )
+
+        # Add lower bound with fill
+        fig.add_trace(
+            go.Scatter(
+                x=valid_sessions_ci,
+                y=valid_ci_lower,
+                fill="tonexty",
+                mode="lines",
+                line=dict(color="rgba(0,0,0,0)"),
+                fillcolor=f"rgba({self._hex_to_rgb(feature_color)}, 0.2)",
+                showlegend=False,
+                hoverinfo="skip",
+                name=f"{feature}_ci_band",
+            )
+        )
+
+        logger.info(f"Added CI bands for {feature}: {len(valid_sessions_ci)} sessions")
+
+    def _add_feature_trace(
+        self, fig, feature, valid_data, strata_sessions_map, is_first_trace
+    ):
+        """Add main feature trace to the plot"""
+        feature_color = self.feature_colors.get(feature, "#000000")
+
+        # Prepare hover data and template
+        hover_template, custom_data = self._prepare_hover_data(
+            feature, valid_data, strata_sessions_map, is_first_trace
+        )
+
+        # Create trace for feature percentiles
+        fig.add_trace(
+            go.Scatter(
+                x=valid_data["sessions"],
+                y=valid_data["percentiles"],
+                mode="lines",
+                name=feature.replace("_", " ")
+                .replace("abs(", "|")
+                .replace(")", "|")
+                .title(),
+                line=dict(color=feature_color, width=2, shape="spline", smoothing=1.0),
+                hovertemplate=hover_template,
+                customdata=custom_data,
+            )
+        )
+
+    def _prepare_hover_data(
+        self, feature, valid_data, strata_sessions_map, is_first_trace
+    ):
+        """Prepare hover template and custom data for a feature trace"""
+        if is_first_trace:
+            strata_hover_info = [
+                strata_sessions_map.get(session, "Unknown")
+                for session in valid_data["sessions"]
+            ]
+
+            if valid_data["has_ci"]:
+                hover_template = (
+                    "<b>Strata: %{customdata[1]}</b><br><br>"
+                    + f"<b>{feature.replace('_', ' ').title()}</b><br>"
+                    + "Percentile: %{y:.1f}%<br>"
+                    + "95% CI: %{customdata[2]:.1f}% - %{customdata[3]:.1f}%<br>"
+                    + "CI Method: Wilson<extra></extra>"
+                )
+                custom_data = list(
+                    zip(
+                        valid_data["percentiles"],
+                        strata_hover_info,
+                        [ci or 0 for ci in valid_data["ci_lower"]],
+                        [ci or 0 for ci in valid_data["ci_upper"]],
                     )
                 )
+            else:
+                hover_template = (
+                    "<b>Strata: %{customdata[1]}</b><br><br>"
+                    + f"<b>{feature.replace('_', ' ').title()}</b><br>"
+                    + "Percentile: %{y:.1f}%<extra></extra>"
+                )
+                custom_data = list(zip(valid_data["percentiles"], strata_hover_info))
+        else:
+            if valid_data["has_ci"]:
+                hover_template = (
+                    f"<b>{feature.replace('_', ' ').title()}</b><br>"
+                    + "Percentile: %{y:.1f}%<br>"
+                    + "95% CI: %{customdata[1]:.1f}% - %{customdata[2]:.1f}%<br>"
+                    + "CI Method: Wilson<extra></extra>"
+                )
+                custom_data = list(
+                    zip(
+                        valid_data["percentiles"],
+                        [ci or 0 for ci in valid_data["ci_lower"]],
+                        [ci or 0 for ci in valid_data["ci_upper"]],
+                    )
+                )
+            else:
+                hover_template = (
+                    f"<b>{feature.replace('_', ' ').title()}</b><br>"
+                    + "Percentile: %{y:.1f}%<extra></extra>"
+                )
+                custom_data = list(zip(valid_data["percentiles"]))
 
-        # Add strata transition lines
-        if strata_data and len(strata_data) == len(sessions):
-            self._add_strata_transitions(fig, sessions, strata_data)
+        return hover_template, custom_data
 
+    def _add_overall_percentile_trace(
+        self,
+        fig,
+        subject_data,
+        sessions,
+        strata_sessions_map,
+        show_confidence_intervals,
+        features_to_plot,
+    ):
+        """Add overall percentile trace with distinctive styling"""
+        if "overall_percentiles" not in subject_data:
+            return
+
+        overall_percentiles = subject_data["overall_percentiles"]
+        overall_ci_lower = subject_data.get("overall_percentiles_ci_lower", [])
+        overall_ci_upper = subject_data.get("overall_percentiles_ci_upper", [])
+
+        logger.info(
+            f"Adding overall percentile trace: {len(overall_percentiles)} values"
+        )
+
+        # Get valid overall percentile data
+        valid_overall_data = self._get_valid_overall_percentile_data(
+            sessions,
+            overall_percentiles,
+            overall_ci_lower,
+            overall_ci_upper,
+            show_confidence_intervals,
+        )
+
+        if not valid_overall_data["sessions"]:
+            return
+
+        # Add overall CI bands if available
+        if valid_overall_data["has_ci"]:
+            self._add_overall_confidence_intervals(fig, valid_overall_data)
+
+        # Add main overall percentile trace
+        self._add_overall_trace(
+            fig, valid_overall_data, strata_sessions_map, features_to_plot
+        )
+
+    def _get_valid_overall_percentile_data(
+        self,
+        sessions,
+        overall_percentiles,
+        overall_ci_lower,
+        overall_ci_upper,
+        show_confidence_intervals,
+    ):
+        """Extract and validate overall percentile data"""
+        has_overall_ci = (
+            len(overall_ci_lower) == len(overall_percentiles)
+            and len(overall_ci_upper) == len(overall_percentiles)
+            and show_confidence_intervals
+        )
+
+        valid_sessions, valid_percentiles, valid_ci_lower, valid_ci_upper = (
+            [],
+            [],
+            [],
+            [],
+        )
+
+        for j, (session, percentile) in enumerate(zip(sessions, overall_percentiles)):
+            if percentile is not None and not pd.isna(percentile) and percentile != -1:
+                valid_sessions.append(session)
+                valid_percentiles.append(percentile)
+
+                if (
+                    has_overall_ci
+                    and j < len(overall_ci_lower)
+                    and j < len(overall_ci_upper)
+                ):
+                    ci_lower = overall_ci_lower[j]
+                    ci_upper = overall_ci_upper[j]
+
+                    if (
+                        ci_lower is not None
+                        and not pd.isna(ci_lower)
+                        and ci_lower != -1
+                        and ci_upper is not None
+                        and not pd.isna(ci_upper)
+                        and ci_upper != -1
+                    ):
+                        valid_ci_lower.append(ci_lower)
+                        valid_ci_upper.append(ci_upper)
+                    else:
+                        valid_ci_lower.append(None)
+                        valid_ci_upper.append(None)
+
+        return {
+            "sessions": valid_sessions,
+            "percentiles": valid_percentiles,
+            "ci_lower": valid_ci_lower,
+            "ci_upper": valid_ci_upper,
+            "has_ci": has_overall_ci and len(valid_ci_lower) == len(valid_sessions),
+        }
+
+    def _add_overall_confidence_intervals(self, fig, valid_overall_data):
+        """Add confidence interval bands for overall percentile"""
+        # Filter CI data to match valid sessions
+        valid_ci_lower = [ci for ci in valid_overall_data["ci_lower"] if ci is not None]
+        valid_ci_upper = [ci for ci in valid_overall_data["ci_upper"] if ci is not None]
+        valid_sessions_ci = [
+            session
+            for session, ci_lower, ci_upper in zip(
+                valid_overall_data["sessions"],
+                valid_overall_data["ci_lower"],
+                valid_overall_data["ci_upper"],
+            )
+            if ci_lower is not None and ci_upper is not None
+        ]
+
+        if not valid_ci_lower:
+            return
+
+        # Add upper bound (invisible line)
+        fig.add_trace(
+            go.Scatter(
+                x=valid_sessions_ci,
+                y=valid_ci_upper,
+                fill=None,
+                mode="lines",
+                line=dict(color="rgba(0,0,0,0)"),
+                showlegend=False,
+                hoverinfo="skip",
+                name="overall_ci_upper",
+            )
+        )
+
+        # Add lower bound with fill (sea green with transparency)
+        fig.add_trace(
+            go.Scatter(
+                x=valid_sessions_ci,
+                y=valid_ci_lower,
+                fill="tonexty",
+                mode="lines",
+                line=dict(color="rgba(0,0,0,0)"),
+                fillcolor="rgba(46, 139, 87, 0.2)",
+                showlegend=False,
+                hoverinfo="skip",
+                name="overall_ci_band",
+            )
+        )
+
+        logger.info(f"Added overall CI bands: {len(valid_sessions_ci)} sessions")
+
+    def _add_overall_trace(
+        self, fig, valid_overall_data, strata_sessions_map, features_to_plot
+    ):
+        """Add the main overall percentile trace"""
+        # Create strata info for hover
+        strata_hover_info = [
+            strata_sessions_map.get(session, "Unknown")
+            for session in valid_overall_data["sessions"]
+        ]
+
+        is_only_trace = len(features_to_plot) == 0
+
+        # Create hover template
+        if is_only_trace or not features_to_plot:
+            if valid_overall_data["has_ci"]:
+                hover_template = (
+                    "<b>Strata: %{customdata[1]}</b><br><br>"
+                    + "<b>Overall Percentile</b><br>"
+                    + "Percentile: %{y:.1f}%<br>"
+                    + "95% CI: %{customdata[2]:.1f}% - %{customdata[3]:.1f}%<br>"
+                    + "CI Method: Wilson<extra></extra>"
+                )
+                custom_data = list(
+                    zip(
+                        valid_overall_data["percentiles"],
+                        strata_hover_info,
+                        [ci or 0 for ci in valid_overall_data["ci_lower"]],
+                        [ci or 0 for ci in valid_overall_data["ci_upper"]],
+                    )
+                )
+            else:
+                hover_template = (
+                    "<b>Strata: %{customdata[1]}</b><br><br>"
+                    + "<b>Overall Percentile</b><br>"
+                    + "Percentile: %{y:.1f}%<extra></extra>"
+                )
+                custom_data = list(
+                    zip(valid_overall_data["percentiles"], strata_hover_info)
+                )
+        else:
+            if valid_overall_data["has_ci"]:
+                hover_template = (
+                    "<b>Overall Percentile</b><br>"
+                    + "Percentile: %{y:.1f}%<br>"
+                    + "95% CI: %{customdata[1]:.1f}% - %{customdata[2]:.1f}%<br>"
+                    + "CI Method: Wilson<extra></extra>"
+                )
+                custom_data = list(
+                    zip(
+                        valid_overall_data["percentiles"],
+                        [ci or 0 for ci in valid_overall_data["ci_lower"]],
+                        [ci or 0 for ci in valid_overall_data["ci_upper"]],
+                    )
+                )
+            else:
+                hover_template = (
+                    "<b>Overall Percentile</b><br>"
+                    + "Percentile: %{y:.1f}%<extra></extra>"
+                )
+                custom_data = list(zip(valid_overall_data["percentiles"]))
+
+        # Add overall percentile trace with distinctive styling
+        fig.add_trace(
+            go.Scatter(
+                x=valid_overall_data["sessions"],
+                y=valid_overall_data["percentiles"],
+                mode="lines",
+                name="Overall Percentile",
+                line=dict(
+                    color="#2E8B57",
+                    width=4,
+                    dash="dash",
+                    shape="spline",
+                    smoothing=1.0,
+                ),
+                hovertemplate=hover_template,
+                customdata=custom_data,
+            )
+        )
+
+    def _configure_plot_layout(self, fig):
+        """Configure the plot layout and reference lines"""
         # Add reference lines for percentile categories
-        # Add background regions for different performance categories
-        fig.add_hline(
-            y=6.5,
-            line_dash="dash",
-            line_color="red",
-            line_width=1,
-            opacity=0.7,
-            annotation_text="Severely Below (6.5%)",
-            annotation_position="right",
-        )
-        fig.add_hline(
-            y=28,
-            line_dash="dash",
-            line_color="orange",
-            line_width=1,
-            opacity=0.7,
-            annotation_text="Below (28%)",
-            annotation_position="right",
-        )
-        fig.add_hline(
-            y=72,
-            line_dash="dash",
-            line_color="orange",
-            line_width=1,
-            opacity=0.7,
-            annotation_text="Good (72%)",
-            annotation_position="right",
-        )
-        fig.add_hline(
-            y=93.5,
-            line_dash="dash",
-            line_color="green",
-            line_width=1,
-            opacity=0.7,
-            annotation_text="Severely Good (93.5%)",
-            annotation_position="right",
-        )
+        reference_lines = [
+            (6.5, "red", "Severely Below (6.5%)"),
+            (28, "orange", "Below (28%)"),
+            (72, "orange", "Good (72%)"),
+            (93.5, "green", "Severely Good (93.5%)"),
+        ]
+
+        for y_value, color, label in reference_lines:
+            fig.add_hline(
+                y=y_value,
+                line_dash="dash",
+                line_color=color,
+                line_width=1,
+                opacity=0.7,
+                annotation_text=label,
+                annotation_position="right",
+            )
 
         # Update layout
         fig.update_layout(
@@ -672,8 +732,8 @@ class AppSubjectPercentileTimeseries:
             yaxis_title="Feature Percentiles (%)",
             template="plotly_white",
             margin=dict(
-                l=40, r=20, t=40, b=40
-            ),  # Increased top margin for hover tooltips
+                l=40, r=20, t=40, b=60
+            ),  # Increased bottom margin from 40 to 60
             height=550,
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
@@ -681,7 +741,7 @@ class AppSubjectPercentileTimeseries:
             hovermode="x unified",
             xaxis=dict(showgrid=True, gridwidth=1, gridcolor="rgba(211,211,211,0.3)"),
             yaxis=dict(
-                range=[0, 100],  # Fixed range for percentiles
+                range=[0, 100],
                 showgrid=True,
                 gridwidth=1,
                 gridcolor="rgba(211,211,211,0.3)",
@@ -689,58 +749,28 @@ class AppSubjectPercentileTimeseries:
             ),
         )
 
+    def _add_plot_enhancements(self, fig, subject_data, sessions, highlighted_session):
+        """Add plot enhancements like strata transitions, highlights, and outliers"""
+        # Add strata transition lines
+        strata_data = subject_data.get("strata", [])
+        if strata_data and len(strata_data) == len(sessions):
+            self._add_strata_transitions(fig, sessions, strata_data)
+
         # Add session highlight if specified
-        if highlighted_session and sessions:
-            if highlighted_session in sessions:
-                fig.add_vline(
-                    x=highlighted_session,
-                    line=dict(color="rgba(65, 105, 225, 0.6)", width=3, dash="solid"),
-                    annotation_text=f"Session {highlighted_session}",
-                    annotation_position="top",
-                )
+        if highlighted_session and sessions and highlighted_session in sessions:
+            fig.add_vline(
+                x=highlighted_session,
+                line=dict(color="rgba(65, 105, 225, 0.6)", width=3, dash="solid"),
+                annotation_text=f"Session {highlighted_session}",
+                annotation_position="top",
+            )
 
-        # PHASE 2: Add outlier markers to percentile time series plot
+        # Add outlier markers
         self._add_outlier_markers(fig, sessions, subject_data.get("is_outlier", []))
-
-        return fig
 
     def _get_strata_abbreviation(self, strata):
         """Get abbreviated strata name for display"""
-        if not strata:
-            return "Unknown"
-
-        # Hard coded mappings for common terms
-        strata_mappings = {
-            "Uncoupled Baiting": "UB",
-            "Coupled Baiting": "CB",
-            "Uncoupled Without Baiting": "UWB",
-            "Coupled Without Baiting": "CWB",
-            "BEGINNER": "B",
-            "INTERMEDIATE": "I",
-            "ADVANCED": "A",
-            "v1": "1",
-            "v2": "2",
-            "v3": "3",
-        }
-
-        # Split the strata name
-        parts = strata.split("_")
-
-        # Handle different strata formats
-        if len(parts) >= 3:
-            # Format: curriculum_Stage_Version
-            curriculum = "_".join(parts[:-2])
-            stage = parts[-2]
-            version = parts[-1]
-
-            # Get abbreviations
-            curriculum_abbr = strata_mappings.get(curriculum, curriculum[:2].upper())
-            stage_abbr = strata_mappings.get(stage, stage[0])
-            version_abbr = strata_mappings.get(version, version[-1])
-
-            return f"{curriculum_abbr}{stage_abbr}{version_abbr}"
-
-        return strata.replace(" ", "")
+        return get_strata_abbreviation(strata)
 
     def _add_strata_transitions(self, fig, sessions, strata_data):
         """Add vertical lines for strata transitions"""

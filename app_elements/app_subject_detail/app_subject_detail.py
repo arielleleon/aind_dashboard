@@ -128,6 +128,28 @@ class AppSubjectDetail:
                             ],
                             className="subject-detail-main-row",
                         ),
+                        # Footer row - spans both columns for visual separation
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        html.Div(
+                                            [
+                                                html.Hr(className="footer-separator"),
+                                                html.Div(
+                                                    "End of subject analysis",
+                                                    className="footer-text text-center text-muted",
+                                                ),
+                                            ],
+                                            className="subject-detail-footer-content",
+                                        )
+                                    ],
+                                    width=12,
+                                    className="subject-detail-footer-column",
+                                )
+                            ],
+                            className="subject-detail-footer-row mt-3",
+                        ),
                     ],
                     id="subject-detail-page",
                     className="subject-detail-page-container",

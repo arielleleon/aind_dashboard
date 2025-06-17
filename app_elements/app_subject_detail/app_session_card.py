@@ -8,8 +8,7 @@ image integration, and hover details.
 import sys
 import traceback
 
-import dash_bootstrap_components as dbc
-from dash import dcc, html
+from dash import html
 
 from app_utils.simple_logger import get_logger
 
@@ -28,22 +27,15 @@ class AppSessionCard:
         Build a card for a specific session
 
         Parameters:
-        -----------
         session_data : dict
             Dictionary containing session information
         is_active : bool
             Whether this card is currently active/selected
 
         Returns:
-        --------
         dash component
             The session card component
         """
-        # Debug session data
-        logger.info(
-            f"Building card for session data: {session_data.get('subject_id')}, session: {session_data.get('session')}"
-        )
-
         # Extract session data
         session_num = session_data.get("session", "N/A")
         subject_id = session_data.get("subject_id", "Unknown")
@@ -205,7 +197,6 @@ class AppSessionCard:
                 **debug_wrapper,
             )
 
-            logger.info(f"Successfully created session card component")
             return card
 
         except Exception as e:
@@ -214,7 +205,6 @@ class AppSessionCard:
 
             # Return a simple error card as fallback
             return html.Div(
-                f"Error rendering session card: {str(e)}",
                 className="session-card-error",
                 style={"color": "red", "padding": "10px"},
             )

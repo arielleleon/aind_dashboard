@@ -9,7 +9,6 @@ The goal is to REDUCE complexity, not add it.
 
 import logging
 import os
-from typing import Optional
 
 
 class SimpleLogger:
