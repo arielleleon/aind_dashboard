@@ -1,0 +1,35 @@
+[flake8]
+max-line-length = 88
+max-complexity = 10
+select = E,W,F,C,N
+ignore = 
+    # Black handles line length
+    E501,
+    # Black handles whitespace
+    W503,
+    # Allow class names that don't follow PascalCase for Dash components
+    N801,
+    # Allow function names that don't follow snake_case for Dash callbacks
+    N802,
+    # Allow import at top of file issues for Dash callback imports
+    E402
+
+exclude = 
+    .git,
+    __pycache__,
+    .pytest_cache,
+    build,
+    dist,
+    assets,
+    .eggs,
+    *.egg-info
+
+per-file-ignores =
+    # Allow star imports in __init__.py files for Dash component exposure
+    __init__.py:F401,F403
+    # Allow star imports in app.py for Dash structure
+    app.py:F403
+    # Allow unused imports in callbacks module (Dash pattern)
+    callbacks/*.py:F401
+
+docstring-convention = google 

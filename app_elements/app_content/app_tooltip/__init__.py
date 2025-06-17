@@ -1,1 +1,1 @@
-from .app_hover_tooltip import AppHoverTooltip 
+from .app_hover_tooltip import AppHoverTooltip

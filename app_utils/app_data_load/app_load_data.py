@@ -1,6 +1,8 @@
 import os
-from aind_analysis_arch_result_access.han_pipeline import get_session_table
+
 import pandas as pd
+from aind_analysis_arch_result_access.han_pipeline import get_session_table
+
 
 class AppLoadData:
 
@@ -8,7 +10,7 @@ class AppLoadData:
         self.session_table = None
         self.load()
 
-    def load(self, load_bpod = False):
+    def load(self, load_bpod=False):
         """
         Loads session dataframe
 
@@ -16,14 +18,14 @@ class AppLoadData:
             load_bpod (bool): Whether to load bpod data
 
         Returns:
-            pd.DataFrame: Loaded session table 
+            pd.DataFrame: Loaded session table
         """
         try:
-            self.session_table = get_session_table(if_load_bpod = load_bpod)
+            self.session_table = get_session_table(if_load_bpod=load_bpod)
             return self.session_table
         except Exception as e:
-            raise ValueError(f'Failed to load session table: {str(e)}')
-        
+            raise ValueError(f"Failed to load session table: {str(e)}")
+
     def get_data(self):
         """
         Returns current session table

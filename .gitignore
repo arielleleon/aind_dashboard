@@ -24,3 +24,10 @@ data/
 
 # Results
 results/
+
+# Code quality tool outputs
+bandit_report.json
+quality_check_results_*.json
+.coverage
+.mypy_cache/
+.flake8_cache/

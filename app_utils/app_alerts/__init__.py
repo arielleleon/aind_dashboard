@@ -1,4 +1,4 @@
-from .alert_service import AlertService
 from .alert_coordinator import AlertCoordinator
+from .alert_service import AlertService
 
-__all__ = ['AlertService', 'AlertCoordinator']
+__all__ = ["AlertService", "AlertCoordinator"]

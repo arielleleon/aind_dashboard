@@ -1,16 +1,18 @@
-import pandas as pd
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
-from typing import Dict, List, Optional, Any, Tuple
+import pandas as pd
+
 
 class ThresholdAnalyzer:
     """
     Analyzer for calculating threshold-based alerts for subject performance
     """
-    
+
     def __init__(self, threshold_config: Dict[str, Any] = None):
         """
         Initialize the ThresholdAnalyzer with threshold configuration
-        
+
         Parameters:
             threshold_config: Dict[str, Any]
                 Dictionary of feature thresholds and conditions
@@ -23,11 +25,11 @@ class ThresholdAnalyzer:
                 }
         """
         self.threshold_config = threshold_config or {}
-        
+
     def evaluate_condition(self, value: Any, condition: str, threshold: Any) -> bool:
         """
         Evaluate if a value meets a threshold condition
-        
+
         Parameters:
             value: Any
                 The value to evaluate
@@ -35,34 +37,34 @@ class ThresholdAnalyzer:
                 The condition type ('gt', 'lt', 'eq', 'gte', 'lte')
             threshold: Any
                 The threshold value to compare against
-                
+
         Returns:
             bool: True if condition is met, False otherwise
         """
         if pd.isna(value):
             return False
-            
-        if condition == 'gt':
+
+        if condition == "gt":
             return value > threshold
-        elif condition == 'lt':
+        elif condition == "lt":
             return value < threshold
-        elif condition == 'eq':
+        elif condition == "eq":
             return value == threshold
-        elif condition == 'gte':
+        elif condition == "gte":
             return value >= threshold
-        elif condition == 'lte':
+        elif condition == "lte":
             return value <= threshold
         else:
             raise ValueError(f"Unknown condition: {condition}")
-            
+
     def analyze_thresholds(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Analyze dataframe for threshold violations and generate alerts
-        
+
         Parameters:
             df: pd.DataFrame
                 Input dataframe with session data
-                
+
         Returns:
             pd.DataFrame
                 DataFrame with threshold_alert column added
@@ -70,128 +72,136 @@ class ThresholdAnalyzer:
         if not self.threshold_config:
             # No thresholds configured, return original dataframe with empty alerts
             df_result = df.copy()
-            df_result['threshold_alert'] = 'N'
+            df_result["threshold_alert"] = "N"
             return df_result
-            
+
         # Create a copy of the dataframe to avoid modifying the original
         df_result = df.copy()
-        
+
         # Add threshold_alert column with default value
-        df_result['threshold_alert'] = 'N'  # Default to Normal
-        
+        df_result["threshold_alert"] = "N"  # Default to Normal
+
         # Process each threshold configuration
         for feature, config in self.threshold_config.items():
             # Skip if feature not in dataframe
             if feature not in df_result.columns:
                 continue
-                
+
             # Get condition and threshold value
-            condition = config.get('condition', 'gt')
-            threshold = config.get('value')
-            
+            condition = config.get("condition", "gt")
+            threshold = config.get("value")
+
             if threshold is None:
                 continue
-                
+
             # Context filter if provided (e.g., specific stage)
-            context = config.get('context')
-            
+            context = config.get("context")
+
             # Apply condition check for each row
             if context:
                 # Get context column and value
-                context_col = context.get('column')
-                context_values = context.get('values', [])
-                
+                context_col = context.get("column")
+                context_values = context.get("values", [])
+
                 if context_col and context_col in df_result.columns and context_values:
                     # Only check rows matching the context
                     for idx, row in df_result.iterrows():
                         if row[context_col] in context_values:
                             # Check threshold
-                            if self.evaluate_condition(row[feature], condition, threshold):
-                                df_result.at[idx, 'threshold_alert'] = 'T'
+                            if self.evaluate_condition(
+                                row[feature], condition, threshold
+                            ):
+                                df_result.at[idx, "threshold_alert"] = "T"
             else:
                 # Check all rows without context filtering
                 for idx, row in df_result.iterrows():
                     if self.evaluate_condition(row[feature], condition, threshold):
-                        df_result.at[idx, 'threshold_alert'] = 'T'
-                        
+                        df_result.at[idx, "threshold_alert"] = "T"
+
         return df_result
 
     def generate_alert(self, condition_met, alert_type, value=None, stage=None):
         """
         Generate detailed alert format with contextual information
-        
+
         Parameters:
             condition_met (bool): Whether the alert condition is met
             alert_type (str): Type of alert (total_sessions, stage_sessions, water_day_total)
             value (float/int): The value that triggered the alert
             stage (str): Stage name for stage-specific alerts
-            
+
         Returns:
             dict: Alert information with detailed format
         """
         if not condition_met:
-            return {
-                'alert': 'N',
-                'value': value,
-                'stage': stage,
-                'display_format': 'N'
-            }
-        
+            return {"alert": "N", "value": value, "stage": stage, "display_format": "N"}
+
         # Alert condition is met
-        if alert_type == 'total_sessions':
+        if alert_type == "total_sessions":
             # Format: "T | 45"
             display_format = f"T | {value}"
-        elif alert_type == 'stage_sessions':
+        elif alert_type == "stage_sessions":
             # Format: "T | STAGE_FINAL | 30"
             display_format = f"T | {stage} | {value}"
-        elif alert_type == 'water_day_total':
+        elif alert_type == "water_day_total":
             # Format: "T | 3.7"
             display_format = f"T | {value:.1f}"
         else:
             display_format = "T"
-        
+
         return {
-            'alert': 'T',
-            'value': value,
-            'stage': stage,
-            'display_format': display_format
+            "alert": "T",
+            "value": value,
+            "stage": stage,
+            "display_format": display_format,
         }
 
     def check_total_sessions(self, sessions):
         """Check if total sessions exceed threshold"""
-        threshold = self.threshold_config.get('session', {}).get('value', 40)
-        condition = self.threshold_config.get('session', {}).get('condition', 'gt')
-        
+        threshold = self.threshold_config.get("session", {}).get("value", 40)
+        condition = self.threshold_config.get("session", {}).get("condition", "gt")
+
         session_count = len(sessions)
-        alert_condition = (condition == 'gt' and session_count > threshold) or \
-                         (condition == 'lt' and session_count < threshold)
-        
-        return self.generate_alert(alert_condition, 'total_sessions', value=session_count)
+        alert_condition = (condition == "gt" and session_count > threshold) or (
+            condition == "lt" and session_count < threshold
+        )
+
+        return self.generate_alert(
+            alert_condition, "total_sessions", value=session_count
+        )
 
     def check_stage_sessions(self, sessions, current_stage):
         """Check if sessions in current stage exceed threshold"""
         # Get stage-specific threshold
-        stage_threshold = self.threshold_config.get(f"stage_{current_stage}_sessions", {}).get('value', 10)
-        
+        stage_threshold = self.threshold_config.get(
+            f"stage_{current_stage}_sessions", {}
+        ).get("value", 10)
+
         # Count sessions in this stage
-        stage_sessions = sessions[sessions['current_stage_actual'] == current_stage]
+        stage_sessions = sessions[sessions["current_stage_actual"] == current_stage]
         stage_count = len(stage_sessions)
-        
+
         # Check if count exceeds threshold
         alert_condition = stage_count > stage_threshold
-        
-        return self.generate_alert(alert_condition, 'stage_sessions', 
-                                 value=stage_count, stage=current_stage)
+
+        return self.generate_alert(
+            alert_condition, "stage_sessions", value=stage_count, stage=current_stage
+        )
 
     def check_water_day_total(self, water_day_total):
         """Check if water day total exceeds threshold"""
-        threshold = self.threshold_config.get('water_day_total', {}).get('value', 3.5)
-        condition = self.threshold_config.get('water_day_total', {}).get('condition', 'gt')
-        
+        threshold = self.threshold_config.get("water_day_total", {}).get("value", 3.5)
+        condition = self.threshold_config.get("water_day_total", {}).get(
+            "condition", "gt"
+        )
+
         if pd.isna(water_day_total):
-            return self.generate_alert(False, 'water_day_total')
-        
-        alert_condition = (condition == 'gt' and water_day_total > threshold) or \
-                         (condition == 'lt' and water_day_total < threshold)
-        
-        return self.generate_alert(alert_condition, 'water_day_total', value=water_day_total)
+            return self.generate_alert(False, "water_day_total")
+
+        alert_condition = (condition == "gt" and water_day_total > threshold) or (
+            condition == "lt" and water_day_total < threshold
+        )
+
+        return self.generate_alert(
+            alert_condition, "water_day_total", value=water_day_total
+        )

@@ -1,0 +1,28 @@
+# Development dependencies for code quality and formatting
+# Code formatting
+black>=23.0.0
+isort>=5.12.0
+
+# Linting and code quality
+flake8>=6.0.0
+flake8-docstrings>=1.7.0
+flake8-import-order>=0.18.2
+flake8-black>=0.3.6
+flake8-isort>=6.0.0
+
+# Type checking
+mypy>=1.5.0
+types-requests>=2.31.0
+
+# Code complexity analysis
+radon>=6.0.1
+mccabe>=0.7.0
+
+# Pre-commit hooks for automation
+pre-commit>=3.4.0
+
+# Security scanning
+bandit>=1.7.5
+
+# Additional analysis (already in test requirements)
+vulture>=2.7 
