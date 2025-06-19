@@ -1,6 +1,7 @@
 # AIND Dashboard
 
 A comprehensive performance monitoring dashboard for the Allen Institute for Neural Dynamics (AIND) dynamic foraging behavioral experiments. This application provides real-time analysis, statistical monitoring, and alert systems for tracking subject performance across experimental conditions.
+<img width="1892" alt="Screenshot 2025-06-19 at 1 43 05 PM" src="https://github.com/user-attachments/assets/33fd1741-1280-456a-8673-f3996714ab8c" />
 
 ## High-Level Overview
 
@@ -194,6 +195,7 @@ The DataTable implements comprehensive conditional formatting based on performan
 - **Statistical Context**: Hover details for percentile calculations and confidence intervals
 - **Alert Explanations**: Detailed reasoning for alert generation
 - **Experimental Context**: Strata information and experimental parameter details
+<img width="1893" alt="Screenshot 2025-06-19 at 1 43 48 PM" src="https://github.com/user-attachments/assets/16f33c09-246c-4834-9a14-f479ff7bee37" />
 
 ---
 
