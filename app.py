@@ -1,4 +1,5 @@
 import warnings
+import os
 
 import dash
 import dash_bootstrap_components as dbc
@@ -46,7 +47,12 @@ app = dash.Dash(
     __name__,
     external_stylesheets=[dbc.themes.BOOTSTRAP],
 )
+
+# Make server accessible for gunicorn
+server = app.server
+
 app.layout = AppMain().build()
 
 if __name__ == "__main__":
-    app.run_server(debug=False)
+    # For local development
+    app.run_server(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8050)))
