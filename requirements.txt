@@ -6,3 +6,6 @@ seaborn
 dash-bootstrap-components
 aind-analysis-arch-result-access
 gunicorn
+numpy
+scipy
+scikit-learn
