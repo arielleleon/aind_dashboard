@@ -18,11 +18,9 @@ from .column_groups_config import get_default_visible_columns
 
 class AppDataFrame:
     def __init__(self, app_utils=None):
-        # CRITICAL FIX: Allow injection of shared app_utils instance
         if app_utils is not None:
             self.app_utils = app_utils
         else:
-            # Initialize app utilities (fallback for backward compatibility)
             self.app_utils = AppUtils()
 
         # Feature configuration for quantile analysis
@@ -90,10 +88,8 @@ class AppDataFrame:
         3. Apply strata abbreviation formatting
         4. Handle column filtering
         """
-        # Defensive copy of input data
         original_df = df.copy() if df is not None else pd.DataFrame()
 
-        # Add defensive check with detailed error message
         if original_df.empty or "session_date" not in original_df.columns:
             print("ERROR: Invalid dataframe passed to format_dataframe.")
             print(
@@ -121,13 +117,11 @@ class AppDataFrame:
 
         # STEP 4: Filter to visible columns if specified
         if visible_columns is not None:
-            # Only keep columns that exist in the dataframe and are in visible_columns
             existing_visible_cols = [
                 col for col in visible_columns if col in recent_sessions.columns
             ]
             recent_sessions = recent_sessions[existing_visible_cols]
 
-        # Return the formatted dataframe
         return recent_sessions
 
     def _get_percentile_formatting_rules(self):
@@ -142,12 +136,11 @@ class AppDataFrame:
             "SB": "#FF6B35",  # Dark orange (Severely Below)
             "B": "#FFB366",  # Light orange (Below)
             "G": "#4A90E2",  # Light blue (Good)
-            "SG": "#2E5A87",  # Dark blue (Severely Good)
+            "SG": "#2E5A87",  # Dark blue (Significantly Good)
             "T": "#795548",  # Brown (Threshold alerts)
             # 'N' and 'NS' get no coloring (default text color)
         }
 
-        # Color rules for overall percentile columns using overall category
         overall_percentile_columns = [
             "overall_percentile",
             "session_overall_percentile",
@@ -176,10 +169,10 @@ class AppDataFrame:
             # Feature percentile columns that should use this category
             feature_percentile_columns = [
                 f"{feature}_session_percentile",
-                f"{feature}_percentile",  # Legacy strata percentiles
+                f"{feature}_percentile",
                 f"{feature}_processed_rolling_avg",
-                feature,  # Raw feature value
-                f"{feature}_processed",  # Processed feature value
+                feature,
+                f"{feature}_processed",
             ]
 
             for col in feature_percentile_columns:
@@ -212,7 +205,6 @@ class AppDataFrame:
             raw_data, visible_columns=default_visible_columns
         )
 
-        # Improve column header display
         formatted_column_names = {
             "subject_id": "Subject ID",
             "combined_alert": "Alert",
@@ -276,7 +268,6 @@ class AppDataFrame:
             feature_display = (
                 feature.replace("_", " ").replace("abs(", "|").replace(")", "|").title()
             )
-            # Strata metrics (legacy - may not be present in new pipeline)
             formatted_column_names[f"{feature}_percentile"] = (
                 f"{feature_display}\nStrata %ile"
             )
@@ -284,14 +275,12 @@ class AppDataFrame:
             formatted_column_names[f"{feature}_processed"] = (
                 f"{feature_display}\nProcessed"
             )
-            # NEW: Session-level metrics (from unified pipeline)
             formatted_column_names[f"{feature}_session_percentile"] = (
                 f"{feature_display}\nSession %ile"
             )
             formatted_column_names[f"{feature}_processed_rolling_avg"] = (
                 f"{feature_display}\nRolling Avg"
             )
-            # Wilson CIs for percentiles
             formatted_column_names[f"{feature}_session_percentile_ci_lower"] = (
                 f"{feature_display}\nWilson CI Lower"
             )
@@ -299,13 +288,11 @@ class AppDataFrame:
                 f"{feature_display}\nWilson CI Upper"
             )
 
-        # Add overall percentile columns (both session and strata versions)
         formatted_column_names["session_overall_percentile"] = (
             "Session Overall\nPercentile"
         )
         formatted_column_names["overall_percentile"] = "Strata Overall\nPercentile"
 
-        # Wilson CIs for overall percentiles
         formatted_column_names["session_overall_percentile_ci_lower"] = (
             "Overall Percentile\nWilson CI Lower"
         )
@@ -313,7 +300,6 @@ class AppDataFrame:
             "Overall Percentile\nWilson CI Upper"
         )
 
-        # PHASE 2: Add outlier detection column names
         formatted_column_names["outlier_weight"] = "Outlier\nWeight"
         formatted_column_names["is_outlier"] = "Is\nOutlier"
 
@@ -330,7 +316,7 @@ class AppDataFrame:
             # Add specific formatting for float columns
             if col in all_table_data.columns and all_table_data[col].dtype == "float64":
                 column_def["type"] = "numeric"
-                column_def["format"] = {"specifier": ".5~g"}
+                column_def["format"] = {"specifier": ".2~g"}
 
             all_columns.append(column_def)
 
@@ -346,19 +332,15 @@ class AppDataFrame:
                 dash_table.DataTable(
                     id="session-table",
                     data=formatted_data.to_dict("records"),
-                    columns=visible_columns,  # Start with default visible columns
-                    page_size=25,  # Will be dynamically updated by callback
+                    columns=visible_columns,
+                    page_size=25,
                     fixed_rows={"headers": True},
                     style_data_conditional=[
-                        # Cursor styling for subject_id column
                         {"if": {"column_id": "subject_id"}, "cursor": "pointer"},
-                        # FIXED: Row highlighting based on alert categories - ENTIRE ROW HIGHLIGHTING (LIGHT BACKGROUNDS ONLY)
-                        # SB (Severely Below) - Light Orange Background - ENTIRE ROW
                         {
                             "if": {"filter_query": "{percentile_category} = SB"},
-                            "backgroundColor": "#FFE5DB",  # Very light orange background only
+                            "backgroundColor": "#FFE5DB",
                         },
-                        # SB subject_id column gets colored text and border indicator
                         {
                             "if": {
                                 "filter_query": "{percentile_category} = SB",
@@ -383,7 +365,6 @@ class AppDataFrame:
                             "color": "#F57C00",  # Medium orange text for subject_id
                             "fontWeight": "600",
                         },
-                        # G (Good) - Very Light Blue - ENTIRE ROW
                         {
                             "if": {"filter_query": "{percentile_category} = G"},
                             "backgroundColor": "#E3F2FD",  # Very light blue background only
@@ -413,7 +394,6 @@ class AppDataFrame:
                             "color": "#0D47A1",  # Dark blue text for subject_id
                             "fontWeight": "600",
                         },
-                        # FIXED: Special styling for combined alerts (percentile + threshold) - ENTIRE ROW (LIGHT BACKGROUNDS)
                         # SB with threshold alert - ENTIRE ROW
                         {
                             "if": {"filter_query": '{combined_alert} contains "SB, T"'},
@@ -569,8 +549,6 @@ class AppDataFrame:
                             "borderRight": "3px solid #9C27B0",  # Purple right border on subject_id for outliers
                         },
                         # WILSON CI CERTAINTY FORMATTING: Conditional formatting based on confidence interval certainty
-                        # Remove the old background-based formatting and replace with left border indicators
-                        # Overall percentile certainty formatting - left border indicators
                         # Certain (high confidence) - Green left border
                         {
                             "if": {
@@ -702,18 +680,18 @@ class AppDataFrame:
                     ]
                     + self._get_percentile_formatting_rules(),
                     style_table={
-                        "overflowX": "auto",  # Keep horizontal scroll for wide tables
+                        "overflowX": "auto",
                         "backgroundColor": "white",
                         "width": "100%",
                         "marginBottom": "0px",
-                        "height": "auto",  # Let height be determined by content
+                        "height": "auto",
                     },
                     style_cell={
                         "textAlign": "left",
-                        "padding": "10px 12px",  # Consistent cell padding
+                        "padding": "10px 12px",
                         "fontFamily": '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
                         "fontSize": "14px",
-                        "height": "48px",  # Fixed row height for consistency
+                        "height": "48px",
                         "minWidth": "100px",
                         "backgroundColor": "white",
                         "border": "none",
@@ -727,7 +705,7 @@ class AppDataFrame:
                         "position": "sticky",
                         "top": 0,
                         "zIndex": 999,
-                        "height": "60px",  # Fixed header height
+                        "height": "60px",
                         "whiteSpace": "normal",
                         "textAlign": "center",
                         "padding": "10px 5px",

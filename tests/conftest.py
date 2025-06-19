@@ -119,21 +119,3 @@ def app_instance():
     # Import here to avoid circular imports during unit testing
     from app import app
     return app
-
-# Legacy fixtures for backward compatibility
-@pytest.fixture
-def legacy_sample_session_data():
-    """
-    DEPRECATED: Legacy fixture for backward compatibility
-    
-    Use sample_session_data instead for realistic app data.
-    """
-    return pd.DataFrame({
-        'subject_id': ['S001', 'S001', 'S002', 'S002', 'S003'],
-        'session_id': ['sess_1', 'sess_2', 'sess_1', 'sess_2', 'sess_1'],
-        'performance_metric': [0.75, 0.80, 0.65, 0.70, 0.85],
-        'reaction_time': [0.5, 0.45, 0.6, 0.55, 0.4],
-        'session_date': pd.to_datetime(['2024-01-01', '2024-01-02', '2024-01-01', '2024-01-02', '2024-01-01']),
-        'training_day': [1, 2, 1, 2, 1],
-        'total_trials': [100, 120, 90, 110, 130]
-    }) 

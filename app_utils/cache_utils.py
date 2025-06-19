@@ -260,15 +260,12 @@ class CacheManager:
                 cache_size_info = self._calculate_cache_size(cache_key, cache_data)
                 summary["cache_sizes"][cache_key] = cache_size_info
 
-                # Handle UI structures special case where we need separate entries
                 if cache_key == "ui_structures" and isinstance(cache_data, dict):
                     ui_details = self._get_ui_structures_details(cache_data)
                     summary["cache_sizes"].update(ui_details)
 
-        # Add optimization status
         summary["optimization_status"] = self._build_optimization_status()
 
-        # Calculate total cached objects
         summary["total_data_objects"] = sum(
             1 for cache_data in self._cache.values() if cache_data is not None
         )
@@ -335,7 +332,6 @@ class CacheManager:
                     f"  Compressed {cache_key}: {compression_ratio:.1f}x reduction"
                 )
 
-                # Remove original to save memory
                 del self._cache[cache_key]
                 return True
 

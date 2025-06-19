@@ -27,7 +27,7 @@ class AppSubjectPercentileTimeseries:
             "abs(bias_naive)": True,  # Lower is better
         }
 
-        # Color scheme for features (same as raw values plot for consistency)
+        # Color scheme for features
         self.feature_colors = {
             "finished_trials": "#1f77b4",  # Blue
             "ignore_rate": "#ff7f0e",  # Orange
@@ -40,7 +40,7 @@ class AppSubjectPercentileTimeseries:
         """Build the complete percentile timeseries component"""
         return html.Div(
             [
-                # Feature selection controls at the top
+                # Feature selection controls
                 html.Div(
                     [
                         html.Label(
@@ -76,13 +76,13 @@ class AppSubjectPercentileTimeseries:
                     ],
                     className="percentile-timeseries-controls mb-2",
                 ),
-                # Main percentile timeseries plot - simplified container
+                # Main percentile timeseries plot
                 dcc.Graph(
                     id="percentile-timeseries-plot",
                     figure=self._create_empty_figure(),
                     config={"displayModeBar": False, "responsive": True},
                     className="percentile-timeseries-graph",
-                    style={"height": "550px"},  # Increased height since title removed
+                    style={"height": "550px"},
                 ),
             ],
             className="subject-percentile-timeseries-component",
@@ -118,15 +118,15 @@ class AppSubjectPercentileTimeseries:
                 l=40,
                 r=20,
                 t=40,
-                b=60,  # Increased bottom margin from 40 to 60 for consistency
-            ),  # Increased top margin for hover tooltips
-            height=550,  # Increased to match raw timeseries plot
+                b=60,
+            ),
+            height=550,
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
             ),
             hovermode="x unified",
             yaxis=dict(
-                range=[0, 100],  # Percentiles range from 0-100
+                range=[0, 100],
                 showgrid=True,
                 gridwidth=1,
                 gridcolor="rgba(211,211,211,0.3)",
@@ -155,7 +155,7 @@ class AppSubjectPercentileTimeseries:
         show_confidence_intervals=True,
     ):
         """
-        Create the percentile timeseries plot using session-level percentiles with confidence intervals
+        Create the percentile timeseries plot using Wilson CI methodology
 
         Parameters:
             subject_data: dict - Time series data from app_utils
@@ -727,9 +727,7 @@ class AppSubjectPercentileTimeseries:
             xaxis_title="Session Number",
             yaxis_title="Feature Percentiles (%)",
             template="plotly_white",
-            margin=dict(
-                l=40, r=20, t=40, b=60
-            ),  # Increased bottom margin from 40 to 60
+            margin=dict(l=40, r=20, t=40, b=60),
             height=550,
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
@@ -779,13 +777,11 @@ class AppSubjectPercentileTimeseries:
 
         for i, (session, strata) in enumerate(zip(sessions, strata_data)):
             if current_strata is None:
-                # First session - record starting strata
                 current_strata = strata
                 transitions.append(
                     {"session": session, "strata": strata, "transition_type": "start"}
                 )
             elif strata != current_strata:
-                # Strata transition detected
                 transitions.append(
                     {
                         "session": session,
@@ -795,8 +791,8 @@ class AppSubjectPercentileTimeseries:
                 )
                 current_strata = strata
 
-        # Add vertical lines for transitions (skip the first one which is just the start)
-        for transition in transitions[1:]:  # Skip first transition (start)
+        # Add vertical lines for transitions
+        for transition in transitions[1:]:
             session = transition["session"]
             strata = transition["strata"]
             strata_abbr = self._get_strata_abbreviation(strata)
@@ -849,14 +845,14 @@ class AppSubjectPercentileTimeseries:
         if not outlier_sessions:
             return
 
-        # Add purple markers for outlier sessions at 95% on y-axis
+        # Add purple markers for outlier sessions
         fig.add_trace(
             go.Scatter(
                 x=outlier_sessions,
-                y=[95] * len(outlier_sessions),  # Position near top of percentile range
+                y=[95] * len(outlier_sessions),
                 mode="markers",
                 marker=dict(
-                    color="#9C27B0",  # Purple color matching dataframe and heatmap
+                    color="#9C27B0",
                     size=12,
                     symbol="diamond",
                     line=dict(width=2, color="#FFFFFF"),

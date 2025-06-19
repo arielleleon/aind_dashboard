@@ -9,7 +9,6 @@ This module handles callbacks related to subject selection and data loading:
 Uses Dash 2.x @callback decorator pattern to avoid circular imports.
 """
 
-# Import shared utilities (replaces multiple individual imports)
 from callbacks.shared_callback_utils import (
     Input,
     Output,
@@ -20,10 +19,6 @@ from callbacks.shared_callback_utils import (
     safe_extract_subject_data,
     session_card,
 )
-
-# Component instances are now shared from utilities - no need to re-initialize
-# session_card = AppSessionCard()  # Removed - using shared instance
-# compact_info = AppSubjectCompactInfo()  # Removed - using shared instance
 
 
 @callback(

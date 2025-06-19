@@ -42,17 +42,15 @@ COLUMN_GROUPS = {
         "default_expanded": False,
         "icon": "fas fa-chart-line",
         "columns": [
-            # Core percentile columns (always shown when group is expanded)
             "session_overall_percentile",
             "session_overall_percentile_rolling_avg",
             # Overall percentile Wilson CIs and certainty
             "session_overall_percentile_ci_lower",
             "session_overall_percentile_ci_upper",
             "session_overall_percentile_certainty",
-            # PHASE 2: Outlier Detection Information
             "outlier_weight",
             "is_outlier",
-            # Feature-specific percentile columns with Wilson CIs and certainty - will be populated dynamically
+            # Feature-specific percentile columns with Wilson CIs and certainty
             "finished_trials_session_percentile",
             "finished_trials_session_percentile_ci_lower",
             "finished_trials_session_percentile_ci_upper",

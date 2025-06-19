@@ -172,11 +172,9 @@ def apply_alert_category_filter(df: pd.DataFrame, alert_category: str) -> pd.Dat
         return df
 
     try:
-        # Try to get app_utils from the common import pattern
         try:
             from callbacks.shared_callback_utils import app_utils
 
-            # Get or create alert coordinator
             if (
                 hasattr(app_utils, "alert_coordinator")
                 and app_utils.alert_coordinator is not None
@@ -364,7 +362,7 @@ def apply_all_filters(
     filtered_df = apply_alert_category_filter(filtered_df, alert_category)
     filtered_df = apply_sorting_logic(filtered_df, sort_option)
 
-    # Count percentile categories for debugging - use the correct column name
+    # Count percentile categories for debugging
     percentile_col = (
         "overall_percentile_category"
         if "overall_percentile_category" in filtered_df.columns

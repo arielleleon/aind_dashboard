@@ -9,7 +9,6 @@ from unittest.mock import Mock, patch
 import sys
 import os
 
-# Ensure we can import from the project
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 
@@ -35,8 +34,6 @@ class TestSharedUtils:
             with patch.object(shared_utils, 'app_utils', mock_instance):
                 # Test the function
                 result = shared_utils.get_app_utils()
-                
-                # Verify it returns the mocked instance
                 assert result is not None
                 assert result is mock_instance
     

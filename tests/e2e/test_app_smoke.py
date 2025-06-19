@@ -158,9 +158,7 @@ class TestAppSmoke:
             from shared_utils import get_app_utils
             
             app_utils = get_app_utils()
-            
-            # Test that we can call the data methods (they might be cached already)
-            # This should work relatively quickly if cache is working
+
             session_data = app_utils.get_session_data(use_cache=True)
             assert session_data is not None
             

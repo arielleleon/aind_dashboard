@@ -20,10 +20,8 @@ class AppFilter:
         self.rig_options = sorted(df["rig"].dropna().unique().tolist())
         self.trainer_options = sorted(df["trainer"].dropna().unique().tolist())
         self.pi_options = sorted(df["PI"].dropna().unique().tolist())
-        # NEW: Add subject ID options - sorted numerically if possible, otherwise alphabetically
         subject_ids = df["subject_id"].dropna().unique().tolist()
         try:
-            # Try to sort numerically if all subject IDs are numeric
             self.subject_id_options = sorted(
                 subject_ids, key=lambda x: int(x) if str(x).isdigit() else float("inf")
             )
@@ -99,7 +97,6 @@ class AppFilter:
         default_state = {}
         for group_id, group_config in self.column_groups.items():
             if group_config.get("collapsible", True):
-                # Always start collapsed, ignoring default_expanded setting
                 default_state[group_id] = False
             else:
                 default_state[group_id] = (
@@ -189,7 +186,7 @@ class AppFilter:
                             width=2,
                             className="filter-column",
                         ),
-                        # NEW: Subject ID filter with searchable multi-select
+                        # Subject ID filter with searchable multi-select
                         dbc.Col(
                             [
                                 html.Label("Subject ID", className="filter-label"),
@@ -205,10 +202,9 @@ class AppFilter:
                                     searchable=True,
                                     className="filter-dropdown",
                                     style={
-                                        "minWidth": "200px",  # Ensure enough width for multiple selections
-                                        "width": "100%",  # Take full width of column
+                                        "minWidth": "200px",
+                                        "width": "100%",
                                     },
-                                    # NEW: Add persistence to help with multi-select behavior
                                     persistence=True,
                                     persistence_type="session",
                                 ),
@@ -216,7 +212,7 @@ class AppFilter:
                             width=3,
                             className="filter-column",
                         ),
-                        # Rig filter (moved to make space)
+                        # Rig filter
                         dbc.Col(
                             [
                                 html.Label("Rig", className="filter-label"),
@@ -337,11 +333,10 @@ class AppFilter:
                             width=4,
                             className="filter-column",
                         ),
-                        # Empty column for spacing/future expansion
                         dbc.Col(width=4),
                     ]
                 ),
-                # Column visibility section (unchanged)
+                # Column visibility section
                 html.Hr(className="my-3"),
                 html.Div(
                     [
@@ -363,9 +358,7 @@ class AppFilter:
                             [
                                 self._create_group_toggle(group_id, group_config)
                                 for group_id, group_config in self.column_groups.items()
-                                if group_config.get(
-                                    "collapsible", True
-                                )  # Only show toggles for collapsible groups
+                                if group_config.get("collapsible", True)
                             ],
                             className="column-toggle-buttons",
                         ),
@@ -380,4 +373,4 @@ class AppFilter:
             ],
             className="filter-container mb-2",
             style={"height": "auto", "min-height": "200px"},
-        )  # Increased min-height for two rows
+        )

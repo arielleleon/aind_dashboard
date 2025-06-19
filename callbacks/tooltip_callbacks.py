@@ -9,9 +9,6 @@ from callbacks.shared_callback_utils import (
     clientside_callback,
 )
 
-# Component instance is now shared from utilities - no need to re-initialize
-# app_tooltip = AppHoverTooltip(app_utils=app_utils)  # Removed - using shared instance
-
 # Tooltip Callbacks
 
 

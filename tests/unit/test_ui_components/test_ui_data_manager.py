@@ -32,7 +32,7 @@ class TestUIDataManager:
         assert self.ui_manager.map_percentile_to_category(20.0) == 'B'   # Below
         assert self.ui_manager.map_percentile_to_category(50.0) == 'N'   # Normal
         assert self.ui_manager.map_percentile_to_category(80.0) == 'G'   # Good
-        assert self.ui_manager.map_percentile_to_category(95.0) == 'SG'  # Severely Good
+        assert self.ui_manager.map_percentile_to_category(95.0) == 'SG'  # Significantly Good
         assert self.ui_manager.map_percentile_to_category(np.nan) == 'NS'  # Not Significant
         
         # Test boundary conditions
@@ -75,17 +75,17 @@ class TestUIDataManager:
         
         # Verify subjects data structure
         subjects = result['subjects']
-        assert '690494' in subjects  # Real subject ID
-        assert '690486' in subjects  # Real subject ID
-        assert '702200' in subjects  # Real subject ID
+        assert '690494' in subjects
+        assert '690486' in subjects
+        assert '702200' in subjects
         
         # Verify subject data structure with real data
         subject_690494_data = subjects['690494']
         assert 'sessions' in subject_690494_data
         assert 'current_strata' in subject_690494_data
         assert 'total_sessions' in subject_690494_data
-        assert subject_690494_data['total_sessions'] == 2  # 690494 has 2 sessions in real data
-        assert subject_690494_data['current_strata'] == 'Uncoupled Without Baiting_BEGINNER_v1'  # Real strata
+        assert subject_690494_data['total_sessions'] == 2
+        assert subject_690494_data['current_strata'] == 'Uncoupled Without Baiting_BEGINNER_v1'
     
     def test_create_ui_optimized_structures(self):
         """Test UI optimized structures creation"""
@@ -97,14 +97,11 @@ class TestUIDataManager:
         assert isinstance(result, dict)
         assert 'data_hash' in result
         
-        # The method may return different fields based on current implementation
-        # Check for presence of common expected fields
         expected_fields = ['strata_lookup', 'data_hash', 'table_display_cache']
         for field in expected_fields:
             if field in result:
                 assert field in result
         
-        # Verify we get some kind of data structure back
         assert len(result) > 0
     
     def test_get_subject_display_data(self):
@@ -120,8 +117,8 @@ class TestUIDataManager:
             
             assert 'latest_session' in result
             assert 'summary' in result
-            assert result['latest_session']['strata'] == 'Uncoupled Without Baiting_BEGINNER_v1'  # Real strata
-            assert result['summary']['total_sessions'] == 2  # Real session count
+            assert result['latest_session']['strata'] == 'Uncoupled Without Baiting_BEGINNER_v1'
+            assert result['summary']['total_sessions'] == 2
         else:
             # If the structure is different, just verify the method doesn't error
             result = self.ui_manager.get_subject_display_data('690494', ui_structures)
@@ -139,14 +136,13 @@ class TestUIDataManager:
             result = self.ui_manager.get_table_display_data(ui_structures)
             
             assert isinstance(result, list)
-            assert len(result) == 5  # 5 unique subjects in real data
+            assert len(result) == 5
             
             # Verify real subject data is present
             subject_ids = [row['subject_id'] for row in result]
             assert '690494' in subject_ids
             assert '690486' in subject_ids
         else:
-            # If the structure is different, just verify the method doesn't error
             result = self.ui_manager.get_table_display_data(ui_structures)
             assert result is not None
     
@@ -164,9 +160,8 @@ class TestUIDataManager:
             assert 'sessions' in result
             assert 'dates' in result
             assert 'overall_percentiles' in result
-            assert len(result['sessions']) == 2  # 690494 has 2 sessions
+            assert len(result['sessions']) == 2
         else:
-            # If the structure is different, just verify the method doesn't error
             result = self.ui_manager.get_time_series_data('690494', ui_structures)
             assert result is not None
     
@@ -175,7 +170,7 @@ class TestUIDataManager:
         result = self.ui_manager._create_table_display_cache(self.sample_session_data)
         
         assert isinstance(result, list)
-        assert len(result) == 5  # 5 unique subjects
+        assert len(result) == 5
         
         # Verify threshold alert columns are present
         for row in result:
@@ -199,7 +194,7 @@ class TestUIDataManager:
         result = self.ui_manager._create_time_series_data(self.sample_session_data)
         
         assert isinstance(result, dict)
-        assert len(result) == 5  # 5 unique subjects
+        assert len(result) == 5
         
         # Test with real subject ID
         assert '690494' in result
@@ -241,7 +236,7 @@ class TestUIDataManager:
             'strata': ['Test_Strata_v1']
         })
         result = self.ui_manager.optimize_session_data_storage(incomplete_df)
-        assert result['metadata']['total_subjects'] == 1  # Should handle gracefully
+        assert result['metadata']['total_subjects'] == 1
         assert result['metadata']['total_sessions'] == 1
         
         # Test with None input for strata abbreviation
@@ -277,12 +272,12 @@ class TestUIDataManagerIntegration:
         # Test strata abbreviation delegation with real data
         real_strata = 'Uncoupled Without Baiting_BEGINNER_v1'
         result = app_utils._get_strata_abbreviation(real_strata)
-        assert result == 'UWBB1'  # Real expected abbreviation
+        assert result == 'UWBB1'
         
         # Test with different real strata
         another_strata = 'Coupled Baiting_ADVANCED_v2'
         result = app_utils._get_strata_abbreviation(another_strata)
-        assert result == 'CBA2'  # Real expected abbreviation
+        assert result == 'CBA2'
 
 
 @pytest.fixture
@@ -290,20 +285,20 @@ def sample_ui_structures():
     """Fixture providing sample UI structures for testing"""
     return {
         'feature_rank_data': {
-            '690494': {  # Real subject ID
+            '690494': {
                 'features': {
                     'finished_trials': {'percentile': 75.0, 'category': 'G'},
                     'ignore_rate': {'percentile': 25.0, 'category': 'B'}
                 },
                 'overall_percentile': 50.0,
                 'overall_category': 'N',
-                'strata': 'Uncoupled Without Baiting_BEGINNER_v1'  # Real strata
+                'strata': 'Uncoupled Without Baiting_BEGINNER_v1'
             }
         },
         'subject_lookup': {
-            '690494': {  # Real subject ID
+            '690494': {
                 'latest_session': {
-                    'strata': 'Uncoupled Without Baiting_BEGINNER_v1',  # Real strata
+                    'strata': 'Uncoupled Without Baiting_BEGINNER_v1',
                     'overall_percentile': 50.0
                 },
                 'summary': {
@@ -312,17 +307,17 @@ def sample_ui_structures():
             }
         },
         'time_series_data': {
-            '690494': {  # Real subject ID
-                'sessions': [9.0, 10.0],  # Real session numbers
+            '690494': {
+                'sessions': [9.0, 10.0],
                 'dates': ['2023-01-01', '2023-01-02'],
                 'overall_percentiles': [45.0, 55.0]
             }
         },
         'table_display_cache': [
             {
-                'subject_id': '690494',  # Real subject ID
-                'strata': 'Uncoupled Without Baiting_BEGINNER_v1',  # Real strata
-                'strata_abbr': 'UWBB1',  # Real abbreviation
+                'subject_id': '690494',
+                'strata': 'Uncoupled Without Baiting_BEGINNER_v1',
+                'strata_abbr': 'UWBB1',
                 'overall_percentile': 50.0
             }
         ]

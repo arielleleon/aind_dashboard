@@ -1,10 +1,10 @@
 """
 Shared utilities module to avoid circular imports and ensure single app_utils instance
+Potentially deprecated singleton, may need to remove when data is no longer global among users.
 """
 
 from app_utils import AppUtils
 
-# CRITICAL FIX: Create a single shared app_utils instance
 app_utils = AppUtils()
 
 

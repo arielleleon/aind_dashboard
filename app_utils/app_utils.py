@@ -43,7 +43,7 @@ class AppUtils:
         # Initialize percentile coordinator
         self.percentile_coordinator = PercentileCoordinator(self.cache_manager)
 
-        # Analysis components - will be initialized on first use
+        # Analysis components
         self.reference_processor = None
         self.quantile_analyzer = None
         self.threshold_analyzer = None
@@ -113,7 +113,6 @@ class AppUtils:
         self, df: pd.DataFrame, use_cache: bool = True
     ) -> pd.DataFrame:
         """Process raw data through the unified session-level pipeline"""
-        # Initialize pipeline manager if not already done
         if self.pipeline_manager is None:
             self.initialize_pipeline_manager()
 
@@ -122,7 +121,6 @@ class AppUtils:
         # Sync backward compatibility references
         self.reference_processor = self.pipeline_manager.reference_processor
         self.quantile_analyzer = self.pipeline_manager.quantile_analyzer
-        # Note: threshold_analyzer is not part of DataPipelineManager
 
         return result
 

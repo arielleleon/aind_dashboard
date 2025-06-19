@@ -18,7 +18,7 @@ class AppSubjectDetail:
 
     def build(self):
         """
-        Build subject detail component with new layout:
+        Build subject detail component with layout:
         - Compact info spanning full width
         - Heatmap spanning both columns (including overall percentile)
         - Session list and timeseries below
@@ -29,22 +29,22 @@ class AppSubjectDetail:
                 dcc.Store(id="session-card-selected", data={"selected_card_id": None}),
                 # Store component to track selected subject ID
                 dcc.Store(id="selected-subject-store", data={"subject_id": None}),
-                # Interval component to check for scroll updates (300ms interval - reduced frequency)
+                # Interval component to check for scroll updates (300ms interval)
                 dcc.Interval(id="scroll-tracker-interval", interval=300, n_intervals=0),
                 # Subject detail page (initially shown when subject is selected)
                 html.Div(
                     [
-                        # NEW: Top section with compact info and heatmap spanning full width
+                        # Top section with compact info and heatmap spanning full width
                         dbc.Row(
                             [
                                 dbc.Col(
                                     [
-                                        # Compact subject info (very small text) - now spans full width
+                                        # Compact subject info
                                         html.Div(
                                             id="compact-subject-info-container",
                                             className="compact-info-section mb-3",
                                         ),
-                                        # Percentile heatmap spanning full width with toggle button
+                                        # Percentile heatmap
                                         html.Div(
                                             [
                                                 # Title row with toggle button
@@ -109,12 +109,12 @@ class AppSubjectDetail:
                                 # Right column: Dual timeseries graphs
                                 dbc.Col(
                                     [
-                                        # Raw values timeseries (existing) - title removed
+                                        # Raw values timeseries
                                         html.Div(
                                             [self.subject_timeseries.build()],
                                             className="raw-timeseries-section mb-4",
                                         ),
-                                        # Percentile timeseries (new) - title removed
+                                        # Percentile timeseries
                                         html.Div(
                                             [
                                                 self.subject_percentile_timeseries.build()
@@ -128,7 +128,7 @@ class AppSubjectDetail:
                             ],
                             className="subject-detail-main-row",
                         ),
-                        # Footer row - spans both columns for visual separation
+                        # Footer row
                         dbc.Row(
                             [
                                 dbc.Col(

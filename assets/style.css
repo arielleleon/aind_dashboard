@@ -3,7 +3,7 @@ html, body {
     height: 100%;
     margin: 0;
     padding: 0;
-    overflow: auto;  /* Change from hidden to auto */
+    overflow: auto;
 }
 
 .app-main {
@@ -20,7 +20,7 @@ html, body {
     height: 50px;
     display: flex;
     align-items: center;
-    flex-shrink: 0;  /* Prevent the header from shrinking */
+    flex-shrink: 0;
     position: relative;
     z-index: 1000;
 }
@@ -29,8 +29,8 @@ html, body {
     flex: 1;
     margin-top: 0 !important;
     padding-top: 15px;
-    overflow: auto; /* Allow scrolling */
-    height: calc(100vh - 50px); /* Subtract top bar height */
+    overflow: auto;
+    height: calc(100vh - 50px);
 }
 
 /* Sidebar styling */
@@ -44,46 +44,45 @@ html, body {
     padding: 0 15px;
 }
 
-/* Content wrapper positioning - seamless white, flexible height */
+/* Content wrapper positioning */
 .content-wrapper {
-    height: auto;  /* Changed from 100% to auto for natural expansion */
+    height: auto;
     width: 100%;
     padding: 0 15px;
     position: relative;
     display: flex;
     flex-direction: column;
-    overflow: visible; /* Allow content to be visible */
-    background-color: white; /* Ensure white background */
+    overflow: visible;
+    background-color: white;
 }
 
-/* Data table container - white background, natural height */
+/* Data table container */
 .data-table-container {
-    /* Removed max-height constraint to allow table to expand naturally */
-    overflow-y: visible;  /* Changed from auto to visible */
+    overflow-y: visible;
     width: 100%;
-    flex: 0 1 auto;  /* Changed from flex: 1 to allow natural sizing */
-    background-color: white; /* Ensure white background */
+    flex: 0 1 auto;
+    background-color: white;
 }
 
 /* Filter component styles */
 .filter-container {
     background-color: #f8f9fa;
     border-radius: 8px;
-    padding: 8px;  /* Reduced from 10px */
-    margin-bottom: 8px;  /* Reduced from 10px */
+    padding: 8px;
+    margin-bottom: 8px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     width: 100%;
-    flex-shrink: 0;  /* Prevent filter from shrinking */
+    flex-shrink: 0;
     height: auto;
-    min-height: 160px;  /* Reduced from 180px due to compact design */
+    min-height: 160px;
 }
 
 .filter-header {
-    margin-bottom: 6px;  /* Reduced from 8px */
+    margin-bottom: 6px;
 }
 
 .filter-title {
-    font-size: 14px;  /* Reduced from 16px */
+    font-size: 14px;
     font-weight: 600;
 }
 
@@ -91,21 +90,20 @@ html, body {
     background-color: #4a6dff;
     color: white;
     border-radius: 50%;
-    width: 20px;  /* Reduced from 24px */
-    height: 20px;  /* Reduced from 24px */
+    width: 20px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;  /* Reduced from 14px */
+    font-size: 12px;
 }
 
 .clear-filters-btn {
     background: none;
     border: none;
     color: #4a6dff;
-    font-size: 12px;  /* Reduced from 14px */
+    font-size: 12px;
     cursor: pointer;
-    padding: 4px 8px;  /* Add padding for better click target */
+    padding: 4px 8px;
     border-radius: 4px;
     transition: all 0.2s ease;
 }
@@ -117,24 +115,24 @@ html, body {
 
 .filter-label {
     font-weight: 600;
-    margin-bottom: 3px;  /* Reduced from 4px */
+    margin-bottom: 3px;
     display: block;
-    font-size: 11px;  /* Reduced from 12px */
-    color: #555;  /* Slightly softer color */
+    font-size: 11px;
+    color: #555;
 }
 
 .filter-button-group {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;  /* Reduced from 8px */
+    gap: 6px;
 }
 
 .filter-button {
     background-color: white;
     border: 1px solid #e0e0e0;
-    border-radius: 4px;  /* Reduced from 20px for consistency with column toggles */
-    padding: 4px 12px;  /* Reduced from 6px 16px */
-    font-size: 12px;  /* Reduced from 14px */
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 12px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
@@ -151,35 +149,35 @@ html, body {
 }
 
 .filter-dropdown .Select-control {
-    min-height: 28px;  /* Reduced from 32px */
-    height: 28px;  /* Reduced from 32px */
-    font-size: 12px;  /* Add smaller font size */
+    min-height: 28px;
+    height: 28px;
+    font-size: 12px;
 }
 
 .filter-dropdown .Select-value {
-    line-height: 28px !important;  /* Reduced from 32px */
+    line-height: 28px !important;
     font-size: 12px !important;
 }
 
 .filter-dropdown .Select-placeholder {
-    line-height: 28px !important;  /* Reduced from 32px */
+    line-height: 28px !important;
     font-size: 12px !important;
-    color: #999;  /* Softer placeholder color */
+    color: #999;
 }
 
 .filter-dropdown .Select-input {
-    height: 28px;  /* Reduced from 32px */
+    height: 28px;
 }
 
 .filter-badge {
-    font-size: 11px;  /* Reduced from 12px */
+    font-size: 11px;
     font-weight: normal;
-    padding: 3px 6px;  /* Reduced from 4px 8px */
-    border-radius: 4px;  /* Reduced from 12px for consistency */
-    margin-right: 3px;  /* Reduced from 4px */
-    margin-bottom: 3px;  /* Reduced from 4px */
+    padding: 3px 6px;
+    border-radius: 4px;
+    margin-right: 3px;
+    margin-bottom: 3px;
     display: inline-block;
-    background-color: #4a6dff !important;  /* Ensure consistency */
+    background-color: #4a6dff !important;
     color: white !important;
     border: none !important;
     transition: all 0.2s ease !important;
@@ -193,12 +191,12 @@ html, body {
 .filter-badge span {
     cursor: pointer;
     font-weight: bold;
-    margin-left: 4px;  /* Reduced from 6px */
+    margin-left: 4px;
 }
 
 /* Make the active filters container take less vertical space */
 .active-filters {
-    min-height: 22px;  /* Reduced from 26px */
+    min-height: 22px;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -206,25 +204,25 @@ html, body {
 
 /* Enhanced filter dropdown styling for compact design */
 .filter-dropdown-sm {
-    min-height: 26px !important;  /* Reduced from 28px */
-    font-size: 11px !important;  /* Reduced from 12px */
+    min-height: 26px !important;
+    font-size: 11px !important;
 }
 
 .filter-dropdown-sm .Select-control {
-    min-height: 26px !important;  /* Reduced from 28px */
-    height: 26px !important;  /* Reduced from 28px */
+    min-height: 26px !important;
+    height: 26px !important;
 }
 
 .filter-dropdown-sm .Select-value, 
 .filter-dropdown-sm .Select-placeholder {
-    line-height: 26px !important;  /* Reduced from 28px */
-    font-size: 11px !important;  /* Reduced from 12px */
+    line-height: 26px !important;
+    font-size: 11px !important;
 }
 
 /* Column-specific padding adjustments */
 .filter-column {
-    padding-left: 6px;  /* Reduced padding */
-    padding-right: 6px;  /* Reduced padding */
+    padding-left: 6px;
+    padding-right: 6px;
 }
 
 /* Content container styling */
@@ -233,7 +231,7 @@ html, body {
 }
 
 .main-row {
-    height: calc(100vh - 50px);  /* Subtract height of top bar */
+    height: calc(100vh - 50px);
 }
 
 /* Increase plot height to match table */
@@ -258,21 +256,21 @@ html, body {
 
 /* Session List Styles */
 .session-list-wrapper {
-    height: 1280px;  /* Updated to match new combined timeseries height: raw (~580px) + percentile (670px) + spacing (~30px) */
+    height: 1280px;
     display: flex;
     flex-direction: column;
-    border: 1px solid #f0f0f0; /* Add subtle border to match timeseries components */
-    border-radius: 0; /* Remove border radius */
-    background-color: white; /* Change from #f9f9f9 to white */
+    border: 1px solid #f0f0f0;
+    border-radius: 0;
+    background-color: white;
 }
 
 .session-list-header {
     padding: 12px 15px;
-    border-bottom: 1px solid #f0f0f0; /* Lighter border */
+    border-bottom: 1px solid #f0f0f0;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: white; /* Change from #f0f4f8 to white */
+    background-color: white;
 }
 
 .session-list-title {
@@ -299,44 +297,44 @@ html, body {
 .session-list-container {
     display: flex;
     flex-direction: column;
-    gap: 15px;  /* Increased from 10px */
+    gap: 15px;
 }
 
 /* Updated Session Card Styles - seamless appearance */
 .session-card {
     background-color: white;
-    border-radius: 0; /* Remove border radius */
-    padding: 12px;  /* Increased padding */
-    box-shadow: none; /* Remove shadow */
-    border-left: none; /* Remove left border */
-    border: 1px solid #f0f0f0; /* Add subtle border for definition */
-    margin-bottom: 10px;  /* Reduce margin */
+    border-radius: 0;
+    padding: 12px;
+    box-shadow: none;
+    border-left: none;
+    border: 1px solid #f0f0f0;
+    margin-bottom: 10px;
     transition: all 0.2s ease;
-    height: 230px;  /* Set explicit height */
+    height: 230px;
 }
 
 .session-card:hover {
-    box-shadow: none; /* Remove hover shadow */
-    transform: none; /* Remove hover transform */
-    border-color: #e0e0e0; /* Slightly darker border on hover */
+    box-shadow: none;
+    transform: none;
+    border-color: #e0e0e0;
 }
 
 .session-card.active {
-    border-left: 4px solid #3498db; /* Keep active indicator but smaller */
-    background-color: #f8fbff; /* Very subtle background change */
-    box-shadow: none; /* Remove active shadow */
+    border-left: 4px solid #3498db;
+    background-color: #f8fbff;
+    box-shadow: none;
 }
 
 /* Two-column layout for session card */
 .session-card-row {
     display: flex;
-    gap: 15px;  /* Increased gap */
-    height: 100%;  /* Use full card height */
+    gap: 15px;
+    height: 100%;
 }
 
 /* Left column - metadata */
 .session-metadata-column {
-    flex: 3;  /* Takes 30% of the width - reduced from 4 */
+    flex: 3;
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -345,7 +343,7 @@ html, body {
 
 /* Right column - image */
 .session-image-column {
-    flex: 7;  /* Takes 70% of the width - increased from 6 */
+    flex: 7;
     height: 100%;
     display: flex;
     align-items: center;
@@ -430,31 +428,31 @@ html, body {
 
 /* Timeseries Styles */
 .subject-timeseries-container {
-    height: 700px;  /* Container height for individual timeseries sections */
+    height: 700px;
     display: flex;
     flex-direction: column;
-    border: none; /* Remove border */
-    border-radius: 0; /* Remove border radius */
-    background-color: white; /* Change from #f9f9f9 to white */
-    padding: 4px 4px 4px 4px; /* Reduce padding */
+    border: none;
+    border-radius: 0; 
+    background-color: white;
+    padding: 4px 4px 4px 4px;
 }
 
 .subject-timeseries-graph {
     flex-grow: 1;
     min-height: 500px;
-    border-radius: 0; /* Remove border radius */
+    border-radius: 0;
     overflow: hidden;
     background-color: white;
-    box-shadow: none; /* Remove shadow */
-    border: none; /* Remove border since parent component container has it */
+    box-shadow: none;
+    border: none;
 }
 
 .feature-select-container {
     padding: 8px 12px;
     margin-bottom: 5px;
-    background-color: white; /* Change from #f0f4f8 to white */
-    border-radius: 0; /* Remove border radius */
-    border-bottom: 1px solid #f0f0f0; /* Add subtle bottom border */
+    background-color: white;
+    border-radius: 0;
+    border-bottom: 1px solid #f0f0f0;
 }
 
 .feature-select-label {
@@ -492,19 +490,18 @@ html, body {
 /* Make section transition smoother - seamless white background */
 .subject-detail-section, .subject-detail-page-container {
     transition: all 0.3s ease;
-    margin-top: 0; /* Remove top margin */
+    margin-top: 0;
     padding: 15px;
-    background-color: white; /* Ensure white background */
-    border: none; /* Remove any border */
-    box-shadow: none; /* Remove any shadow */
+    background-color: white;
+    border: none;
+    box-shadow: none;
 }
 
-/* Clean separation between sections - REMOVED border and margin */
 .subject-detail-page-container {
-    border-top: none; /* Remove border */
-    margin-top: 0; /* Remove top margin */
-    padding-top: 15px; /* Reduce padding top */
-    background-color: white; /* Ensure white background */
+    border-top: none;
+    margin-top: 0;
+    padding-top: 15px;
+    background-color: white;
 }
 
 /* Make sure the details fit nicely in the viewport */
@@ -691,17 +688,17 @@ html, body {
 
 /* Timeseries component containers - consistent styling with session list */
 .subject-timeseries-component {
-    border: 1px solid #f0f0f0; /* Match session list border */
+    border: 1px solid #f0f0f0;
     border-radius: 0;
     background-color: white;
     height: 100%;
-    padding: 8px; /* Add consistent padding */
+    padding: 8px;
 }
 
 .subject-percentile-timeseries-component {
-    border: 1px solid #f0f0f0; /* Match session list border */
+    border: 1px solid #f0f0f0;
     border-radius: 0;
     background-color: white;
     height: 100%;
-    padding: 8px; /* Add consistent padding */
+    padding: 8px;
 }

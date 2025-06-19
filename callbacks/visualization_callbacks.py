@@ -9,7 +9,6 @@ This module contains all plot and visualization-related callbacks:
 Separated from main callbacks for better modularity and maintainability.
 """
 
-# Import shared utilities (replaces multiple individual imports)
 from callbacks.shared_callback_utils import (
     ALL,
     Input,
@@ -22,14 +21,6 @@ from callbacks.shared_callback_utils import (
     subject_percentile_timeseries,
     subject_timeseries,
 )
-
-# Removed duplicated helper function - now using shared version
-# def _extract_highlighted_session(n_clicks_list, scroll_state, card_ids): ... # Now in shared_callback_utils
-
-# Component instances are now shared from utilities - no need to re-initialize
-# subject_timeseries = AppSubjectTimeseries()  # Removed - using shared instance
-# subject_percentile_timeseries = AppSubjectPercentileTimeseries()  # Removed - using shared instance
-# percentile_heatmap = AppSubjectPercentileHeatmap()  # Removed - using shared instance
 
 
 @callback(
@@ -183,7 +174,5 @@ def toggle_heatmap_colorscale(n_clicks, current_state):
     button_color = (
         "outline-primary" if new_mode == "continuous" else "outline-secondary"
     )
-
-    print(f"🎨 Heatmap colorscale toggled from {current_mode} to {new_mode}")
 
     return {"mode": new_mode}, button_text, button_color

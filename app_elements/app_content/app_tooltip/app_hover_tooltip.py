@@ -21,7 +21,7 @@ class AppHoverTooltip:
             "SB": "#FF6B35",  # Dark orange (Severely Below)
             "B": "#FFB366",  # Light orange (Below)
             "G": "#4A90E2",  # Light blue (Good)
-            "SG": "#2E5A87",  # Dark blue (Severely Good)
+            "SG": "#2E5A87",  # Dark blue (Significantly Good)
             "N": None,  # Normal (no color)
             "NS": None,  # Not Scored (no color)
             "T": "#795548",  # Brown (Threshold alerts)
@@ -40,7 +40,7 @@ class AppHoverTooltip:
             style={
                 "position": "absolute",
                 "zIndex": 9999,
-                "pointerEvents": "none",  # Don't interfere with mouse events
+                "pointerEvents": "none",
                 "opacity": 0,
                 "transition": "opacity 0.15s ease-in-out",
             },

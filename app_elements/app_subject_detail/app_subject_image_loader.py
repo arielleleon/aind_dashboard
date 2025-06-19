@@ -35,7 +35,7 @@ class AppSubjectImageLoader:
         )
 
         try:
-            # Handle NWB suffix properly - this was the key fix
+            # Handle NWB suffix properly
             if pd.isna(nwb_suffix) or nwb_suffix == 0:
                 nwb_suffix_str = ""
                 logger.info("Using empty nwb_suffix")
@@ -43,7 +43,7 @@ class AppSubjectImageLoader:
                 nwb_suffix_str = f"_{int(nwb_suffix)}"
                 logger.info(f"Using nwb_suffix: {nwb_suffix_str}")
 
-            # Build the URL with the correct format
+            # Build the URL
             url = (
                 f"https://{bucket_name}.s3.us-west-2.amazonaws.com/{result_path}/"
                 f"{subject_id}_{session_date}{nwb_suffix_str}/{subject_id}_{session_date}{nwb_suffix_str}_{figure_suffix}"

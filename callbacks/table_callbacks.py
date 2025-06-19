@@ -43,15 +43,14 @@ def toggle_column_groups(n_clicks_list, current_state, button_ids):
     print(f"   Current state: {current_state}")
     print(f"   Button IDs: {[btn['group'] for btn in button_ids]}")
 
-    # Initialize state if empty - ALL GROUPS START COLLAPSED
+    # Initialize state if empty
     if not current_state:
         current_state = {}
         for group_id, group_config in COLUMN_GROUPS.items():
             if group_config.get("collapsible", True):
-                # Always start collapsed, ignoring default_expanded
                 current_state[group_id] = False
             else:
-                current_state[group_id] = True  # Non-collapsible groups stay visible
+                current_state[group_id] = True
 
     # Find which button was clicked (only if any clicks occurred)
     from dash import callback_context
@@ -119,12 +118,6 @@ def update_table_columns(column_groups_state):
     # Create column definitions with formatting
     formatted_column_names = build_formatted_column_names()
 
-    # Feature-specific columns are already included in build_formatted_column_names()
-    # Removed duplicate feature column name logic as it's now centralized
-
-    # Overall percentile columns are already included in build_formatted_column_names()
-    # Removed duplicate overall percentile assignment
-
     # Build column definitions for visible columns only
     visible_columns = []
     for col_id in visible_column_ids:
@@ -139,7 +132,7 @@ def update_table_columns(column_groups_state):
             # Add specific formatting for float columns
             if all_table_data[col_id].dtype == "float64":
                 column_def["type"] = "numeric"
-                column_def["format"] = {"specifier": ".5~g"}
+                column_def["format"] = {"specifier": ".2~g"}
 
             visible_columns.append(column_def)
         else:

@@ -35,13 +35,8 @@ import json
 from datetime import datetime, timedelta
 
 import dash_bootstrap_components as dbc
-
-# ===== COMMON PYTHON LIBRARY IMPORTS =====
 import pandas as pd
 import plotly.graph_objects as go
-
-# ===== COMMON DASH IMPORTS =====
-# Centralized imports following Dash 2.x patterns
 from dash import (
     ALL,
     Input,
@@ -54,18 +49,9 @@ from dash import (
     html,
 )
 
-# Core data and filtering components
 from app_elements.app_content.app_dataframe.app_dataframe import AppDataFrame
 from app_elements.app_filter.app_filter import AppFilter
-
-# ===== SHARED APP UTILITIES =====
-# Import the shared app_utils instance to avoid duplication
 from shared_utils import app_utils
-
-# ===== SHARED COMPONENT INSTANCES =====
-# Initialize all shared component instances once to avoid duplication
-# This ensures consistent state across all callback modules
-
 
 app_dataframe = AppDataFrame(app_utils=app_utils)
 app_filter = AppFilter()
@@ -101,8 +87,6 @@ percentile_heatmap = AppSubjectPercentileHeatmap()
 from app_elements.app_content.app_tooltip.app_hover_tooltip import AppHoverTooltip
 
 app_tooltip = AppHoverTooltip(app_utils=app_utils)
-
-# ===== SHARED HELPER FUNCTIONS =====
 
 
 def format_multi_value(value):
@@ -217,11 +201,11 @@ def get_alert_color(category):
         str or None: CSS color value or None if category not recognized
     """
     colors = {
-        "SB": "#FF6B35",  # Dark orange (Severely Below)
-        "B": "#FFB366",  # Light orange (Below)
-        "G": "#4A90E2",  # Light blue (Good)
-        "SG": "#2E5A87",  # Dark blue (Severely Good)
-        "T": "#795548",  # Brown (Threshold alerts)
+        "SB": "#FF6B35",
+        "B": "#FFB366",
+        "G": "#4A90E2",
+        "SG": "#2E5A87",
+        "T": "#795548",
     }
     return colors.get(category)
 
@@ -365,11 +349,11 @@ def build_formatted_column_names():
 
     # Add feature - specific column names
     features_config = {
-        "finished_trials": False,  # Higher is better
-        "ignore_rate": True,  # Lower is better
-        "total_trials": False,  # Higher is better
-        "foraging_performance": False,  # Higher is better
-        "abs(bias_naive)": True,  # Lower is better
+        "finished_trials": False,
+        "ignore_rate": True,
+        "total_trials": False,
+        "foraging_performance": False,
+        "abs(bias_naive)": True,
     }
 
     for feature in features_config.keys():
@@ -393,9 +377,6 @@ def build_formatted_column_names():
     formatted_column_names["overall_percentile"] = "Strata Overall\nPercentile"
 
     return formatted_column_names
-
-
-# ===== VALIDATION UTILITIES =====
 
 
 def validate_callback_inputs(*inputs):
@@ -422,12 +403,7 @@ def validate_callback_inputs(*inputs):
     return tuple(validated)
 
 
-# ===== EXPORT ALL SHARED UTILITIES =====
-# This allows individual callback modules to import only what they need
-# while maintaining access to all shared functionality
-
 __all__ = [
-    # Dash imports
     "Input",
     "Output",
     "State",
@@ -438,15 +414,12 @@ __all__ = [
     "html",
     "dcc",
     "dbc",
-    # Python library imports
     "pd",
     "go",
     "json",
     "datetime",
     "timedelta",
-    # Shared utilities
     "app_utils",
-    # Component instances
     "app_dataframe",
     "app_filter",
     "session_card",
@@ -456,7 +429,6 @@ __all__ = [
     "subject_percentile_timeseries",
     "percentile_heatmap",
     "app_tooltip",
-    # Helper functions
     "format_multi_value",
     "create_filter_badge",
     "extract_highlighted_session",

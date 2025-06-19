@@ -7,7 +7,6 @@ from app_elements import AppMain
 from app_utils.simple_logger import get_logger
 from shared_utils import app_utils
 
-# Suppress pandas FutureWarnings about fillna downcasting to reduce terminal spam
 warnings.filterwarnings("ignore", category=FutureWarning, message=".*fillna.*")
 warnings.filterwarnings(
     "ignore", category=FutureWarning, message=".*Downcasting object dtype arrays.*"
@@ -27,7 +26,7 @@ table_data = app_utils.get_table_display_data(use_cache=True)
 optimized_storage = app_utils.cache_manager.get("optimized_storage")
 ui_structures = app_utils.cache_manager.get("ui_structures")
 
-# Cache validation (simplified, removed verbose details)
+# Cache validation
 session_count = len(session_level_data)
 subject_count = session_level_data["subject_id"].nunique()
 logger.info(

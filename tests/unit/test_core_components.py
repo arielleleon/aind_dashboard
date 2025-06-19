@@ -82,7 +82,7 @@ class TestPercentileCoordinator:
     def test_validation(self, coordinator):
         """Test data validation functionality"""
         valid_data = pd.DataFrame({
-            'subject_id': ['test1', 'test2'],
+            'subject_id': ['690494', '690495'],
             'overall_percentile': [75.0, 85.0]
         })
         
@@ -181,7 +181,7 @@ class TestEnhancedDataLoader:
     def mock_session_data(self):
         """Create mock session data"""
         return pd.DataFrame({
-            'subject_id': ['sub1', 'sub2', 'sub1'],
+            'subject_id': ['690494', '690495', '690494'],
             'session': [1, 1, 2],
             'session_date': [
                 datetime(2024, 1, 1),
@@ -207,11 +207,11 @@ class TestEnhancedDataLoader:
             mock_get.return_value = mock_session_data
             
             loader = EnhancedDataLoader()
-            result = loader.get_subject_sessions('sub1')
+            result = loader.get_subject_sessions('690494')
             
             assert result is not None
             assert len(result) == 2  # Two sessions for sub1
-            assert all(result['subject_id'] == 'sub1')
+            assert all(result['subject_id'] == '690494')
     
     def test_get_most_recent_sessions(self, mock_session_data):
         """Test getting most recent session per subject"""
@@ -223,7 +223,7 @@ class TestEnhancedDataLoader:
             
             assert len(result) == 2  # Two unique subjects
             # sub1 should have session 2 (most recent)
-            sub1_row = result[result['subject_id'] == 'sub1'].iloc[0]
+            sub1_row = result[result['subject_id'] == '690494'].iloc[0]
             assert sub1_row['session'] == 2
     
     def test_data_validation(self, mock_session_data):
@@ -261,7 +261,7 @@ class TestIntegration:
         assert result.empty
         
         # Should still validate data
-        test_data = pd.DataFrame({'subject_id': ['test'], 'overall_percentile': [50.0]})
+        test_data = pd.DataFrame({'subject_id': ['690494'], 'overall_percentile': [50.0]})
         validation = coordinator.validate_percentile_calculations(test_data)
         assert isinstance(validation, dict)
         assert 'valid' in validation

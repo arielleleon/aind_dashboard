@@ -5,8 +5,6 @@ This module coordinates percentile calculations between statistical analysis com
 and application needs. It bridges the gap between pipeline processing and percentile
 calculation requirements.
 
-REFACTORING: Extracted from app_utils.py to achieve single responsibility principle
-for percentile coordination logic.
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -26,8 +24,6 @@ class PercentileCoordinator:
     3. Managing percentile result caching
     4. Providing percentile data to UI components
 
-    REFACTORING: Extracted to separate percentile coordination concerns
-    from the main AppUtils class.
     """
 
     def __init__(self, cache_manager=None, pipeline_manager=None):
@@ -95,7 +91,7 @@ class PercentileCoordinator:
                 .reset_index()
             )
         else:
-            # Fallback: return the data as - is if sorting columns are missing
+            # Fallback: return the data as is if sorting columns are missing
             most_recent = session_data
 
         return most_recent
@@ -120,8 +116,6 @@ class PercentileCoordinator:
             return self.cache_manager.get("session_level_data")
 
         # If no cache or pipeline manager, return empty DataFrame
-        # The actual data processing should be handled by AppUtils
-        # This method is primarily for coordination, not data processing
         if not self.pipeline_manager or not self.cache_manager:
             return pd.DataFrame()
 
@@ -161,8 +155,6 @@ class PercentileCoordinator:
             return session_data
 
         # Delegate to the core percentile calculator
-        # Note: The actual calculation methods would depend on the
-        # OverallPercentileCalculator's interface
         try:
             # Calculate session overall percentiles using the calculator
             enhanced_data = (

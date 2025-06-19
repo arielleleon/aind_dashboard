@@ -72,7 +72,7 @@ class AppSubjectPercentileHeatmap:
             time_series_data, self.features_config
         )
 
-        # Create session labels - show ALL sessions since we have full width
+        # Create session labels
         session_labels = [f"S{s}" for s in sessions]
         logger.info(f"Displaying all {len(sessions)} sessions in heatmap")
 
@@ -82,7 +82,7 @@ class AppSubjectPercentileHeatmap:
         # Get colorscale using business logic
         colorscale = calculate_heatmap_colorscale(colorscale_mode)
 
-        # Create the heatmap visualization (UI responsibility)
+        # Create the heatmap visualization
         fig = go.Figure(
             data=go.Heatmap(
                 z=heatmap_data,
@@ -103,25 +103,24 @@ class AppSubjectPercentileHeatmap:
             )
         )
 
-        # Add highlighting for selected session using business logic
+        # Add highlighting for selected session
         if highlighted_session is not None and highlighted_session in sessions:
             session_idx = StatisticalUtils.calculate_session_highlighting_coordinates(
                 sessions, highlighted_session
             )
 
             if session_idx is not None:
-                # Add a vertical line to highlight the session column
                 fig.add_shape(
                     type="rect",
-                    x0=session_idx - 0.4,  # Start slightly before the session
-                    x1=session_idx + 0.4,  # End slightly after the session
-                    y0=-0.5,  # Start below the first row
-                    y1=len(feature_names) - 0.5,  # End above the last row
+                    x0=session_idx - 0.4,
+                    x1=session_idx + 0.4,
+                    y0=-0.5,
+                    y1=len(feature_names) - 0.5,
                     line=dict(
-                        color="#4A90E2",  # Light blue color matching time series highlighting
+                        color="#4A90E2",
                         width=3,
                     ),
-                    fillcolor="rgba(74, 144, 226, 0.1)",  # Very light blue fill
+                    fillcolor="rgba(74, 144, 226, 0.1)",
                     layer="above",
                 )
 
@@ -140,12 +139,12 @@ class AppSubjectPercentileHeatmap:
             xaxis_title="Session",
             yaxis_title=None,
             margin=dict(l=10, r=60, t=10, b=30),
-            height=300,  # Increased height for more rows and full width
-            font=dict(size=9),  # Smaller font to accommodate more sessions
+            height=300,
+            font=dict(size=9),
             plot_bgcolor="white",
             xaxis=dict(
-                tickangle=-45,  # Angle the session labels for better readability
-                tickfont=dict(size=8),  # Smaller font for session labels
+                tickangle=-45,
+                tickfont=dict(size=8),
                 automargin=True,
             ),
             yaxis=dict(tickfont=dict(size=10), automargin=True),
@@ -155,7 +154,7 @@ class AppSubjectPercentileHeatmap:
             id="percentile-heatmap",
             figure=fig,
             config={"displayModeBar": False},
-            style={"height": "300px", "width": "100%"},  # Increased height
+            style={"height": "300px", "width": "100%"},
         )
 
     def _create_custom_colorscale(self):
@@ -227,7 +226,6 @@ class AppSubjectPercentileHeatmap:
 
         for i, (session, strata) in enumerate(zip(sessions, strata_data)):
             if current_strata is None:
-                # First session - record starting strata
                 current_strata = strata
                 transitions.append(
                     {
@@ -238,7 +236,6 @@ class AppSubjectPercentileHeatmap:
                     }
                 )
             elif strata != current_strata:
-                # Strata transition detected
                 transitions.append(
                     {
                         "session_idx": i,
@@ -253,22 +250,21 @@ class AppSubjectPercentileHeatmap:
             f"Found {len(transitions)} strata transitions: {[t['session'] for t in transitions]}"
         )
 
-        # Add vertical lines for transitions (skip the first one which is just the start)
-        for transition in transitions[1:]:  # Skip first transition (start)
+        # Add vertical lines for transitions
+        for transition in transitions[1:]:
             session_idx = transition["session_idx"]
             session = transition["session"]
             strata = transition["strata"]
             strata_abbr = self._get_strata_abbreviation(strata)
 
-            # Add vertical line at the beginning of the new strata
             fig.add_shape(
                 type="line",
-                x0=session_idx - 0.5,  # Place line between sessions
+                x0=session_idx - 0.5,
                 x1=session_idx - 0.5,
-                y0=-0.5,  # Start below the first row
-                y1=num_feature_rows - 0.5,  # End above the last row
+                y0=-0.5,
+                y1=num_feature_rows - 0.5,
                 line=dict(
-                    color="rgba(128, 128, 128, 0.8)",  # Gray color matching time series
+                    color="rgba(128, 128, 128, 0.8)",
                     width=2,
                     dash="dash",
                 ),
@@ -278,11 +274,11 @@ class AppSubjectPercentileHeatmap:
             # Add text annotation for the new strata
             fig.add_annotation(
                 x=session_idx - 0.5,
-                y=num_feature_rows - 0.2,  # Position near the top
+                y=num_feature_rows - 0.2,
                 text=f"→ {strata_abbr}",
                 showarrow=False,
                 font=dict(size=8, color="gray"),
-                textangle=-90,  # Rotate text vertically
+                textangle=-90,
                 xanchor="center",
                 yanchor="bottom",
             )
@@ -319,15 +315,15 @@ class AppSubjectPercentileHeatmap:
                 # Add a rectangle with purple border around the entire column for this session
                 fig.add_shape(
                     type="rect",
-                    x0=session_idx - 0.45,  # Start slightly before the session
-                    x1=session_idx + 0.45,  # End slightly after the session
-                    y0=-0.45,  # Start slightly below the first row
-                    y1=num_feature_rows - 0.55,  # End slightly above the last row
+                    x0=session_idx - 0.45,
+                    x1=session_idx + 0.45,
+                    y0=-0.45,
+                    y1=num_feature_rows - 0.55,
                     line=dict(
-                        color="#9C27B0",  # Purple color matching dataframe outlier styling
+                        color="#9C27B0",
                         width=2,
                     ),
-                    fillcolor="rgba(156, 39, 176, 0.1)",  # Very light purple fill
+                    fillcolor="rgba(156, 39, 176, 0.1)",
                     layer="above",
                 )
                 outlier_count += 1

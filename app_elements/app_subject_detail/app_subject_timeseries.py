@@ -65,7 +65,7 @@ class AppSubjectTimeseries:
                     figure=self._create_empty_figure(),
                     config={"displayModeBar": False, "responsive": True},
                     className="timeseries-graph",
-                    style={"height": "550px"},  # Increased height since title removed
+                    style={"height": "550px"},
                 ),
                 # Data store for timeseries data
                 dcc.Store(id="timeseries-store", data={}),
@@ -95,9 +95,7 @@ class AppSubjectTimeseries:
             xaxis_title="Session Number",
             yaxis_title="Rolling Average Performance (Smoothed)",
             template="plotly_white",
-            margin=dict(
-                l=40, r=20, t=40, b=40
-            ),  # Increased top margin for hover tooltips
+            margin=dict(l=40, r=20, t=40, b=40),
             height=550,
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
@@ -358,17 +356,14 @@ class AppSubjectTimeseries:
             list - Rolling averaged values
         """
         if len(values) < window:
-            return values  # Return original if not enough data
+            return values
 
         rolling_values = []
 
-        # For first few values, use expanding window
         for i in range(len(values)):
             if i < window - 1:
-                # Use expanding window for early values
                 window_values = values[: i + 1]
             else:
-                # Use fixed window for later values
                 window_values = values[i - window + 1 : i + 1]
 
             avg_value = sum(window_values) / len(window_values)
@@ -428,7 +423,6 @@ class AppSubjectTimeseries:
 
         for i, (session, strata) in enumerate(zip(sessions, strata_data)):
             if current_strata is None:
-                # First session - record starting strata
                 current_strata = strata
                 transitions.append(
                     {"session": session, "strata": strata, "transition_type": "start"}
@@ -444,8 +438,8 @@ class AppSubjectTimeseries:
                 )
                 current_strata = strata
 
-        # Add vertical lines for transitions (skip the first one which is just the start)
-        for transition in transitions[1:]:  # Skip first transition (start)
+        # Add vertical lines for transitions
+        for transition in transitions[1:]:
             session = transition["session"]
             strata = transition["strata"]
             strata_abbr = self._get_strata_abbreviation(strata)
@@ -487,18 +481,16 @@ class AppSubjectTimeseries:
         if not outlier_sessions:
             return
 
-        # Get current y-axis range to position markers at the top
         y_range = fig.layout.yaxis.range if fig.layout.yaxis.range else [-3, 3]
-        marker_y_position = y_range[1] * 0.9  # Position near top of plot
+        marker_y_position = y_range[1] * 0.9
 
-        # Add purple markers for outlier sessions
         fig.add_trace(
             go.Scatter(
                 x=outlier_sessions,
                 y=[marker_y_position] * len(outlier_sessions),
                 mode="markers",
                 marker=dict(
-                    color="#9C27B0",  # Purple color matching dataframe and heatmap
+                    color="#9C27B0",
                     size=12,
                     symbol="diamond",
                     line=dict(width=2, color="#FFFFFF"),

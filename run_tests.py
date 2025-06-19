@@ -3,8 +3,6 @@
 Test runner script for AIND Dashboard
 
 This script provides easy access to different types of tests and testing workflows.
-It's designed to work with the refactor-friendly test structure.
-
 Usage:
     python run_tests.py --help
     python run_tests.py --smoke          # Run only smoke tests

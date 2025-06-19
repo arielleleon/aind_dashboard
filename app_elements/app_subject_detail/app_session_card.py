@@ -48,10 +48,10 @@ class AppSessionCard:
         if hasattr(session_date, "strftime"):
             session_date = session_date.strftime("%Y-%m-%d")
 
-        # Get nwb_suffix - default to 0 if not present
+        # Get nwb_suffix
         nwb_suffix = session_data.get("nwb_suffix", 0)
 
-        # Generate image URL directly - only for choice history
+        # Generate image URL directly
         try:
             choice_url = self.image_loader.get_s3_public_url(
                 subject_id=subject_id,
@@ -66,8 +66,6 @@ class AppSessionCard:
 
         # Extract water total
         water_total = session_data.get("water_day_total", "N/A")
-
-        # Format water total if it's a number
         if isinstance(water_total, (int, float)):
             water_total = f"{water_total:.2f} ml"
 
@@ -172,7 +170,7 @@ class AppSessionCard:
                                 ],
                                 className="session-metadata-column",
                             ),
-                            # Right column - simple image without expansion
+                            # Right column - simple image
                             html.Div(
                                 [
                                     html.Img(
@@ -203,7 +201,6 @@ class AppSessionCard:
             logger.error(f"ERROR building session card: {str(e)}")
             print(traceback.format_exc(), file=sys.stderr)
 
-            # Return a simple error card as fallback
             return html.Div(
                 className="session-card-error",
                 style={"color": "red", "padding": "10px"},

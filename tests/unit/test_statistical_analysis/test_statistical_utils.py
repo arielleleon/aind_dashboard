@@ -430,5 +430,3 @@ class TestHeatmapDataProcessing:
         sessions = [100, 200, 300]
         result = StatisticalUtils.calculate_session_highlighting_coordinates(sessions, 200)
         assert result == 1
-
-# ... existing code ... 

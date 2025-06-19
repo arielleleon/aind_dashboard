@@ -1,5 +1,4 @@
 # Testing dependencies for AIND Dashboard
-# Essential testing tools only to avoid compatibility issues
 
 # Core testing framework
 pytest>=7.0.0
@@ -9,7 +8,7 @@ pytest-mock>=3.10.0
 # For HTTP testing in smoke tests
 requests>=2.25.0
 
-# Additional testing utilities (minimal set)
+# Additional testing utilities
 factory-boy>=3.2.0
 freezegun>=1.2.0
 

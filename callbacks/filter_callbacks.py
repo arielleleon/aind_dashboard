@@ -20,14 +20,6 @@ from callbacks.shared_callback_utils import (
     timedelta,
 )
 
-# No need to re-create instances - they're shared from utilities
-# app_dataframe = AppDataFrame(app_utils=app_utils)  # Removed - using shared instance
-# app_filter = AppFilter()  # Removed - using shared instance
-
-# Helper functions moved to shared_callback_utils.py
-# def format_multi_value(value): ... # Removed - using shared function
-# def create_filter_badge(label, filter_type, filter_value): ... # Removed - using shared function
-
 
 # Callback to update active filters display and count
 @callback(
@@ -210,21 +202,21 @@ def _remove_individual_filter(
 
     # Clear the corresponding filter - properly handles multi-select
     if filter_type == "stage-filter":
-        outputs[1] = None  # Clear entire stage filter
+        outputs[1] = None
     elif filter_type == "curriculum-filter":
-        outputs[2] = None  # Clear entire curriculum filter
+        outputs[2] = None
     elif filter_type == "rig-filter":
-        outputs[3] = None  # Clear entire rig filter
+        outputs[3] = None
     elif filter_type == "trainer-filter":
-        outputs[4] = None  # Clear entire trainer filter
+        outputs[4] = None
     elif filter_type == "pi-filter":
-        outputs[5] = None  # Clear entire PI filter
+        outputs[5] = None
     elif filter_type == "sort-option":
-        outputs[6] = "none"  # Reset to default sort
+        outputs[6] = "none"
     elif filter_type == "alert-category-filter":
-        outputs[7] = "all"  # Reset to show all alerts
+        outputs[7] = "all"
     elif filter_type == "subject-id-filter":
-        outputs[8] = None  # Clear entire subject ID filter
+        outputs[8] = None
 
     return outputs
 

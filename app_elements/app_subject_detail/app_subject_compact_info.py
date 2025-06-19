@@ -82,7 +82,7 @@ class AppSubjectCompactInfo:
                 html.Div(
                     alerts_text,
                     className="compact-subject-info",
-                    style={"borderLeftColor": "#dc3545"},  # Red border for alerts
+                    style={"borderLeftColor": "#dc3545"},
                 )
             )
 

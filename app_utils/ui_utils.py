@@ -52,7 +52,7 @@ class UIDataManager:
         elif percentile <= 93.5:
             return "G"  # Good: 72% - 93.5%
         else:
-            return "SG"  # Severely Good: > 93.5%
+            return "SG"  # Significantly Good: > 93.5%
 
     def get_strata_abbreviation(self, strata: str) -> str:
         """Get abbreviated strata name for UI display"""
@@ -112,13 +112,11 @@ class UIDataManager:
                 "session_index",
                 "session_overall_percentile",
                 "overall_percentile_category",
-                "session_overall_rolling_avg",  # Add overall rolling average for hover info
+                "session_overall_rolling_avg",
                 "is_current_strata",
                 "is_last_session",
-                # PHASE 2: Add outlier detection information
-                "outlier_weight",  # Phase 2 outlier weight (0.5 for outliers, 1.0 for normal)
-                "is_outlier",  # Simple boolean flag for outlier status
-                # CRITICAL FIX: Add essential metadata columns
+                "outlier_weight",
+                "is_outlier",
                 "PI",
                 "trainer",
                 "rig",
@@ -134,7 +132,6 @@ class UIDataManager:
                 "foraging_performance",
                 "abs(bias_naive)",
                 "finished_rate",
-                # AUTOWATER COLUMNS: Add all autowater metrics to table display cache
                 "total_trials_with_autowater",
                 "finished_trials_with_autowater",
                 "finished_rate_with_autowater",
@@ -189,7 +186,6 @@ class UIDataManager:
 
         # Create strata-indexed reference distributions for percentile calculations
         for strata, strata_sessions in session_data.groupby("strata"):
-            # Store only the reference distribution data needed for percentile calculations
             processed_features = [
                 col
                 for col in strata_sessions.columns
@@ -229,7 +225,6 @@ class UIDataManager:
             },
         }
 
-        # Log single consolidated message about UI structures creation
         logger.info(
             f"Created optimized storage and UI structures for {len(subject_data)} subjects"
         )
@@ -278,8 +273,6 @@ class UIDataManager:
         if session_data.empty:
             return ui_structures
 
-        # 1. Subject Lookup Optimization
-        # Pre-compute subject summaries to avoid repeated calculations in components
         for subject_id, subject_sessions in session_data.groupby("subject_id"):
             # Sort by date to get proper order
             subject_sessions = subject_sessions.sort_values("session_date")
@@ -309,8 +302,6 @@ class UIDataManager:
                 },
             }
 
-        # 3. Strata Lookup Optimization
-        # Pre-compute strata summaries for filtering
         for strata, strata_sessions in session_data.groupby("strata"):
             unique_subjects = strata_sessions["subject_id"].nunique()
             total_sessions = len(strata_sessions)
@@ -330,11 +321,8 @@ class UIDataManager:
                 "subjects": strata_sessions["subject_id"].unique().tolist(),
             }
 
-        # 4. Time Series Data Optimization
-        # Pre-compute time series data for subjects with compressed format
         ui_structures["time_series_data"] = self._create_time_series_data(session_data)
 
-        # 5. Table Display Cache
         ui_structures["table_display_cache"] = self._create_table_display_cache(
             session_data
         )
@@ -342,7 +330,6 @@ class UIDataManager:
         # Store data hash in UI structures for cache validation
         ui_structures["data_hash"] = self._calculate_data_hash(session_data)
 
-        # Single consolidated UI completion message
         logger.info(
             f"UI structures created for {len(ui_structures['time_series_data'])} subjects"
         )
@@ -428,8 +415,7 @@ class UIDataManager:
                 subject_sessions["is_outlier"].fillna(False).tolist()
             )
             outlier_count = subject_sessions["is_outlier"].sum()
-            # Track high outlier subjects instead of logging individually
-            if outlier_count > len(subject_sessions) * 0.2:  # More than 20% outliers
+            if outlier_count > len(subject_sessions) * 0.2:
                 high_outlier_subjects.append(
                     (subject_id, outlier_count, len(subject_sessions))
                 )
@@ -565,10 +551,8 @@ class UIDataManager:
 
         Returns tuple of (total_sessions_alert, stage_sessions_alert, water_day_total_alert, overall_threshold_alert)
         """
-        # Import threshold analyzer
         from app_utils.app_analysis.threshold_analyzer import ThresholdAnalyzer
 
-        # Initialize threshold analyzer for table display
         threshold_config = {
             "session": {"condition": "gt", "value": 40},
             "water_day_total": {"condition": "gt", "value": 3.5},
