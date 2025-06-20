@@ -1,19 +1,19 @@
 # AIND Dashboard
 
-A comprehensive performance monitoring dashboard for the Allen Institute for Neural Dynamics (AIND) dynamic foraging behavioral experiments. This application provides real-time analysis, statistical monitoring, and alert systems for tracking subject performance across experimental conditions.
+A performance monitoring dashboard for AIND dynamic foraging behavioral experiments. This application provides real-time analysis, statistical monitoring, and alert systems for tracking subject performance across experimental conditions.
 <img width="1892" alt="Screenshot 2025-06-19 at 1 43 05 PM" src="https://github.com/user-attachments/assets/33fd1741-1280-456a-8673-f3996714ab8c" />
 
 ## High-Level Overview
 
-The AIND Dashboard transforms raw behavioral session data from dynamic foraging experiments into actionable insights through:
+The AIND Dashboard transforms processed behavioral session data from dynamic foraging experiments into actionable insights through:
 
-- **Intelligent Data Stratification**: Groups subjects by experimental conditions for fair performance comparisons
-- **Robust Statistical Analysis**: Uses Wilson confidence intervals and weighted calculations for reliable percentile estimates  
+- **Data Stratification**: Groups subjects by experimental conditions for fair performance comparisons
+- **Statistical Analysis**: Uses Wilson confidence intervals and weighted calculations for reliable percentile estimates  
 - **Real-Time Performance Monitoring**: Generates automated alerts for subjects requiring attention
 - **Interactive Visualization**: Provides conditional formatting and detailed subject analysis tools
 
 ### Data Source
-Raw behavioral data is pulled from Allen AIND Amazon S3 storage via the `aind_analysis_arch_result_access` package, focusing on dynamic foraging experimental sessions.
+Session level behavioral data is pulled from Allen AIND Amazon S3 storage via the `aind_analysis_arch_result_access` package, focusing on dynamic foraging experimental sessions.
 
 ---
 
@@ -23,10 +23,10 @@ Raw behavioral data is pulled from Allen AIND Amazon S3 storage via the `aind_an
 
 The dynamic foraging task involves complex experimental parameters. To enable fair performance comparisons, the dashboard groups subjects into **strata** based on three key experimental conditions:
 
-#### 1. **Task/Curriculum Types** (Most common in last 90 days):
-- **Uncoupled Baiting**: 1021 sessions
-- **Uncoupled Without Baiting**: 570 sessions  
-- **Coupled Baiting**: 283 sessions
+#### 1. **Task/Curriculum Types**:
+- **Uncoupled Baiting**
+- **Uncoupled Without Baiting**
+- **Coupled Baiting**
 
 #### 2. **Stage Simplification**:
 - **Beginner**: Stages 1, 2
@@ -49,8 +49,8 @@ The dashboard employs **Wilson confidence intervals** for robust percentile esti
 #### Dual Weighting System
 
 **1. Outlier Session Weighting**
-- **Detection Method**: IQR-based outlier identification (factor: 1.5)
-- **Handling**: Outlier sessions receive **0.5 weight** instead of full exclusion
+- **Detection Method**: IQR-based outlier identification
+- **Handling**: Outlier sessions receive **0.5 weight** (default is **1.0 weight**)
 - **Purpose**: Maintains data while reducing influence of anomalous sessions
 
 **2. Exponential Decay Rolling Averages**
@@ -71,7 +71,9 @@ The dashboard employs **Wilson confidence intervals** for robust percentile esti
 
 #### Uncertainty & Certainty Scores
 Point estimate calculations provide **certainty scores** that indicate the reliability of percentile assignments, with color-coded visualization reflecting confidence levels in the statistical estimates.
-
+- Green indicates high certainty in percentile score
+- Red indicates low certainty in percentile score
+- No color indicates intermediate certainty in percentile score
 ---
 
 ## Application Architecture & Data Flow
@@ -108,10 +110,10 @@ AIND S3 Storage
 ```
 Raw Session Data
 → DataPipelineManager.process_data_pipeline()
-├── ReferenceProcessor (outlier detection, eligibility)
+├── ReferenceProcessor (feature standardization, outlier detection, outlier weighting)
 ├── Strata Assignment (task/stage/version grouping)
-├── OverallPercentileCalculator (Wilson CI percentiles)
-└── Rolling Average Calculation (exponential decay weighting)
+├── Rolling Average Calculation (exponential decay weighting)
+└── OverallPercentileCalculator (Wilson CI percentiles)
 → Cache: "session_level_data"
 ```
 
@@ -138,7 +140,7 @@ Processed Data + Alerts
 ### Component Communication
 
 **AppUtils (Central Coordinator)**
-- **CacheManager**: Intelligent caching with invalidation
+- **CacheManager**: Caching with invalidation
 - **DataPipelineManager**: Unified statistical processing
 - **AlertCoordinator**: Alert generation and management
 - **UIDataManager**: UI-optimized data structures
@@ -159,25 +161,16 @@ Processed Data + Alerts
 The DataTable implements comprehensive conditional formatting based on performance alerts:
 
 #### Color Schema & Alert Categories
-- **🟠 Orange Tones** (Performance Issues):
-  - **SB (Severely Below)**: Dark orange with white text (< 6.5 percentile)
-  - **B (Below)**: Light orange with white text (6.5-28 percentile)
+- **Orange/Red** (Performance Issues):
+  - **SB (Severely Below)**: Darker (< 6.5 percentile)
+  - **B (Below)**: Lighter (6.5-28 percentile)
 
-- **🔵 Blue Tones** (Good Performance):
-  - **G (Good)**: Light blue with white text (72-93.5 percentile)  
-  - **SG (Severely Good)**: Dark blue with white text (> 93.5 percentile)
+- **Blue** (Good Performance):
+  - **G (Good)**: Light blue (72-93.5 percentile)  
+  - **SG (Severely Good)**: Dark blue (> 93.5 percentile)
 
-- **🟤 Brown Tone** (Threshold Alerts):
+- **Brown Tone** (Threshold Alerts):
   - **T (Threshold Only)**: Brown highlighting for session count/water intake alerts
-
-- **Combined Alerts**: Enhanced styling with darker colors and borders for subjects with multiple alert types (e.g., "SB, T")
-
-#### Visual Elements
-- **Severity Mapping**: Color brightness indicates severity (darker = more severe)
-- **Certainty Score Color Coding**: Opacity/saturation reflects statistical confidence in percentile estimates
-- **Border Indicators**: Left border in alert color for visual consistency
-- **Enhanced Key Columns**: Alert-related columns receive stronger highlighting
-- **Hover Effects**: Smooth transitions and elevated appearance
 
 ### Interactive Components
 
@@ -185,16 +178,7 @@ The DataTable implements comprehensive conditional formatting based on performan
 - **Time Series Analysis**: Historical performance trends with rolling averages
 - **Session Metadata**: Detailed session information and experimental parameters
 - **Strata Context**: Subject positioning within experimental condition groups
-
-#### Filtering & Search
-- **Dynamic Filtering**: Real-time data filtering by alert category, strata, date ranges
-- **Multi-Selection**: Multiple subjects, experimental conditions, performance categories
-- **Search Integration**: Subject ID and experimental parameter search
-
-#### Tooltips & Context
-- **Statistical Context**: Hover details for percentile calculations and confidence intervals
-- **Alert Explanations**: Detailed reasoning for alert generation
-- **Experimental Context**: Strata information and experimental parameter details
+  
 <img width="1893" alt="Screenshot 2025-06-19 at 1 43 48 PM" src="https://github.com/user-attachments/assets/16f33c09-246c-4834-9a14-f479ff7bee37" />
 
 ---
@@ -218,10 +202,9 @@ tests/
     └── test_app_smoke.py    # App startup and basic functionality
 ```
 
-### Testing Philosophy
+### Testing Guidelines
 
 - **Realistic Data**: Uses actual app data patterns and strata formats
-- **Core Functionality Focus**: Prioritizes essential behavior over edge cases
 - **Consolidated Approach**: Main functionality tested in `test_core_components.py`
 - **Mock External Dependencies**: Clean isolation of testable components
 
@@ -275,13 +258,6 @@ mypy .
 pytest tests/unit/test_core_components.py -v
 ```
 
-**Pull Request Requirements**:
-- [ ] All tests pass
-- [ ] Code follows black/isort formatting
-- [ ] Type hints added for new functions
-- [ ] Updated tests for new functionality
-- [ ] Documentation updated if needed
-
 #### 2. **Adding New Features**
 
 **Statistical Components**:
@@ -333,31 +309,10 @@ config = {
 
 #### Statistical Parameters
 Key parameters can be adjusted:
-- **Outlier detection factor**: IQR multiplier (default: 1.5)
+- **Outlier detection factor**: IQR multiplier (default: 1.5), weighting (default 0.5)
 - **Minimum sessions**: Eligibility threshold (default: 5)
 - **Rolling average decay**: Exponential weighting factor
 - **Confidence level**: Wilson CI confidence (default: 95%)
-
----
-
-## Performance & Deployment
-
-### Caching Strategy
-- **Multi-tier caching**: Raw data, processed data, UI-optimized structures
-- **Intelligent invalidation**: Automatic cache refresh on data updates
-- **Memory optimization**: Compressed storage for large datasets
-
-### Scalability Considerations
-- **Optimized data structures**: UI-specific data formatting
-- **Lazy loading**: On-demand computation for detailed views
-- **Efficient filtering**: Pre-computed indices for fast subset operations
-
-### Future Deployment
-This dashboard is designed for **public server hosting** with:
-- Clean separation of computation and presentation layers
-- Stateless design for multi-user access
-- Configurable data refresh intervals
-- Security considerations for public access
 
 ---
 
@@ -367,4 +322,5 @@ Licensed under the terms specified in the LICENSE file.
 
 ## Support
 
-For questions about statistical methodology, experimental design, or technical implementation, please refer to the comprehensive test suite and inline documentation throughout the codebase.
+For questions about statistical methodology, experimental design, or technical implementation, please refer to the comprehensive test suite and inline documentation throughout the codebase. 
+To report a bug, please see issues page or contact nick.keesey@alleninstitute.org -- white paper will be updated here when available. 
