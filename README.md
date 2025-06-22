@@ -74,6 +74,13 @@ Point estimate calculations provide **certainty scores** that indicate the relia
 - Green indicates high certainty in percentile score
 - Red indicates low certainty in percentile score
 - No color indicates intermediate certainty in percentile score
+
+Note: The app dataframe UI contains the only **the most recent** session for each subject. On app opening, only the raw values are shown for each feature the subject is evaluated on.
+These raw values are color coded by the **percentiles** of the corresponding feature. The left bar in each cell indicates the **certainty**. 
+**Example cell Abs(Bias Naive):** No text color (within Normal percentile ranges) and green indicator (high certainty percentile estimate).
+This can be intrepreted as "The algorithm reasonably infers that this subject has an average bias with high certainty given the experimental parameters." 
+<img width="737" alt="Screenshot 2025-06-22 at 9 44 08 AM" src="https://github.com/user-attachments/assets/196737c7-4167-4218-8121-4408d8946504" />
+
 ---
 
 ## Application Architecture & Data Flow
