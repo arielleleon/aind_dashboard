@@ -120,7 +120,7 @@ Raw Session Data
 ├── ReferenceProcessor (feature standardization, outlier detection, outlier weighting)
 ├── Strata Assignment (task/stage/version grouping)
 ├── Rolling Average Calculation (exponential decay weighting)
-└── OverallPercentileCalculator (Wilson CI percentiles)
+└── OverallPercentileCalculator (Average of all feature percentiles)
 → Cache: "session_level_data"
 ```
 
