@@ -330,4 +330,6 @@ Licensed under the terms specified in the LICENSE file.
 ## Support
 
 For questions about statistical methodology, experimental design, or technical implementation, please refer to the comprehensive test suite and inline documentation throughout the codebase. 
-To report a bug, please see issues page or contact nick.keesey@alleninstitute.org -- white paper will be updated here when available. 
+To report a bug, please see issues page or contact nick.keesey@alleninstitute.org. 
+
+Whitepaper: https://alleninstitute-my.sharepoint.com/:w:/g/personal/nick_keesey_alleninstitute_org/ESh5RHqqzZ1GmV37wiy5zQ0BQGTM6XWWrIPGDn4qGX1QOw?e=TdAArN
