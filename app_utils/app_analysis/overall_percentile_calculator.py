@@ -128,7 +128,7 @@ class OverallPercentileCalculator:
             # where CI_width_i = (upper_i - lower_i)
 
             ci_widths = ci_upper - ci_lower
-            # Calculate error propagation (assuming independence of errors)
+            # Calculate error propagation
             variance_sum = np.sum((normalized_weights * ci_widths / 2) ** 2)
             overall_ci_half_width = np.sqrt(variance_sum)
 

@@ -17,7 +17,7 @@ logger = get_logger("app_utils")
 class AppUtils:
     """
     Central utility class providing access to all data processing and analysis functions
-    for the AIND Dashboard with enhanced statistical robustness using Wilson confidence intervals.
+    for the Dashboard.
     """
 
     def __init__(self, cache_manager=None, ui_data_manager=None, alerts_manager=None):

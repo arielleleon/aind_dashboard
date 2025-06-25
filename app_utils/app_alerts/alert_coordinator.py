@@ -10,7 +10,7 @@ class AlertCoordinator:
     Alert service coordination and initialization class
 
     This class handles alert service initialization, coordination,
-    and caching for the AIND Dashboard application.
+    and caching for the AIND Dashboard.
     """
 
     def __init__(self, cache_manager=None, pipeline_manager=None):
@@ -30,10 +30,6 @@ class AlertCoordinator:
     ) -> AlertService:
         """
         Initialize alert service for monitoring and reporting issues
-
-        This method creates an AlertService instance with the necessary
-        configuration and dependencies, providing clean initialization
-        and cache management.
 
         Parameters:
             app_utils: AppUtils instance that provides data access
@@ -55,9 +51,6 @@ class AlertCoordinator:
         """
         Get quantile alerts for given subjects with proper delegation
 
-        This method provides a clean interface for accessing quantile alerts
-        while ensuring the alert service is properly initialized.
-
         Parameters:
             subject_ids (List[str], optional): List of subject IDs to get alerts for
 
@@ -73,10 +66,7 @@ class AlertCoordinator:
 
     def get_unified_alerts(self, subject_ids=None, use_cache=True):
         """
-        Get unified alerts with caching support and proper coordination
-
-        This method provides unified alert access with intelligent caching
-        to optimize performance while maintaining data freshness.
+        Get unified alerts with caching support
 
         Parameters:
             subject_ids (List[str], optional): List of subject IDs to get alerts for
@@ -113,16 +103,11 @@ class AlertCoordinator:
     def clear_alert_cache(self):
         """
         Clear cached alert data to force refresh
-
-        This method provides a clean way to invalidate alert caches
-        when the underlying data has changed.
         """
         if self.cache_manager:
             # Clear unified alerts cache
             if self.cache_manager.has("unified_alerts"):
                 print("Clearing unified alerts cache")
-                # Remove from cache (implementation depends on cache manager)
-                # For now, we'll assume the cache manager handles this
                 pass
 
         # Clear alert service internal caches if available
@@ -132,9 +117,6 @@ class AlertCoordinator:
     def get_alert_summary_stats(self, subject_ids=None) -> Dict[str, Any]:
         """
         Get summary statistics for alerts across all subjects
-
-        This method provides useful metrics for monitoring the
-        overall alert distribution and system health.
 
         Parameters:
             subject_ids (List[str], optional): List of subject IDs to analyze
@@ -184,9 +166,6 @@ class AlertCoordinator:
     def validate_alert_configuration(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate alert service configuration
-
-        This method ensures that alert configuration is valid before
-        initializing the alert service.
 
         Parameters:
             config (Dict[str, Any]): Alert configuration to validate
@@ -238,10 +217,7 @@ class AlertCoordinator:
         self, df: pd.DataFrame, alert_category: str
     ) -> pd.DataFrame:
         """
-        Apply alert category filtering with full validation and logging
-
-        This method orchestrates alert category filtering using the AlertService's
-        business logic while providing comprehensive validation and logging.
+        Apply alert category filtering
 
         Parameters:
             df (pd.DataFrame): DataFrame to filter
@@ -307,9 +283,6 @@ class AlertCoordinator:
         """
         Count subjects by alert category for summary statistics
 
-        This method provides comprehensive alert category aggregation
-        with support for both percentile categories and threshold alerts.
-
         Parameters:
             df (pd.DataFrame): DataFrame to aggregate alert categories for
 
@@ -324,7 +297,6 @@ class AlertCoordinator:
             print(" Alert service not initialized, returning basic aggregation")
             return self._fallback_aggregation(df)
 
-        # Get comprehensive aggregation using AlertService
         try:
             aggregation_results = self._count_standard_categories(df)
             self._count_threshold_alerts(df, aggregation_results)

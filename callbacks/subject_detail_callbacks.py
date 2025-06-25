@@ -6,7 +6,6 @@ This module handles callbacks related to subject selection and data loading:
 - Session list population for selected subject
 - Timeseries data loading for visualizations
 
-Uses Dash 2.x @callback decorator pattern to avoid circular imports.
 """
 
 from callbacks.shared_callback_utils import (
@@ -155,10 +154,6 @@ def update_session_list(selected_subject_data):
 def load_timeseries_data(selected_subject_data):
     """
     Load optimized timeseries data for selected subject.
-
-    This callback loads and caches time series data that will be used
-    by multiple visualization components (raw timeseries, percentile plots, etc.).
-    Using a store pattern to avoid redundant data loading.
     """
     if not selected_subject_data or not selected_subject_data.get("subject_id"):
         return {}

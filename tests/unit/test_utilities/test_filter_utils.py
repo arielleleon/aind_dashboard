@@ -14,7 +14,6 @@ from unittest.mock import Mock, patch
 import sys
 import os
 
-# Ensure we can import from the project
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from app_utils.filter_utils import (
@@ -217,7 +216,7 @@ class TestAlertCategoryFilter:
     
     def test_threshold_alert_filtering(self):
         """Test threshold alert pattern matching using realistic subject IDs"""
-        # Create test data using realistic subject IDs from fixtures
+        # Create test data using realistic subject IDs
         base_data = get_realistic_session_data()
         subject_ids = base_data['subject_id'].unique()[:5].tolist()
         

@@ -55,8 +55,8 @@ class AppDataFrame:
 
         # Create reference processor with minimal default settings for filtering purposes
         self.reference_processor = ReferenceProcessor(
-            features_config={},  # Empty dict since we're not using features
-            min_sessions=1,  # Minimal requirements since we just want the window
+            features_config={},
+            min_sessions=1,
             min_days=1,
         )
 
@@ -81,12 +81,6 @@ class AppDataFrame:
     ) -> pd.DataFrame:
         """
         Format the dataframe for display in the table with unified session-level metrics
-
-        This method now uses extracted business logic functions to:
-        1. Get optimized data with intelligent cache fallback
-        2. Integrate unified alerts using business logic
-        3. Apply strata abbreviation formatting
-        4. Handle column filtering
         """
         original_df = df.copy() if df is not None else pd.DataFrame()
 
@@ -347,209 +341,181 @@ class AppDataFrame:
                                 "column_id": "subject_id",
                             },
                             "borderLeft": "4px solid #FF6B35",
-                            "color": "#D84315",  # Dark orange text for subject_id
+                            "color": "#D84315",
                             "fontWeight": "600",
                         },
-                        # B (Below) - Very Light Orange - ENTIRE ROW
                         {
                             "if": {"filter_query": "{percentile_category} = B"},
-                            "backgroundColor": "#FFF3E0",  # Very light orange background only
+                            "backgroundColor": "#FFF3E0",
                         },
-                        # B subject_id column gets colored text and border indicator
                         {
                             "if": {
                                 "filter_query": "{percentile_category} = B",
                                 "column_id": "subject_id",
                             },
                             "borderLeft": "4px solid #FFB366",
-                            "color": "#F57C00",  # Medium orange text for subject_id
+                            "color": "#F57C00",
                             "fontWeight": "600",
                         },
                         {
                             "if": {"filter_query": "{percentile_category} = G"},
-                            "backgroundColor": "#E3F2FD",  # Very light blue background only
+                            "backgroundColor": "#E3F2FD",
                         },
-                        # G subject_id column gets colored text and border indicator
                         {
                             "if": {
                                 "filter_query": "{percentile_category} = G",
                                 "column_id": "subject_id",
                             },
                             "borderLeft": "4px solid #4A90E2",
-                            "color": "#1976D2",  # Medium blue text for subject_id
+                            "color": "#1976D2",
                             "fontWeight": "600",
                         },
-                        # SG (Severely Good) - Light Blue - ENTIRE ROW
                         {
                             "if": {"filter_query": "{percentile_category} = SG"},
-                            "backgroundColor": "#BBDEFB",  # Light blue background only
+                            "backgroundColor": "#BBDEFB",
                         },
-                        # SG subject_id column gets colored text and border indicator
                         {
                             "if": {
                                 "filter_query": "{percentile_category} = SG",
                                 "column_id": "subject_id",
                             },
                             "borderLeft": "4px solid #2E5A87",
-                            "color": "#0D47A1",  # Dark blue text for subject_id
+                            "color": "#0D47A1",
                             "fontWeight": "600",
                         },
-                        # SB with threshold alert - ENTIRE ROW
                         {
                             "if": {"filter_query": '{combined_alert} contains "SB, T"'},
-                            "backgroundColor": "#FFCCBC",  # Light orange background for combined alert
-                            "border": "1px solid #FF5722",  # Lighter border
+                            "backgroundColor": "#FFCCBC",
+                            "border": "1px solid #FF5722",
                         },
-                        # SB+T subject_id column gets colored text and thicker border for combined alerts
                         {
                             "if": {
                                 "filter_query": '{combined_alert} contains "SB, T"',
                                 "column_id": "subject_id",
                             },
                             "borderLeft": "6px solid #E55100",
-                            "color": "#BF360C",  # Dark red-orange text for subject_id
+                            "color": "#BF360C",
                             "fontWeight": "700",
                         },
-                        # B with threshold alert - ENTIRE ROW
                         {
                             "if": {"filter_query": '{combined_alert} contains "B, T"'},
-                            "backgroundColor": "#FFE0B2",  # Light orange background for combined alert
-                            "border": "1px solid #FF9800",  # Lighter border
+                            "backgroundColor": "#FFE0B2",
+                            "border": "1px solid #FF9800",
                         },
-                        # B+T subject_id column gets colored text and thicker border
                         {
                             "if": {
                                 "filter_query": '{combined_alert} contains "B, T"',
                                 "column_id": "subject_id",
                             },
                             "borderLeft": "6px solid #F57C00",
-                            "color": "#E65100",  # Dark orange text for subject_id
+                            "color": "#E65100",
                             "fontWeight": "700",
                         },
-                        # G with threshold alert - ENTIRE ROW
                         {
                             "if": {"filter_query": '{combined_alert} contains "G, T"'},
-                            "backgroundColor": "#C5E1FF",  # Light blue background for combined alert
-                            "border": "1px solid #2196F3",  # Lighter border
+                            "backgroundColor": "#C5E1FF",
+                            "border": "1px solid #2196F3",
                         },
-                        # G+T subject_id column gets colored text and thicker border
                         {
                             "if": {
                                 "filter_query": '{combined_alert} contains "G, T"',
                                 "column_id": "subject_id",
                             },
                             "borderLeft": "6px solid #1976D2",
-                            "color": "#0D47A1",  # Dark blue text for subject_id
+                            "color": "#0D47A1",
                             "fontWeight": "700",
                         },
-                        # SG with threshold alert - ENTIRE ROW
                         {
                             "if": {"filter_query": '{combined_alert} contains "SG, T"'},
-                            "backgroundColor": "#90CAF9",  # Medium light blue background for combined alert
-                            "border": "1px solid #1976D2",  # Lighter border
+                            "backgroundColor": "#90CAF9",
+                            "border": "1px solid #1976D2",
                         },
-                        # SG+T subject_id column gets colored text and thicker border
                         {
                             "if": {
                                 "filter_query": '{combined_alert} contains "SG, T"',
                                 "column_id": "subject_id",
                             },
                             "borderLeft": "6px solid #0D47A1",
-                            "color": "#01579B",  # Very dark blue text for subject_id
+                            "color": "#01579B",
                             "fontWeight": "700",
                         },
-                        # Threshold-only alerts (when percentile category is NS but has threshold alert) - ENTIRE ROW
                         {
                             "if": {"filter_query": "{combined_alert} = T"},
-                            "backgroundColor": "#EFEBE9",  # Very light brown background for threshold-only alerts
+                            "backgroundColor": "#EFEBE9",
                         },
-                        # T-only subject_id column gets colored text and border indicator
                         {
                             "if": {
                                 "filter_query": "{combined_alert} = T",
                                 "column_id": "subject_id",
                             },
                             "borderLeft": "4px solid #795548",
-                            "color": "#5D4037",  # Dark brown text for subject_id
+                            "color": "#5D4037",
                             "fontWeight": "600",
                         },
-                        # Individual threshold alert column styling (match tooltip colors)
-                        # Total sessions alert column - when contains "T |"
                         {
                             "if": {
                                 "filter_query": '{total_sessions_alert} contains "T |"',
                                 "column_id": "total_sessions_alert",
                             },
-                            "color": "#795548",  # Brown color matching tooltip
+                            "color": "#795548",
                             "fontWeight": "600",
                         },
-                        # Stage sessions alert column - when contains "T |"
                         {
                             "if": {
                                 "filter_query": '{stage_sessions_alert} contains "T |"',
                                 "column_id": "stage_sessions_alert",
                             },
-                            "color": "#795548",  # Brown color matching tooltip
+                            "color": "#795548",
                             "fontWeight": "600",
                         },
-                        # Water day total alert column - when contains "T |"
                         {
                             "if": {
                                 "filter_query": '{water_day_total_alert} contains "T |"',
                                 "column_id": "water_day_total_alert",
                             },
-                            "color": "#795548",  # Brown color matching tooltip
+                            "color": "#795548",
                             "fontWeight": "600",
                         },
-                        # Threshold alert column - when equals "T"
                         {
                             "if": {
                                 "filter_query": "{threshold_alert} = T",
                                 "column_id": "threshold_alert",
                             },
-                            "color": "#795548",  # Brown color matching tooltip
+                            "color": "#795548",
                             "fontWeight": "600",
                         },
-                        # Base column formatting for threshold violations
-                        # Session column - when any session threshold alert is triggered
                         {
                             "if": {
                                 "filter_query": '{total_sessions_alert} contains "T |" || {stage_sessions_alert} contains "T |"',
                                 "column_id": "session",
                             },
-                            "color": "#795548",  # Brown color matching threshold alerts
+                            "color": "#795548",
                             "fontWeight": "600",
                         },
-                        # Water day total column - when water threshold alert is triggered
                         {
                             "if": {
                                 "filter_query": '{water_day_total_alert} contains "T |"',
                                 "column_id": "water_day_total",
                             },
-                            "color": "#795548",  # Brown color matching threshold alerts
+                            "color": "#795548",
                             "fontWeight": "600",
                         },
-                        # PHASE 2: Outlier detection styling
-                        # Mark outlier sessions with distinct violet/purple color
                         {
                             "if": {
                                 "filter_query": "{is_outlier} = true",
                                 "column_id": ["outlier_weight", "is_outlier"],
                             },
-                            "backgroundColor": "#9C27B0",  # Purple for outlier indicator columns
+                            "backgroundColor": "#9C27B0",
                             "color": "#ffffff",
                             "fontWeight": "600",
                         },
-                        # Add border indicator for outlier sessions
                         {
                             "if": {
                                 "filter_query": "{is_outlier} = true",
                                 "column_id": "subject_id",
                             },
-                            "borderRight": "3px solid #9C27B0",  # Purple right border on subject_id for outliers
+                            "borderRight": "3px solid #9C27B0",
                         },
-                        # WILSON CI CERTAINTY FORMATTING: Conditional formatting based on confidence interval certainty
-                        # Certain (high confidence) - Green left border
                         {
                             "if": {
                                 "filter_query": "{session_overall_percentile_certainty} = certain",
@@ -558,9 +524,8 @@ class AppDataFrame:
                                     "overall_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #4CAF50",  # Green left border for certain
+                            "borderLeft": "4px solid #4CAF50",
                         },
-                        # Uncertain (low confidence) - Red left border
                         {
                             "if": {
                                 "filter_query": "{session_overall_percentile_certainty} = uncertain",
@@ -569,10 +534,8 @@ class AppDataFrame:
                                     "overall_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #F44336",  # Red left border for uncertain
+                            "borderLeft": "4px solid #F44336",
                         },
-                        # Feature-specific certainty formatting - left border indicators for both raw values and percentiles
-                        # Finished Trials certainty
                         {
                             "if": {
                                 "filter_query": "{finished_trials_certainty} = certain",
@@ -581,7 +544,7 @@ class AppDataFrame:
                                     "finished_trials_session_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #4CAF50",  # Green left border for certain
+                            "borderLeft": "4px solid #4CAF50",
                         },
                         {
                             "if": {
@@ -591,9 +554,8 @@ class AppDataFrame:
                                     "finished_trials_session_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #F44336",  # Red left border for uncertain
+                            "borderLeft": "4px solid #F44336",
                         },
-                        # Ignore Rate certainty
                         {
                             "if": {
                                 "filter_query": "{ignore_rate_certainty} = certain",
@@ -602,7 +564,7 @@ class AppDataFrame:
                                     "ignore_rate_session_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #4CAF50",  # Green left border for certain
+                            "borderLeft": "4px solid #4CAF50",
                         },
                         {
                             "if": {
@@ -612,9 +574,8 @@ class AppDataFrame:
                                     "ignore_rate_session_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #F44336",  # Red left border for uncertain
+                            "borderLeft": "4px solid #F44336",
                         },
-                        # Total Trials certainty
                         {
                             "if": {
                                 "filter_query": "{total_trials_certainty} = certain",
@@ -623,7 +584,7 @@ class AppDataFrame:
                                     "total_trials_session_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #4CAF50",  # Green left border for certain
+                            "borderLeft": "4px solid #4CAF50",
                         },
                         {
                             "if": {
@@ -633,9 +594,8 @@ class AppDataFrame:
                                     "total_trials_session_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #F44336",  # Red left border for uncertain
+                            "borderLeft": "4px solid #F44336",
                         },
-                        # Foraging Performance certainty
                         {
                             "if": {
                                 "filter_query": "{foraging_performance_certainty} = certain",
@@ -644,7 +604,7 @@ class AppDataFrame:
                                     "foraging_performance_session_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #4CAF50",  # Green left border for certain
+                            "borderLeft": "4px solid #4CAF50",
                         },
                         {
                             "if": {
@@ -654,9 +614,8 @@ class AppDataFrame:
                                     "foraging_performance_session_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #F44336",  # Red left border for uncertain
+                            "borderLeft": "4px solid #F44336",
                         },
-                        # Abs Bias Naive certainty
                         {
                             "if": {
                                 "filter_query": "{abs(bias_naive)_certainty} = certain",
@@ -665,7 +624,7 @@ class AppDataFrame:
                                     "abs(bias_naive)_session_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #4CAF50",  # Green left border for certain
+                            "borderLeft": "4px solid #4CAF50",
                         },
                         {
                             "if": {
@@ -675,7 +634,7 @@ class AppDataFrame:
                                     "abs(bias_naive)_session_percentile",
                                 ],
                             },
-                            "borderLeft": "4px solid #F44336",  # Red left border for uncertain
+                            "borderLeft": "4px solid #F44336",
                         },
                     ]
                     + self._get_percentile_formatting_rules(),

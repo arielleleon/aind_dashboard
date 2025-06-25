@@ -9,7 +9,7 @@ class AppLoadData:
 
     def load(self, load_bpod=False):
         """
-        Loads session dataframe
+        Loads session dataframe **old method -- keeping for now
 
         Args:
             load_bpod (bool): Whether to load bpod data

@@ -1,6 +1,6 @@
 from dash import ALL, Input, Output, clientside_callback
 
-# Track scroll position and detect which session card is most visible
+# Track scroll position and detect which session card is most visible (client side callbacks are complex, need to recheck this)
 clientside_callback(
     """
     function(dummy, n_intervals) {

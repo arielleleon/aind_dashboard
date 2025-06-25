@@ -88,7 +88,6 @@ class DataPipelineManager:
         if features_config is None:
             features_config = self.default_features_config
 
-        # PHASE 2: Default outlier configuration for enhanced robustness
         if outlier_config is None:
             outlier_config = self.default_outlier_config
 
@@ -131,10 +130,7 @@ class DataPipelineManager:
         self, df: pd.DataFrame, use_cache: bool = True
     ) -> pd.DataFrame:
         """
-        NEW UNIFIED PIPELINE: Process raw session data through the complete session-level pipeline
-
-        This replaces the previous dual approach (strata-level + session-level) with a unified
-        session-level approach that provides all necessary metrics for the application.
+        Process raw session data through the complete session-level pipeline
 
         Parameters:
             df: pd.DataFrame
@@ -176,7 +172,6 @@ class DataPipelineManager:
         eligible_df = df[df["subject_id"].isin(eligible_subjects)]
         logger.info(f"Got {len(eligible_subjects)} eligible subjects")
 
-        # PHASE 2: Enhanced preprocessing with outlier detection
         processed_df = self.reference_processor.preprocess_data(
             eligible_df, remove_outliers=True
         )
@@ -330,7 +325,7 @@ class DataPipelineManager:
                     )
                 )
 
-        # PHASE 2: Add simple boolean outlier flag based on outlier_weight
+        # Add simple boolean outlier flag based on outlier_weight
         if "outlier_weight" in result_df.columns:
             result_df["is_outlier"] = result_df["outlier_weight"] < 1.0
         else:

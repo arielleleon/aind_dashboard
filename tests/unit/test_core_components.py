@@ -255,8 +255,7 @@ class TestIntegration:
     def test_percentile_coordinator_standalone(self):
         """Test coordinator works without external dependencies"""
         coordinator = PercentileCoordinator()
-        
-        # Should handle gracefully when no pipeline manager
+
         result = coordinator._get_session_level_data()
         assert result.empty
         

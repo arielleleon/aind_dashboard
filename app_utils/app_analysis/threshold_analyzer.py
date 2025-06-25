@@ -71,11 +71,11 @@ class ThresholdAnalyzer:
         if not self.threshold_config:
             return self._create_default_result(df)
 
-        # Create a copy of the dataframe to avoid modifying the original
+        # Create a copy of the dataframe
         df_result = df.copy()
         df_result["threshold_alert"] = "N"  # Default to Normal
 
-        # Process each threshold configuration
+        # Process each threshold
         for feature, config in self.threshold_config.items():
             self._process_threshold_feature(df_result, feature, config)
 
@@ -102,7 +102,7 @@ class ThresholdAnalyzer:
         if threshold is None:
             return
 
-        # Context filter if provided (e.g., specific stage)
+        # Context filter if provided
         context = config.get("context")
 
         if context:
@@ -146,7 +146,7 @@ class ThresholdAnalyzer:
 
     def generate_alert(self, condition_met, alert_type, value=None, stage=None):
         """
-        Generate detailed alert format with contextual information
+        Generate detailed alert format with contextual information **hardcoded for now
 
         Parameters:
             condition_met (bool): Whether the alert condition is met

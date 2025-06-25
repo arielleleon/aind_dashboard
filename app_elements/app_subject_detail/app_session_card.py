@@ -170,7 +170,6 @@ class AppSessionCard:
                                 ],
                                 className="session-metadata-column",
                             ),
-                            # Right column - simple image
                             html.Div(
                                 [
                                     html.Img(

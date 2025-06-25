@@ -78,7 +78,7 @@ class PercentileCoordinator:
         if session_data.empty:
             return pd.DataFrame()
 
-        # Get the most recent session for each subject (for summary views)
+        # Get the most recent session for each subject
         # Only attempt sorting if required columns exist
         if (
             "subject_id" in session_data.columns

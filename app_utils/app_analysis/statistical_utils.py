@@ -67,7 +67,6 @@ class StatisticalUtils:
         z = stats.norm.ppf(1 - alpha / 2)
 
         # Wilson score interval for percentile confidence
-        # This accounts for the binomial nature of percentile estimation
         denominator = 1 + (z**2 / n)
 
         center = (p + (z**2) / (2 * n)) / denominator
@@ -129,8 +128,7 @@ class StatisticalUtils:
         data: np.ndarray, threshold: float = 3.5
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Detect outliers using Modified Z-score method (using median absolute deviation)
-        More robust than standard Z-score for non-normal distributions
+        Detect outliers using Modified Z-score method (using median absolute deviation) **alternate method
 
         Parameters:
             data: np.ndarray
@@ -241,9 +239,6 @@ class StatisticalUtils:
         """
         Validate and clean percentile data, converting invalid markers to NaN
 
-        This function processes raw percentile data by converting invalid markers
-        (typically -1) to NaN values for proper statistical handling.
-
         Parameters:
             percentiles: List[Union[float, int]]
                 Raw percentile data that may contain invalid markers
@@ -261,9 +256,6 @@ class StatisticalUtils:
     ) -> Tuple[List[List[float]], List[str]]:
         """
         Process time series data into heatmap matrix format with feature names
-
-        This function extracts percentile data for configured features and prepares
-        it for heatmap visualization, including data validation and display name formatting.
 
         Parameters:
             time_series_data: Dict[str, Any]

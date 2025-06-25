@@ -12,10 +12,6 @@ logger = get_logger("ui_utils")
 class UIDataManager:
     """
     UI Data Manager for creating optimized data structures for fast component rendering
-
-    This class handles all UI-specific data transformations and optimizations that were
-    previously mixed with business logic in AppUtils. It focuses solely on preparing
-    data for UI components with optimal performance.
     """
 
     def __init__(self):
@@ -896,9 +892,9 @@ class UIDataManager:
             str: 'certain', 'intermediate', or 'uncertain' based on CI width relative to point estimate
 
         Criteria:
-            - certain: CI width ≤ 20% of point estimate
-            - intermediate: 20% < CI width < 40% of point estimate
-            - uncertain: CI width ≥ 40% of point estimate
+            - certain: CI width ≤ 30% of point estimate
+            - intermediate: 30% < CI width < 60% of point estimate
+            - uncertain: CI width ≥ 60% of point estimate
         """
         # Handle edge cases
         if pd.isna(ci_width) or pd.isna(target_value):
@@ -918,11 +914,11 @@ class UIDataManager:
         relative_ci_width = ci_width / abs(target_value)
 
         # Apply 3-tier thresholds
-        if relative_ci_width <= 0.20:  # CI width ≤ 20% of point estimate
+        if relative_ci_width <= 0.30:  # CI width ≤ 30% of point estimate
             return "certain"
-        elif relative_ci_width >= 0.40:  # CI width ≥ 40% of point estimate
+        elif relative_ci_width >= 0.60:  # CI width ≥ 60% of point estimate
             return "uncertain"
-        else:  # 20% < CI width < 40% of point estimate
+        else:  # 30% < CI width < 60% of point estimate
             return "intermediate"
 
 
@@ -997,7 +993,6 @@ def process_unified_alerts_integration(
     output_df = recent_sessions.copy()
     output_df = _initialize_alert_columns(output_df)
 
-    # Try to get alerts - if it fails, continue with default values
     try:
         _ensure_pipeline_and_service_ready(app_utils)
 

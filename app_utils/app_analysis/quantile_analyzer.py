@@ -18,8 +18,6 @@ logger = get_logger("quantile_analyzer")
 class QuantileAnalyzer:
     """
     Analyzer for calculating and retrieving quantile-based metrics for subject performance
-    ENHANCED IN PHASE 2: Now supports weighted percentile ranking for robust outlier handling
-    Uses Wilson confidence intervals for statistical robustness
     """
 
     def __init__(
@@ -48,10 +46,8 @@ class QuantileAnalyzer:
         """
         Calculate percentile ranks for each subject within each stratified group
         using combined current and historical data for more robust distributions
-
-        ENHANCED IN PHASE 2: Now supports weighted percentile ranking when outlier weights are available
         """
-        # Calculate percentiles for strata (now contains both current and historical data)
+        # Calculate percentiles for strata
         for strata, df in self.stratified_data.items():
             # Log strata size for debugging
             logger.info("Processing strata " + strata + " with " + str(len(df)))
@@ -88,7 +84,6 @@ class QuantileAnalyzer:
                 feature_values = df[feature].values
 
                 if has_outlier_weights:
-                    # PHASE 2: Use weighted percentile ranking
                     outlier_weights = df["outlier_weight"].values
 
                     # Calculate weighted percentiles for each subject
@@ -110,7 +105,7 @@ class QuantileAnalyzer:
                     )
 
                 else:
-                    # Traditional percentile ranking (for backward compatibility)
+                    # Traditional percentile ranking **error check
                     percentile_df[f"{feature.replace('_processed', '_percentile')}"] = (
                         df[feature].rank(pct=True) * 100
                     )
@@ -277,7 +272,7 @@ class QuantileAnalyzer:
         )
 
         if has_weights:
-            # PHASE 2: Use weighted percentile ranking
+            # Use weighted percentile ranking
             percentile = self.statistical_utils.calculate_weighted_percentile_rank(
                 reference_values=clean_reference_values,
                 reference_weights=clean_reference_weights,
@@ -400,9 +395,6 @@ class QuantileAnalyzer:
     ) -> pd.DataFrame:
         """
         Calculate session-level percentile ranks for each subject in each strata
-        Enhanced with 95% confidence interval calculations and weighted percentile ranking
-
-        ENHANCED IN PHASE 2: Now supports weighted percentile ranking when outlier weights are available
         """
         # Create a copy to avoid modifying the input
         result_df = session_data.copy()
@@ -425,7 +417,7 @@ class QuantileAnalyzer:
                 "Session data contains outlier weights - will use weighted percentiles where available"
             )
 
-        # Process each strata separately to maintain consistent reference distributions
+        # Process each strata separately
         for strata, strata_df in session_data.groupby("strata"):
             created_columns, created_ci_columns = self._process_strata_percentiles(
                 strata_df, strata, rolling_avg_cols, result_df
@@ -464,7 +456,6 @@ class QuantileAnalyzer:
             pd.DataFrame
                 DataFrame with calculated overall percentiles for each session
         """
-        # Create a copy to avoid modifying the input
         result_df = session_data.copy()
 
         # Get all session percentile columns

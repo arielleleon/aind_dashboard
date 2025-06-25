@@ -94,7 +94,6 @@ class AppSubjectPercentileTimeseries:
 
         # Add individual features
         for feature in self.features_config.keys():
-            # Create readable labels
             label = (
                 feature.replace("_", " ").replace("abs(", "|").replace(")", "|").title()
             )

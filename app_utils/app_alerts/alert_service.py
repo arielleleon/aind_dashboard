@@ -383,9 +383,6 @@ class AlertService:
         """
         Filter dataframe to show only subjects with threshold alerts
 
-        This method implements the complex pattern matching logic for threshold alerts,
-        including both exact matches ('T') and pattern-based matches ('T |').
-
         Parameters:
             df (pd.DataFrame): DataFrame to filter for threshold alerts
 
@@ -412,9 +409,6 @@ class AlertService:
     def validate_alert_patterns(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
         Validate and debug alert patterns in dataframe
-
-        This method provides comprehensive validation and debugging information
-        for alert patterns, including value counts and data quality checks.
 
         Parameters:
             df (pd.DataFrame): DataFrame to validate alert patterns for
@@ -470,9 +464,6 @@ class AlertService:
     ) -> pd.Series:
         """
         Generate boolean mask for specific alert category filtering
-
-        This method creates boolean masks for filtering subjects based on alert categories,
-        with special handling for threshold alerts which require complex pattern matching.
 
         Parameters:
             df (pd.DataFrame): DataFrame to generate mask for

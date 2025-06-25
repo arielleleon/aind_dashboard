@@ -30,8 +30,7 @@ class TestAppSmoke:
             import shared_utils
             import app_utils
             from app_elements import AppMain
-            
-            # Test that we can get the shared app_utils instance
+
             utils = shared_utils.get_app_utils()
             assert utils is not None
             
@@ -72,9 +71,6 @@ class TestAppSmoke:
     def test_app_server_starts(self):
         """
         Test that the app server can start successfully
-        
-        This is a more comprehensive test that actually starts the server.
-        It allows the full 5+ minute startup time as mentioned by the user.
         """
         import threading
         import time
@@ -97,7 +93,7 @@ class TestAppSmoke:
         server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
         
-        # Wait for server to start (give it up to 6 minutes as requested)
+        # Wait for server to start (give it up to 6 minutes)
         max_wait_time = 360  # 6 minutes
         start_time = time.time()
         
@@ -139,7 +135,7 @@ class TestAppSmoke:
             assert hasattr(app, 'run_server')
             assert hasattr(app, 'callback')
             
-            # Try to get the layout (this might trigger some initialization)
+            # Try to get the layout
             layout = app.layout
             assert layout is not None
             

@@ -38,9 +38,6 @@ def update_timeseries_plot(
 ):
     """
     Update timeseries plot with data and session highlighting.
-
-    This callback wires user interactions to the timeseries visualization component,
-    delegating complex plotting logic to the AppSubjectTimeseries class.
     """
     highlighted_session = extract_highlighted_session(
         n_clicks_list, scroll_state, card_ids
@@ -74,9 +71,6 @@ def update_percentile_timeseries_plot(
 ):
     """
     Update percentile timeseries plot with data, session highlighting, and confidence interval toggle.
-
-    This callback handles the more complex percentile visualization with confidence intervals,
-    delegating plotting logic to the AppSubjectPercentileTimeseries class.
     """
     # Determine if confidence intervals should be shown
     show_confidence_intervals = ci_toggle_value and "show_ci" in ci_toggle_value
@@ -108,9 +102,6 @@ def update_percentile_heatmap_with_highlighting(
 ):
     """
     Update percentile heatmap with session highlighting and colorscale mode.
-
-    This callback manages heatmap visualization state including colorscale mode,
-    delegating rendering logic to the AppSubjectPercentileHeatmap class.
     """
     # Extract subject_id from the store data
     subject_id = (
@@ -150,9 +141,6 @@ def update_percentile_heatmap_with_highlighting(
 def toggle_heatmap_colorscale(n_clicks, current_state):
     """
     Toggle between binned and continuous colorscale modes for heatmap visualization.
-
-    This callback manages the colorscale toggle state and button appearance,
-    providing a clean interface for switching between visualization modes.
     """
     # If button hasn't been clicked, return current state
     if not n_clicks:

@@ -7,7 +7,6 @@ from shared_utils import app_utils
 
 class AppFilter:
     def __init__(self):
-        # Use shared app utils instance instead of creating a new one
         df = app_utils.get_session_data()
 
         # Get unique values for each filter dropdown
@@ -100,7 +99,7 @@ class AppFilter:
                 default_state[group_id] = False
             else:
                 default_state[group_id] = (
-                    True  # Non-collapsible groups are always expanded
+                    True
                 )
         return default_state
 

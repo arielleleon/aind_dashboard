@@ -24,8 +24,8 @@ class SimpleLogger:
             return  # Already configured
 
         # Determine log level based on environment
-        # DEV: Show INFO and above (includes debug info)
-        # PROD (default): Show WARNING and above (errors only)
+        # DEV: Show INFO and above
+        # PROD (default): Show WARNING and above
         # The default environment is now 'PROD' to minimize console output during normal app use.
         is_dev = os.getenv("DASH_ENV", "PROD").upper() == "DEV"
         level = logging.INFO if is_dev else logging.WARNING
@@ -35,8 +35,6 @@ class SimpleLogger:
         # Simple console handler
         handler = logging.StreamHandler()
 
-        # Minimal formatter - just message for simplicity
-        # This keeps output clean vs previous emoji/verbose prints
         formatter = logging.Formatter("%(message)s")
         handler.setFormatter(formatter)
 

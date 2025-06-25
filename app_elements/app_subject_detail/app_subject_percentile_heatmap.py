@@ -158,23 +158,11 @@ class AppSubjectPercentileHeatmap:
         )
 
     def _create_custom_colorscale(self):
-        """
-        DEPRECATED: Use calculate_heatmap_colorscale() from percentile_utils instead
-
-        This method is kept for backward compatibility but business logic has been
-        moved to percentile_utils.calculate_heatmap_colorscale() for better separation.
-        """
         from app_utils.percentile_utils import calculate_heatmap_colorscale
 
         return calculate_heatmap_colorscale("binned")
 
     def _create_continuous_colorscale(self):
-        """
-        DEPRECATED: Use calculate_heatmap_colorscale() from percentile_utils instead
-
-        This method is kept for backward compatibility but business logic has been
-        moved to percentile_utils.calculate_heatmap_colorscale() for better separation.
-        """
         from app_utils.percentile_utils import calculate_heatmap_colorscale
 
         return calculate_heatmap_colorscale("continuous")
@@ -193,7 +181,7 @@ class AppSubjectPercentileHeatmap:
         )
         fig.update_layout(
             margin=dict(l=10, r=10, t=10, b=10),
-            height=300,  # Updated to match new height
+            height=300,
             plot_bgcolor="white",
             xaxis=dict(showgrid=False, showticklabels=False),
             yaxis=dict(showgrid=False, showticklabels=False),
@@ -203,7 +191,7 @@ class AppSubjectPercentileHeatmap:
             id="percentile-heatmap",
             figure=fig,
             config={"displayModeBar": False},
-            style={"height": "300px", "width": "100%"},  # Updated to match new height
+            style={"height": "300px", "width": "100%"},
         )
 
     def _add_strata_boundaries(self, fig, sessions, strata_data, num_feature_rows):

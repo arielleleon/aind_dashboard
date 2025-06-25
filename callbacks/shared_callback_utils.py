@@ -2,15 +2,8 @@
 Shared Callback Utilities Module
 
 This module provides centralized imports, component instances, and helper functions
-for use across all callback modules in the modular Dash 2.x architecture.
+for use across all callback modules in the modular Dash architecture.
 
-Design Goals:
-- Avoid code duplication across callback modules
-- Provide single instances of shared components
-- Centralize common imports to reduce boilerplate
-- Support helper functions that can be reused
-- Maintain compatibility with Dash 2.x @callback decorator pattern
-- Prevent circular import issues
 
 Usage:
     from callbacks.shared_callback_utils import (

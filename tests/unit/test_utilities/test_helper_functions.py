@@ -25,14 +25,13 @@ class TestSharedUtils:
         # Import the module first
         import shared_utils
         
-        # Mock the AppUtils class to avoid data loading during testing
+        # Mock the AppUtils class
         with patch.object(shared_utils, 'AppUtils') as MockAppUtils:
             mock_instance = Mock()
             MockAppUtils.return_value = mock_instance
             
-            # Create a new app_utils instance with the mock
+            # Create a new app_utils instance
             with patch.object(shared_utils, 'app_utils', mock_instance):
-                # Test the function
                 result = shared_utils.get_app_utils()
                 assert result is not None
                 assert result is mock_instance
@@ -51,9 +50,8 @@ class TestSharedUtils:
             mock_instance = Mock()
             MockAppUtils.return_value = mock_instance
             
-            # Create a new app_utils instance with the mock
+            # Create a new app_utils instance
             with patch.object(shared_utils, 'app_utils', mock_instance):
-                # Get the instance multiple times
                 instance1 = shared_utils.get_app_utils()
                 instance2 = shared_utils.get_app_utils()
                 instance3 = shared_utils.get_app_utils()

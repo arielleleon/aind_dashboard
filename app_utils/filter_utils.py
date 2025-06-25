@@ -133,7 +133,7 @@ def apply_multi_select_filters(
 
     filtered_df = df.copy()
 
-    # Apply subject ID filter (special handling for string conversion)
+    # Apply subject ID filter
     subject_id_value = filter_configs.get("subject_id")
     filtered_df = _apply_subject_id_filter(filtered_df, subject_id_value)
 
@@ -157,9 +157,6 @@ def apply_multi_select_filters(
 def apply_alert_category_filter(df: pd.DataFrame, alert_category: str) -> pd.DataFrame:
     """
     Apply alert category filtering using AlertCoordinator business logic
-
-    This function now delegates to the AlertCoordinator which orchestrates
-    the complex alert filtering logic through the AlertService.
 
     Parameters:
         df: DataFrame to filter
@@ -208,8 +205,8 @@ def _apply_alert_category_filter_fallback(
     """
     Fallback alert category filtering logic for when AlertCoordinator is not available
 
-    This maintains the original complex logic as a backup to ensure the application
-    continues to work even if the alert modules are not properly initialized.
+    This maintains the original logic as a backup to ensure the application
+    continues to work even if the alert modules are not properly initialized. **can delete this and other similar functions in future deployment
 
     Parameters:
         df: DataFrame to filter

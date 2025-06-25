@@ -8,10 +8,7 @@ from aind_analysis_arch_result_access.han_pipeline import get_session_table
 
 class EnhancedDataLoader:
     """
-    Enhanced data loader with unified session management capabilities
-
-    Combines the existing AppLoadData functionality with extracted data loading
-    methods from AppUtils for improved separation of concerns.
+    Enhanced data loader with unified session management capabilities **new version testing
     """
 
     def __init__(self):
@@ -113,9 +110,6 @@ class EnhancedDataLoader:
         """
         Get the most recent session for each subject (raw data only)
 
-        Note: This returns only the raw session data. For processed data with
-        percentiles and metrics, use AppUtils.get_most_recent_subject_sessions()
-
         Returns:
             pd.DataFrame: DataFrame with most recent raw session for each subject
         """
@@ -156,7 +150,7 @@ class EnhancedDataLoader:
                 return []
 
             subjects = data["subject_id"].unique().tolist()
-            subjects.sort()  # Sort alphabetically for consistency
+            subjects.sort()
 
             print(f"Found {len(subjects)} unique subjects")
             return subjects
@@ -192,7 +186,7 @@ class EnhancedDataLoader:
 
     def get_data_summary(self) -> Dict[str, Any]:
         """
-        Get summary statistics about the loaded data
+        Get summary statistics about the loaded data **for potential future use
 
         Returns:
             Dict[str, Any]: Summary statistics including subjects, sessions, date range
@@ -333,7 +327,7 @@ class AppLoadData(EnhancedDataLoader):
     """
     Backward compatibility alias for EnhancedDataLoader
 
-    This maintains compatibility with existing code that imports AppLoadData
+    This maintains compatibility with existing code that imports AppLoadData **old method -- keeping for now
     """
 
     pass

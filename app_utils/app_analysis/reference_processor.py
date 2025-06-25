@@ -96,9 +96,6 @@ class ReferenceProcessor:
         """
         Preprocess the input data with strata-specific standardization and enhanced outlier detection
 
-        ENHANCED IN PHASE 2: Now uses IQR-based outlier detection with weighted averaging
-        instead of complete outlier removal for better data retention and robustness.
-
         Parameters:
             df: pd.DataFrame
                 Input dataframe with raw performance data
@@ -139,7 +136,7 @@ class ReferenceProcessor:
         if not pd.api.types.is_datetime64_any_dtype(df["session_date"]):
             df["session_date"] = pd.to_datetime(df["session_date"])
 
-        # Enhanced filtering of off-curriculum sessions
+        # Filter off-curriculum sessions
         df = self._filter_off_curriculum_sessions(df)
 
         # Clean data - additional filtering
@@ -165,7 +162,7 @@ class ReferenceProcessor:
             | (df["curriculum_version"] == "None")
         )
 
-        # Report and remove off-curriculum sessions
+        # Remove off-curriculum sessions
         off_count = off_curriculum_mask.sum()
         if off_count > 0:
             logger.info(
@@ -333,7 +330,7 @@ class ReferenceProcessor:
         """Process a single feature with outlier detection and standardization"""
         outlier_count = 0
 
-        # Apply outlier detection if enabled
+        # Apply outlier detection
         if (
             apply_outlier_detection
             and len(strata_df[feature].dropna())
@@ -534,10 +531,10 @@ class ReferenceProcessor:
         Returns:
             Simplified group identifier
         """
-        # First, separate curriculum name from the rest
+        # Separate curriculum name from the rest
         parts = strat_id.split("_")
 
-        # Handle curriculum name - find the index where the stage info starts
+        # Handle curriculum name
         try:
             stage_start = next(
                 i
@@ -545,25 +542,25 @@ class ReferenceProcessor:
                 if "STAGE" in part or "GRADUATED" in part
             )
             curriculum = "_".join(parts[:stage_start])
-            stage_parts = parts[stage_start:]  # Get all parts after curriculum name
+            stage_parts = parts[stage_start:]
         except StopIteration:
-            # Silent handling when STAGE or GRADUATED markers are missing
+            # Default fallback when STAGE or GRADUATED markers are missing
             if len(parts) >= 2:
-                curriculum = "_".join(parts[:-1])  # All but last part as curriculum
-                version = parts[-1]  # Last part as version
+                curriculum = "_".join(parts[:-1])
+                version = parts[-1]
                 return f"{curriculum}_UNKNOWN_{version}"
             else:
-                return f"{strat_id}_UNKNOWN_v1"  # Default fallback
+                return f"{strat_id}_UNKNOWN_v1"
 
         # Get the full stage name and version
         if len(stage_parts) >= 2:
             stage = "_".join(
                 stage_parts[:-1]
-            )  # Join all parts except the last (version)
-            version = stage_parts[-1]  # Keep the original version (v1, v2, v3)
+            )
+            version = stage_parts[-1]
         else:
             stage = stage_parts[0] if stage_parts else "UNKNOWN"
-            version = "v1"  # Default version
+            version = "v1"
 
         # Simplify stage
         if "STAGE_FINAL" in stage or "GRADUATED" in stage:
@@ -573,7 +570,7 @@ class ReferenceProcessor:
         elif any(s in stage for s in ["STAGE_2", "STAGE_1", "STAGE_1_WARMUP"]):
             simplified_stage = "BEGINNER"
         else:
-            # Silent handling when stage format is unknown
+            # Default fallback when stage format is unknown
             simplified_stage = "UNKNOWN"
 
         return f"{curriculum}_{simplified_stage}_{version}"
@@ -647,7 +644,7 @@ class ReferenceProcessor:
         if use_weighted_avg:
             # Calculate weights based on session recency
             session_count = len(df_sorted)
-            # Create exponentially increasing weights (early sessions -> lower weight, later session -> higher weight)
+            # Create exponentially increasing weights
             weights = np.array(
                 [decay_factor ** (session_count - i - 1) for i in range(session_count)]
             )
@@ -695,7 +692,7 @@ class ReferenceProcessor:
         # Get list of processed features
         processed_features = [col for col in df.columns if col.endswith("_processed")]
 
-        # Get the most recent session for each subject to determine final strata
+        # Get the most recent session for each subject
         latest_sessions = (
             df.sort_values("session_date").groupby("subject_id").last().reset_index()
         )
@@ -703,7 +700,7 @@ class ReferenceProcessor:
             zip(latest_sessions["subject_id"], latest_sessions["strata"])
         )
 
-        # Create a list to store subject-strata combinations with their average feature values
+        # Create a list to store subject-strata combinations
         subject_strata_averages = []
 
         # Process each subject
@@ -726,8 +723,8 @@ class ReferenceProcessor:
                     "strata": final_strata,
                     "session_count": len(
                         subject_sessions
-                    ),  # Session count for reference
-                    "is_current": True,  # Flag to indicate this is the subject's current strata
+                    ),
+                    "is_current": True,
                     "first_date": subject_sessions["session_date"].min(),
                     "last_date": subject_sessions["session_date"].max(),
                 }
@@ -749,7 +746,7 @@ class ReferenceProcessor:
                 subject_id = row["subject_id"]
                 strata = row["strata"]
 
-                # Skip if this is the subject's final strata (already included above)
+                # Skip if this is the subject's final strata
                 if subject_final_strata.get(subject_id) == strata:
                     continue
 
@@ -778,7 +775,7 @@ class ReferenceProcessor:
                         "session_count": len(subject_strata_sessions),
                         "first_date": first_date,
                         "last_date": last_date,
-                        "is_current": False,  # Flag to indicate this is a historical strata
+                        "is_current": False,
                     }
                     record.update(averages)
 
@@ -791,7 +788,6 @@ class ReferenceProcessor:
             if all_averages:
                 subject_history = pd.DataFrame(all_averages)
             else:
-                # Return empty DataFrame with expected columns
                 columns = [
                     "subject_id",
                     "strata",
@@ -806,7 +802,6 @@ class ReferenceProcessor:
         if subject_strata_averages:
             current_averages_df = pd.DataFrame(subject_strata_averages)
         else:
-            # Return empty DataFrame with expected columns
             columns = [
                 "subject_id",
                 "strata",
@@ -842,7 +837,6 @@ class ReferenceProcessor:
 
         result_df = df.copy()
 
-        # Debug information
         logger.info(
             f"Calculating rolling averages for {len(processed_features)} features"
         )
@@ -850,20 +844,19 @@ class ReferenceProcessor:
 
         for subject_id, subject_data in df.groupby("subject_id"):
             for strata, strata_sessions in subject_data.groupby("strata"):
-                # Sort sessions by date (earliest first)
+                # Sort sessions by date
                 strata_sessions = strata_sessions.sort_values("session_date")
 
-                # Get indices of these sessions in original dataframe
+                # Get indices of these sessions
                 indices = strata_sessions.index
 
-                # Calculate rolling weighted average for each session
+                # Calculate rolling weighted average
                 for i, session_idx in enumerate(indices):
                     # Get all sessions up to and including current one
                     included_sessions = strata_sessions.iloc[: i + 1]
 
-                    # Skip if only one session (no need for rolling average)
+                    # Skip if only one session
                     if len(included_sessions) == 1:
-                        # Use the raw values for the first session
                         for feature in processed_features:
                             result_df.loc[session_idx, f"{feature}_rolling_avg"] = (
                                 included_sessions[feature].iloc[0]
@@ -878,11 +871,9 @@ class ReferenceProcessor:
                         decay_factor=decay_factor,
                     )
 
-                    # Add rolling averages to result
                     for feature, avg_value in averages.items():
                         result_df.loc[session_idx, f"{feature}_rolling_avg"] = avg_value
 
-        # Verify column creation
         rolling_avg_cols = [
             col for col in result_df.columns if col.endswith("_rolling_avg")
         ]
@@ -909,30 +900,29 @@ class ReferenceProcessor:
         # Assign strata to each session
         stratified_df = self.assign_subject_strata(df)
 
-        # Calculate subject averages and optionally get historical data
+        # Calculate subject averages
         subject_averages, subject_history = self.calculate_subject_averages(
             stratified_df, include_history=include_history
         )
 
-        # Store the historical data as an attribute that can be accessed separately
+        # Store the historical data
         self.subject_history = subject_history
 
-        # Create enhanced strata dataframes that include historical data
+        # Create strata dataframes that include historical data
         strata_dfs = {}
         if include_history and subject_history is not None:
-            # Get unique strata across both current and historical data
+            # Get unique strata
             all_strata = set(subject_averages["strata"].unique())
             if subject_history is not None:
                 all_strata.update(subject_history["strata"].unique())
 
             # For each strata, combine current and historical data
             for strata in all_strata:
-                # Get current subjects in this strata
                 current_strata_df = subject_averages[
                     subject_averages["strata"] == strata
                 ].copy()
 
-                # Get historical subjects in this strata (exclude subjects already in current)
+                # Get historical subjects in this strata
                 if subject_history is not None:
                     historical_strata_df = subject_history[
                         (subject_history["strata"] == strata)
@@ -988,15 +978,15 @@ class ReferenceProcessor:
             stratified_df, decay_factor
         )
 
-        # Add session_index (sequential number for each subject-strata combination)
+        # Add session_index
         session_level_data["session_index"] = (
             session_level_data.groupby(["subject_id", "strata"]).cumcount() + 1
         )
 
         # Add metadata for strata transitions
         session_level_data = self._add_strata_transition_metadata(session_level_data)
-
-        # Add is_current_strata flag by identifying most recent strata for each subject
+        
+        # Add is_current_strata flag
         latest_strata = (
             stratified_df.sort_values("session_date")
             .groupby("subject_id")["strata"]
@@ -1007,8 +997,7 @@ class ReferenceProcessor:
             axis=1,
         )
 
-        # Add is_last_session flag for last session in each subject-strata combination
-        # This will be useful for validation against strata-level calculations
+        # Add is_last_session flag
         max_indices = session_level_data.groupby(["subject_id", "strata"])[
             "session_index"
         ].transform("max")
@@ -1045,7 +1034,7 @@ class ReferenceProcessor:
             if len(subject_data) <= 1:
                 continue
 
-            # Get indices in original dataframe
+            # Get indices
             indices = subject_data.index
 
             # Track strata changes

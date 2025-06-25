@@ -116,6 +116,5 @@ def app_instance():
     
     This fixture creates the app once per test session to speed up E2E testing.
     """
-    # Import here to avoid circular imports during unit testing
     from app import app
     return app
