@@ -49,7 +49,7 @@ app = dash.Dash(
 )
 
 # Make server accessible for gunicorn
-server = app.server
+application = app.server
 
 app.layout = AppMain().build()
 
