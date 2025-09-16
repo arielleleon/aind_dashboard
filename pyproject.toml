@@ -2,6 +2,27 @@
 requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "aind-dashboard"
+dynamic = ["version"]
+dependencies = [
+    "dash>=2.0,<3.0",
+    "dash-daq",
+    "plotly",
+    "pandas",
+    "seaborn",
+    "dash-bootstrap-components",
+    "aind-analysis-arch-result-access",
+    "gunicorn",
+    "numpy",
+    "scipy",
+    "scikit-learn",
+]
+
+[tool.setuptools.packages.find]
+include = ["app_elements*", "app_utils*", "callbacks*"]
+exclude = ["tests*", "Lib*", "Include*", "Scripts*", "assets*"]
+
 [tool.black]
 line-length = 88
 target-version = ['py38', 'py39', 'py310', 'py311']
