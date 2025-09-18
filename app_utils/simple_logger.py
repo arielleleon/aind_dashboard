@@ -35,7 +35,8 @@ class SimpleLogger:
         # Simple console handler
         handler = logging.StreamHandler()
 
-        formatter = logging.Formatter("%(message)s")
+        # Include timestamp and level for better debugging
+        formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
         handler.setFormatter(formatter)
 
         self.logger.addHandler(handler)

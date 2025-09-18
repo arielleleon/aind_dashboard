@@ -1,9 +1,14 @@
 import traceback
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional
 
 import pandas as pd
 from aind_analysis_arch_result_access.han_pipeline import get_session_table
+
+from app_utils.simple_logger import get_logger
+
+logger = get_logger("data_loader")
 
 
 class EnhancedDataLoader:
@@ -31,19 +36,21 @@ class EnhancedDataLoader:
             pd.DataFrame: Loaded session table
         """
         try:
-            print(
-                f"Loading session data with bpod={'enabled' if load_bpod else 'disabled'}"
+            start_time = time.time()
+            logger.info(
+                f"Starting data load with bpod={'enabled' if load_bpod else 'disabled'}"
             )
             self.session_table = get_session_table(if_load_bpod=load_bpod)
             self.last_load_time = datetime.now()
             self.load_parameters = {"load_bpod": load_bpod}
 
-            print(f"Successfully loaded {len(self.session_table)} sessions")
+            load_time = time.time() - start_time
+            logger.info(f"Successfully loaded {len(self.session_table)} sessions in {load_time:.2f} seconds")
             return self.session_table
 
         except Exception as e:
             error_msg = f"Failed to load session table: {str(e)}"
-            print(f"Error: {error_msg}")
+            logger.error(f"Error: {error_msg}")
             raise ValueError(error_msg)
 
     def get_data(self) -> pd.DataFrame:

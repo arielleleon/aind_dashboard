@@ -1,9 +1,13 @@
 from typing import Dict, Optional
+import time
 
 import numpy as np
 import pandas as pd
 
 from .statistical_utils import StatisticalUtils
+from app_utils.simple_logger import get_logger
+
+logger = get_logger("percentile_calculator")
 
 
 class OverallPercentileCalculator:
@@ -41,6 +45,8 @@ class OverallPercentileCalculator:
             pd.DataFrame
                 DataFrame with added session_overall_percentile and CI columns
         """
+        start_time = time.time()
+        
         # Create a copy to avoid modifying the input
         result_df = session_data.copy()
 
@@ -54,11 +60,11 @@ class OverallPercentileCalculator:
         ]
 
         if not percentile_cols:
-            print("No session-level percentile columns found in data")
+            logger.warning("No session-level percentile columns found in data")
             return result_df
 
-        print(
-            f"Calculating overall percentiles with CI for {len(percentile_cols)} features"
+        logger.info(
+            f"Starting overall percentile calculation with CI for {len(percentile_cols)} features across {len(result_df)} sessions"
         )
 
         # Process each session
@@ -144,7 +150,8 @@ class OverallPercentileCalculator:
         # Cache the result
         self._cache["session_overall_percentiles"] = result_df
 
-        print(f"Calculated overall percentiles with CI for {len(result_df)} sessions")
+        calculation_time = time.time() - start_time
+        logger.info(f"Calculated overall percentiles with CI for {len(result_df)} sessions in {calculation_time:.2f} seconds")
         return result_df
 
     def clear_cache(self) -> None:

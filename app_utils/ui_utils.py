@@ -948,18 +948,26 @@ def get_optimized_table_data(app_utils, use_cache: bool = True) -> pd.DataFrame:
 
     # Second option: Use cached session-level data
     elif (
-        hasattr(app_utils, "_cache")
-        and app_utils._cache.get("session_level_data") is not None
+        hasattr(app_utils, "cache_manager")
+        and app_utils.cache_manager.has("session_level_data")
     ):
         logger.info("Selected most recent session for subjects")
         return app_utils.get_most_recent_subject_sessions(use_cache=use_cache)
 
-    else:
-        # Final fallback - need to run pipeline
+    # Third option: Try basic raw data if available
+    elif (
+        hasattr(app_utils, "cache_manager") 
+        and app_utils.cache_manager.has("raw_data")
+    ):
         logger.info("Processing data pipeline for table data...")
-        # Run pipeline with fresh data processing
-        app_utils.process_data_pipeline(use_cache=False)
+        raw_data = app_utils.get_session_data(use_cache=True)
+        app_utils.process_data_pipeline(raw_data, use_cache=False)
         return app_utils.get_most_recent_subject_sessions(use_cache=use_cache)
+        
+    else:
+        # Final fallback for initial loading - return empty DataFrame
+        logger.warning("No data available yet, returning empty DataFrame for initial loading")
+        return create_empty_dataframe_structure()
 
 
 def process_unified_alerts_integration(

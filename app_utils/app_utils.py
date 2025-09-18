@@ -53,6 +53,31 @@ class AppUtils:
 
         # Cache access counter for logging
         self._cache_access_count = 0
+        
+        # Data loading status tracking
+        self._data_status = {
+            "raw_data_ready": False,
+            "processed_data_ready": False,
+            "ui_data_ready": False
+        }
+
+    def is_data_ready(self, data_type: str = "basic") -> bool:
+        """
+        Check if specified data type is ready for use
+        
+        Parameters:
+            data_type: str - "basic" (raw data), "processed" (session-level), or "ui" (optimized)
+            
+        Returns:
+            bool: True if data is ready
+        """
+        if data_type == "basic":
+            return self.cache_manager.has("raw_data") or self.data_loader.is_data_loaded()
+        elif data_type == "processed":
+            return self.cache_manager.has("session_level_data")
+        elif data_type == "ui":
+            return self.cache_manager.has("ui_structures")
+        return False
 
     def initialize_pipeline_manager(
         self, features_config: Optional[Dict[str, bool]] = None
@@ -193,7 +218,11 @@ class AppUtils:
     def get_subject_display_data(
         self, subject_id: str, use_cache: bool = True
     ) -> Dict[str, Any]:
-        """Get optimized subject data for UI display"""
+        """Get optimized subject data for UI display with graceful degradation"""
+        if not self.is_data_ready("ui") and use_cache:
+            logger.info(f"UI data not ready, returning empty subject data for {subject_id}")
+            return {}
+            
         return self._get_ui_data_with_fallback(
             lambda ui_structures: self.ui_data_manager.get_subject_display_data(
                 subject_id, ui_structures
@@ -202,7 +231,11 @@ class AppUtils:
         )
 
     def get_table_display_data(self, use_cache: bool = True) -> List[Dict[str, Any]]:
-        """Get optimized table display data"""
+        """Get optimized table display data with graceful degradation"""
+        if not self.is_data_ready("ui") and use_cache:
+            logger.info("UI data not ready, returning empty table data")
+            return []
+            
         return self._get_ui_data_with_fallback(
             lambda ui_structures: self.ui_data_manager.get_table_display_data(
                 ui_structures
@@ -213,7 +246,11 @@ class AppUtils:
     def get_time_series_data(
         self, subject_id: str, use_cache: bool = True
     ) -> Dict[str, Any]:
-        """Get optimized time series data for visualization"""
+        """Get optimized time series data for visualization with graceful degradation"""
+        if not self.is_data_ready("ui") and use_cache:
+            logger.info(f"UI data not ready, returning empty time series data for {subject_id}")
+            return {}
+            
         return self._get_ui_data_with_fallback(
             lambda ui_structures: self.ui_data_manager.get_time_series_data(
                 subject_id, ui_structures
