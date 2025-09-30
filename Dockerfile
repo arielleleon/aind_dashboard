@@ -21,4 +21,4 @@ COPY . .
 EXPOSE 8080
 
 # Default command (update if your app uses a different entrypoint)
-CMD ["python", "app.py"]
+CMD ["python", "application.py"]
