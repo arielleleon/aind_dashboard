@@ -1,5 +1,4 @@
 aind-analysis-arch-result-access==0.7.4
--e git+https://github.com/arielleleon/aind_dashboard.git@7acd115c437c16d259db26272c90ac7e6458168e#egg=aind_dashboard
 aind-data-access-api==1.5.0
 aiobotocore==2.24.2
 aiohappyeyeballs==2.6.1
