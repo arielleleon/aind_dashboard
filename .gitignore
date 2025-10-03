@@ -4,7 +4,9 @@ Thumbs.db        # Windows
 
 # IDE/editor files
 .idea/           # JetBrains IDEs
-.vscode/         # VS Code
+.vscode/         # VS Code settings folder
+*.code-workspace # VS Code workspace files
+*.vsix           # VS Code extension packages
 *.swp            # Vim swap files
 
 # Python files
